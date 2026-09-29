@@ -149,15 +149,16 @@ These are live and unaddressed:
 
 ## Current state of the repo
 
-- **Not a git repository.** No `.git` anywhere. The course version lived at
-  `Yeshiva-University-CS/Borenstein_Jacob_800755097`. Initializing a fresh repo
-  is an early task.
+- **Git:** private repo at `github.com/jacobborenstein/sports-notifier`, branch
+  `main`. The first commit is the course code exactly as submitted; keep it
+  that way. (The course version originally lived at
+  `Yeshiva-University-CS/Borenstein_Jacob_800755097`.)
 - **Not built** — `code/target/` is empty. Build with
   `mvn -f com3810/code/pom.xml clean package` (produces 8 fat JARs).
 - **No deployment infrastructure at all** — no Dockerfile, no Helm chart, no CI,
   no Terraform. `scripts/run-all.sh` is `nohup` + PID files on one machine.
-- **Next step:** Phase 0 in `DESIGN.md`'s build order — git init and commit the
-  course code untouched before changing anything.
+- **Next step:** Phase 1 (Foundation) in `DESIGN.md`'s build order. Phase 0 is
+  done.
 - Tests require a live Redis on `localhost:6379` and flush DB 1.
 
 ---
