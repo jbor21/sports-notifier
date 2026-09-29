@@ -149,7 +149,7 @@ These are live and unaddressed:
 
 ## Current state of the repo
 
-- **Git:** private repo at `github.com/jacobborenstein/sports-notifier`, branch
+- **Git:** private repo at `github.com/boboborenstein-collab/sports-notifier`, branch
   `main`. The first commit is the course code exactly as submitted; keep it
   that way. (The course version originally lived at
   `Yeshiva-University-CS/Borenstein_Jacob_800755097`.)
