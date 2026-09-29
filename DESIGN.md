@@ -383,7 +383,7 @@ These are known bugs in the course code. They get fixed before or as the new pip
 We implement in this order. The system runs at the end of each step. Everything through step 4 happens on the laptop and costs nothing. Mistakes are free there.
 
 0. **Lock the plan.** This document. Git init, and commit the course code untouched first, so the original is always there to point back to.
-1. **Foundation.** Flatten `com3810/`. One Dockerfile, `SERVICE` picks the main. A Helm chart running the current services and Redis on k3d. Tests in GitHub Actions.
+1. **Foundation.** Flatten `com3810/`. One Dockerfile, `SERVICE` picks the main. A Helm chart running the current services and Redis on k3d. Tests in GitHub Actions. **Done.**
 2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data.
 3. **The new pipeline.** Postgres for accounts, preferences, and history, with Redis subscriber sets rebuilt on startup. Kafka through Strimzi with one broker. The two topics, the script-then-produce path with the two-state claim, consumer groups, per-user dedup. Gateway routing (decision 13).
 4. **Proof tools.** Recorded-game replay, the correctness checker, OpenTelemetry traces, Prometheus and Grafana for lag and latency.

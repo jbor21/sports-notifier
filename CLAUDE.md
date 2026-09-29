@@ -153,13 +153,20 @@ These are live and unaddressed:
   `main`. The first commit is the course code exactly as submitted; keep it
   that way. (The course version originally lived at
   `Yeshiva-University-CS/Borenstein_Jacob_800755097`.)
-- **Not built** — `code/target/` is empty. Build with
-  `mvn -f com3810/code/pom.xml clean package` (produces 8 fat JARs).
-- **No deployment infrastructure at all** — no Dockerfile, no Helm chart, no CI,
-  no Terraform. `scripts/run-all.sh` is `nohup` + PID files on one machine.
-- **Next step:** Phase 1 (Foundation) in `DESIGN.md`'s build order. Phase 0 is
-  done.
-- Tests require a live Redis on `localhost:6379` and flush DB 1.
+- **Layout:** everything at the repo root: `pom.xml`, `src/`, `Dockerfile`,
+  `Makefile`, `scripts/`, `deploy/helm/sports-notifier/`, `.github/workflows/`.
+  One shaded JAR; `app.Launcher` reads `SERVICE` and runs that service's main.
+- **Test:** `make test`. It starts a throwaway Redis on `localhost:6379` (the
+  tests use DB 1 and flush it) and removes it afterwards.
+- **Run locally (k3d):** `make cluster` once, then `make up` (build image,
+  import into k3d, Helm install). Open `http://localhost:8080`. Also
+  `make simulate`, `make smoke` (end-to-end check), `make logs`, `make down`.
+  `make down` deletes the cluster and every account with it until Phase 3.
+- **CI:** GitHub Actions runs the tests, then `make cluster up smoke` on a
+  throwaway k3d cluster, on every push and pull request.
+- **Next step:** Phase 1 is done. Next is the notification-catalog brainstorm,
+  then Phase 2. See "Deferred to Phase 2" in
+  `docs/superpowers/specs/2026-09-29-phase-1-foundation-design.md`.
 
 ---
 
@@ -239,10 +246,14 @@ delivery.
   shorthand.
 - The goal is a distributed-systems project the user can defend in an
   interview. After each phase, offer to quiz them on it.
+- Phase 1 is packaging only; bugs found during packaging go to the "Deferred
+  to Phase 2" list in
+  `docs/superpowers/specs/2026-09-29-phase-1-foundation-design.md`, not fixed
+  in place.
 
 ## Open decisions
 
-None on architecture. Flatten `com3810/` during the foundation step. Services
+None on architecture. `com3810/` was flattened to the repo root in Phase 1. Services
 stay separate processes, deployed by one Helm chart. Postgres, Kafka,
 Kubernetes, and on-demand AWS are decided. Do not propose Fly.io, Railway,
 Redpanda, Redis Streams as the log, ECS, always-on hosting, or a React rewrite
