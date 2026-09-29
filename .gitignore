@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Build output
+target/
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# Runtime artifacts
+dump.rdb
+logs/
+pids/
+*.log
+
+# Local env and secrets
+.env
+.env.*
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# Superpowers worktrees
+.worktrees/
