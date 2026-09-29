@@ -1,0 +1,35 @@
+# Never fires on its own (suspend: true). It holds the simulator's image and settings in one
+# place; scripts/simulate.sh stamps a one-off Job from it.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: simulator
+  labels:
+    {{- include "sports-notifier.labels" "simulator" | nindent 4 }}
+spec:
+  suspend: true
+  schedule: "0 0 1 1 *"
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            {{- include "sports-notifier.labels" "simulator" | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: simulator
+              image: {{ include "sports-notifier.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              env:
+                - name: SERVICE
+                  value: simulator
+                {{- include "sports-notifier.baseEnv" . | nindent 16 }}
+                - name: EPS_URL
+                  value: http://event-processing:8083
+                - name: SIM_INTERVAL_MS
+                  value: {{ .Values.simulator.intervalMs | quote }}
+                - name: SIM_WAVES
+                  value: {{ .Values.simulator.waves | quote }}

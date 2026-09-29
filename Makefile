@@ -7,7 +7,7 @@ CHART      := deploy/helm/sports-notifier
 # A new tag per build so Kubernetes always rolls pods onto new code. Uncommitted changes get a unique suffix.
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
-.PHONY: test cluster up logs down
+.PHONY: test cluster up simulate logs down
 
 cluster:
 	@if k3d cluster get $(CLUSTER) >/dev/null 2>&1; then \
@@ -21,6 +21,9 @@ up:
 	docker build -t sports-notifier:$(TAG) .
 	k3d image import sports-notifier:$(TAG) -c $(CLUSTER)
 	helm upgrade --install $(RELEASE) $(CHART) -f $(CHART)/values-local.yaml --set image.tag=$(TAG) --wait --timeout 5m
+
+simulate:
+	@scripts/simulate.sh
 
 logs:
 	-kubectl get pods -o wide
