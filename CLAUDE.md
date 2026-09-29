@@ -135,6 +135,15 @@ These are live and unaddressed:
 6. **Cookie lacks `Secure` / `SameSite`** — `SessionAuth.java:26-29`. Must fix
    before HTTPS.
 7. Password minimum is 4 characters.
+8. **Poller defeats dedup** — `EspnPollerMain.java:187` uses a random UUID as
+   the event id and line 114 uses the poller's wall clock as the timestamp. The
+   Lua dedup never fires on real ESPN data, and two overlapping pollers (a
+   Kubernetes rolling update) both get accepted. Derive both from ESPN's data.
+   Also, line 118 saves the snapshot before the POST succeeds, so a failed POST
+   loses the play.
+9. **Gateway broadcast** — `NotificationFanOut.java` does `PSUBSCRIBE notify:*`,
+   so every gateway reads every notification. Target is per-gateway routing
+   (`DESIGN.md` decision 13).
 
 ---
 
@@ -145,8 +154,10 @@ These are live and unaddressed:
   is an early task.
 - **Not built** — `code/target/` is empty. Build with
   `mvn -f com3810/code/pom.xml clean package` (produces 8 fat JARs).
-- **No deployment infrastructure at all** — no Dockerfile, no compose, no CI, no
-  IaC. `scripts/run-all.sh` is `nohup` + PID files on one machine.
+- **No deployment infrastructure at all** — no Dockerfile, no Helm chart, no CI,
+  no Terraform. `scripts/run-all.sh` is `nohup` + PID files on one machine.
+- **Next step:** Phase 0 in `DESIGN.md`'s build order — git init and commit the
+  course code untouched before changing anything.
 - Tests require a live Redis on `localhost:6379` and flush DB 1.
 
 ---
@@ -156,9 +167,11 @@ These are live and unaddressed:
 The target is a redesign of the spring 2026 course project, not a rewrite and
 not a new product. Full rationale is in `DESIGN.md`. Locked:
 
-- **Apache Kafka, one broker.** Two topics: `game-events` hashed by `gameId`,
-  `notifications` hashed by `userId`. Not Redis Streams, not Redpanda, not
-  least-busy lane assignment.
+- **Apache Kafka via Strimzi.** One broker on the laptop, three in the cloud
+  (one per availability zone, RF 3, `min.insync.replicas=2`). Two topics:
+  `game-events` hashed by `gameId` (12 partitions), `notifications` hashed by
+  `userId` (48). Not Redis Streams, not Redpanda, not MSK, not least-busy lane
+  assignment.
 - **Lua script stays the score authority and runs before the Kafka produce.**
   The topic contains only accepted plays.
 - **Postgres** is the source of truth for accounts, password hashes,
@@ -166,21 +179,36 @@ not a new product. Full rationale is in `DESIGN.md`. Locked:
   the `sub:*` cache, and pub/sub to gateways. Redis is rebuildable from
   Postgres.
 - **No leader election in the Java services.** A dead worker is a Kafka
-  rebalance. A dead broker or Redis is a restart. One cloud VM, not a
-  multi-broker cluster. Containers on that VM are not "different machines."
-- **Same Compose file** on the laptop and on one small VM (Hetzner), Cloudflare
-  in front. Not Fly.io, Railway, Cloud Run, or Lambda. Not Cloudflare Workers.
+  rebalance. A dead cloud broker is Kafka's own leader election. A dead Redis
+  or Postgres pod is a Kubernetes restart; no Sentinel, no replicas.
+- **Kubernetes everywhere, one Helm chart.** k3d on the laptop, EKS on AWS.
+  One Docker image; the `SERVICE` env var picks the main. Not Compose on a VM,
+  not ECS, not Fly.io, Railway, Hetzner, Cloud Run, Lambda, or Cloudflare
+  Workers.
+- **AWS on demand, not always on.** Terraform `apply` / `destroy`. Postgres is
+  dumped to S3 before destroy and restored after apply; Redis is rebuilt from
+  Postgres; Kafka starts empty. Avoid NAT gateways.
+- **KEDA scales workers on Kafka lag**, not CPU. Max replicas = partition count.
+  Supporting feature, not the headline.
+- **Notifications route to the gateway holding the socket** (`conn:<userId>` →
+  `gw:<gatewayId>`), not a `notify:*` broadcast.
+- **Proof before scale claims:** recorded-game replay, a correctness checker
+  (every subscriber gets every accepted play exactly once, in order), a chaos
+  suite, and OpenTelemetry traces through Kafka headers.
 - **ESPN** stays behind a provider interface. No paid feed. Frontend stays as
   is unless a backend change forces a touch.
-- Hybrid fan-out (deliver small audiences inside Stage 1) is a later phase,
-  only after the two-stage path is load-tested.
+- Hybrid fan-out (deliver small audiences inside Stage 1) and Kafka
+  transactions are later, only if measurement or the checker says so.
 
-Build order is in `DESIGN.md`: foundation, correctness, deploy, Postgres,
-Kafka, observability, evidence, push.
+Build order is in `DESIGN.md`: lock the plan and git init, foundation on k3d,
+correctness, the new pipeline (Postgres + Kafka + routing), proof tools, AWS,
+evidence, push. Everything before AWS runs on the laptop.
 
 ### AI features
-Not part of this redesign. **Ask before designing.** Any LLM work here should
-load the `claude-api` skill first and use current Claude models.
+The next phase after this redesign, not part of it. **Ask before designing.**
+Any LLM work here should load the `claude-api` skill first and use current
+Claude models. It should be its own Kafka consumer group so it cannot slow
+delivery.
 
 ---
 
@@ -196,9 +224,25 @@ load the `claude-api` skill first and use current Claude models.
 - Match the existing comment density: the code explains *why* at the tricky
   spots (the Lua script, the fan-out) and stays quiet elsewhere.
 
+## Workflow
+
+- The user works with the Superpowers plugin. `DESIGN.md` is the spec. Per-phase
+  specs in `docs/superpowers/specs/` and plans in `docs/superpowers/plans/` add
+  detail and must not contradict it; if one needs to, update `DESIGN.md` first.
+- Brainstorming should only ask about what `DESIGN.md` does not already decide.
+- Core distributed code (Lua script, Kafka producers/consumers, dedup, gateway
+  routing, the checker) is built inline in small steps the user reads.
+  Boilerplate (Dockerfile, Helm, Terraform, CI) can go to subagents.
+- The user is new to Kubernetes, Helm, Terraform, Strimzi, KEDA, and
+  OpenTelemetry. Explain what a piece does in this project before using it as
+  shorthand.
+- The goal is a distributed-systems project the user can defend in an
+  interview. After each phase, offer to quiz them on it.
+
 ## Open decisions
 
 None on architecture. Flatten `com3810/` during the foundation step. Services
-stay separate processes in one Compose file. Postgres and Kafka are decided.
-Do not propose Fly.io, Railway, Redpanda, Redis Streams as the log, or a
-React rewrite unless the user asks.
+stay separate processes, deployed by one Helm chart. Postgres, Kafka,
+Kubernetes, and on-demand AWS are decided. Do not propose Fly.io, Railway,
+Redpanda, Redis Streams as the log, ECS, always-on hosting, or a React rewrite
+unless the user asks.

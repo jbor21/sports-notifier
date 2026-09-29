@@ -4,6 +4,8 @@ This is the map of the project: what it does today, what we are changing it into
 
 Last updated 2026-09-28. Nothing in the "target" sections is built yet. The code on disk is still the course version described under "What exists today."
 
+Revised 2026-09-28: hosting moved from one always-on Hetzner VM to Kubernetes, run on your laptop (k3d) and on AWS (EKS) only when you want it up. Kafka gets three brokers in the cloud. The evidence step became a correctness checker plus a chaos suite. Decisions 2, 6, 7, and 9 changed; 12 through 14 are new.
+
 ---
 
 ## The full picture
@@ -28,19 +30,20 @@ The redesign keeps the part that was the point of the course and replaces the pa
 
 | Keep | Change |
 |---|---|
-| Separate stateless Java services | Package them as one image and run them in Compose, on your machine and on one cloud VM |
+| Separate stateless Java services | Package them as one image and run them on Kubernetes: k3d on your laptop, EKS on AWS when you want it up |
 | The Lua script as the authority on the live score | Run it before producing, and produce to Kafka instead of a Redis stream |
 | Fan-out from an inverted subscriber index | Index stays in Redis, but it is a cache rebuilt from Postgres |
-| More workers when there is more work | Kafka lanes, so a dead worker's games move without a leader you wrote |
+| More workers when there is more work | Kafka lanes, so a dead worker's games move without a leader you wrote, and workers added when a lane backs up |
+| "It works" as a demo | A checker that proves every subscriber got every play exactly once, run while things are being killed |
 | ESPN as the data source for now | Hide it behind an interface, poll faster when games are live, and don't pretend it is a licensed feed |
 
-You are not throwing away the semester and starting over. You are also not leaving it as homework with a README that says "millions of users." The resume story is smaller and true: you found a race, proved it, fixed it atomically, then took the same pipeline and gave the log, the user data, and the failure handling each a real tool. The fall class is why you can say you have built leader election and chose not to build it again.
+You are not throwing away the semester and starting over. You are also not leaving it as homework with a README that says "millions of users." The resume story is smaller and true: you found a race, proved it, fixed it atomically, then took the same pipeline and gave the log, the user data, and the failure handling each a real tool, and proved it with a checker while killing workers, brokers, and gateways. The fall class is why you can say you have built leader election and chose not to build it again.
 
 ### What "done" looks like
 
-A person can open a URL, create an account, follow a team, and get a notification when a play they care about happens. The account survives a Redis restart. Kill a worker during a game and someone else finishes the job without a duplicate notification. The README leads with the race and the timings you measured, not with a scale claim you did not measure. You can draw the path from ESPN to the browser and explain every box.
+A person can open a URL, create an account, follow a team, and get a notification when a play they care about happens. The account survives a Redis restart and a full teardown of the cloud environment. Kill a worker, a Kafka broker, or a gateway during a replayed game, and the checker still reports every subscriber got every play exactly once, in order. The README leads with the race, the checker results, and the timings you measured, not with a scale claim you did not measure. You can draw the path from ESPN to the browser and explain every box.
 
-Hosting is one always-on VM plus your laptop, same Compose file. Cloudflare in front of the VM. The processes are distributed. The machines are not, until a later split is actually worth it. That distinction is part of the explanation, not a footnote.
+Hosting is on demand. The same Helm chart runs on your laptop in k3d and on AWS in EKS. `terraform apply` brings the cloud up for a demo or a load test, `terraform destroy` takes it down, and you pay only for the hours it was up. In the cloud the machines are actually separate, spread across three AWS data centers, so a node dying is a real failure you can show, not a simulated one.
 
 ---
 
@@ -92,7 +95,7 @@ The script, for one event: read the last saved timestamp for the game, reject th
 
 **Stateless services.** Sessions, scores, and subscriptions are not kept only in a process's memory. Kill the gateway, the user reconnects, the session is still in Redis. The exception is the poller's `HashMap`, which we are removing.
 
-**Idempotency.** Each event has an id. Processing it twice is a no-op. Retries are safe because of that.
+**Idempotency.** Each event has an id. Processing it twice is a no-op. Retries are safe because of that. One catch in the code on disk: the ESPN poller makes a random UUID for the id and uses its own clock for the timestamp, so for real ESPN data the dedup never fires. That is on the fix list below.
 
 **History separate from the live push.** The history list survives. The pub/sub message only reaches whoever is listening right now. A user who was offline sees history when they open the app.
 
@@ -105,10 +108,10 @@ Three infrastructure processes, each with one job:
 | Piece | Job |
 |---|---|
 | Postgres | Accounts, password hashes, preferences, notification history. Source of truth. |
-| Kafka (one broker) | The event log. Accepted plays in, deliveries out. |
+| Kafka (one broker locally, three in the cloud) | The event log. Accepted plays in, deliveries out. |
 | Redis | Sessions, live score, subscriber-set cache, pub/sub to gateways. Rebuildable from Postgres, except sessions, which are disposable. |
 
-The Java services stay separate processes. One Docker image, an env var picks which `main` runs. The same Compose file runs on your Mac and on one cloud VM.
+The Java services stay separate processes. One Docker image, an env var (`SERVICE`) picks which `main` runs. One Helm chart describes every service and how many copies of each to run. It is installed on k3d on your laptop and on EKS on AWS, with a different settings file for each.
 
 ```
 ESPN
@@ -118,11 +121,37 @@ ESPN
   → Stage 1 workers                (who is subscribed?)
   → Kafka topic notifications      (key = userId)
   → Stage 2 workers                (deliver)
-       → Redis pub/sub → gateways → WebSocket
-       → Postgres history
+       → Redis pub/sub on the channel of the gateway holding that user's socket
+            → that gateway → WebSocket
+       → Postgres history              (batched inserts)
 ```
 
 Postgres is written by the user service and by the history path. On startup the user service rebuilds `sub:*` from Postgres.
+
+### Where it runs
+
+| | Laptop | Cloud |
+|---|---|---|
+| Cluster | k3d (Kubernetes inside Docker) | EKS, nodes in three AWS availability zones |
+| Created by | `k3d cluster create` | `terraform apply` |
+| Kafka | Strimzi, one broker | Strimzi, three brokers, one per zone |
+| Postgres, Redis | One pod each | One pod each |
+| Java services | One copy each | Several copies; workers scaled by KEDA on Kafka lag |
+| Cost | Nothing | Hourly, only while it is up |
+| Torn down by | `k3d cluster delete` | `terraform destroy`, after a Postgres dump to S3 |
+
+The tools, one line each:
+
+- **Kubernetes.** Runs containers across machines and keeps them running. You declare "three Stage 2 workers" and it makes that true, restarting or moving them when something dies.
+- **Helm chart.** The Kubernetes config for the whole system as one template, with a settings file per environment.
+- **k3d.** A small Kubernetes inside Docker, so the laptop runs the same chart as the cloud.
+- **EKS.** AWS's hosted Kubernetes. AWS runs the control plane; you rent the machines.
+- **Terraform.** The AWS setup (network, EKS, S3 bucket) written as code. `apply` creates it, `destroy` deletes it.
+- **Strimzi.** A Kubernetes add-on that runs Kafka: storage, broker identities, rolling restarts.
+- **KEDA.** A Kubernetes add-on that scales a service on an outside signal. Here, Kafka consumer lag.
+- **OpenTelemetry.** Records timings and passes a trace id from service to service, so one play is one timeline from poller to browser.
+
+The deploy path: Maven builds the JARs, Docker builds one image, GitHub Actions pushes it to ECR (AWS's image registry), and the Helm chart points Kubernetes at that image. Locally the image is loaded straight into k3d.
 
 ---
 
@@ -134,7 +163,7 @@ Packers–Falcons, game id `401872948`. A touchdown is newer than the saved time
 2. The Lua script accepts it and the live score moves forward.
 3. Event Processing produces to `game-events`. The message key is the game id. Kafka hashes the key: `hash("401872948") % 12`. That lane is the only lane this game's events will ever use. Every later play from this game hashes to the same lane.
 4. The Stage 1 worker that owns the lane reads it, in order with the other plays from that game. It asks Redis who follows the Packers, the Falcons, this game, and the NFL, then who asked for touchdowns. For each matching user it writes one message to `notifications`, keyed by that user's id.
-5. Those messages spread across 48 lanes. Stage 2 workers deliver in parallel: publish on Redis so an open tab updates, and insert the history row in Postgres. A user's messages stay in one lane, so that user still sees them in order.
+5. Those messages spread across 48 lanes. Stage 2 workers deliver in parallel: look up which gateway holds that user's socket, publish on that gateway's Redis channel so an open tab updates, and insert the history row in Postgres. A user's messages stay in one lane, so that user still sees them in order.
 
 A normal game's history is the full sequence. The poller sends 2–2, then 3–2, then 4–2. Each is newer than the last, so each is accepted. The timeline matches the game. A play is dropped only when an older event arrives after a newer one was already saved. The live score must not go backwards. That late play can be logged. It is not delivered as if it were the new score.
 
@@ -146,7 +175,7 @@ Each one is in the form you will use out loud: what we chose, what we gave up, w
 
 ### 1. Kafka, not Redis Streams, for the event log
 
-**Chose.** Apache Kafka, one broker, as the log.
+**Chose.** Apache Kafka as the log. Broker count is decision 2.
 
 **Gave up.** Redis Streams, which is what the course code uses. Streams are simpler, already written, lighter on memory, and fast. At this volume (a few thousand events a week) they would not fall over. Replay exists on Streams too, within whatever you have not trimmed. `MAXLEN 1000` silently dropping old events is a config mistake, not a reason Streams cannot retain data.
 
@@ -156,11 +185,13 @@ The interview line: "I used Redis Streams first. Throughput was fine. What I cou
 
 ### 2. Apache Kafka, not Redpanda
 
-**Chose.** Apache Kafka in KRaft mode, one broker.
+**Chose.** Apache Kafka in KRaft mode, run on Kubernetes by Strimzi. One broker on the laptop. Three brokers in the cloud, one per availability zone, every partition copied to all three (replication factor 3), and a write counts only once two copies have it (`min.insync.replicas=2`, producer `acks=all`).
 
-**Gave up.** Redpanda, which speaks the Kafka protocol and uses less memory. The Java client would be the same.
+**Gave up.** Redpanda, which speaks the Kafka protocol and uses less memory. The Java client would be the same. Also gave up Amazon MSK: it is the managed version of the same broker, but its minimum cost is higher than the rest of the project, and running Kafka yourself is the part worth being able to explain.
 
-**Why.** Cost was set aside for this choice. Kafka is the broker every tutorial, failure write-up, and managed service (Amazon MSK) is about. You learn the real broker. The resume line has no asterisk. Redpanda remains the answer to "what would you run on a tiny box," and it would be an image swap, not a code change.
+**Why.** Cost was set aside for this choice. Kafka is the broker every tutorial, failure write-up, and managed service is about. You learn the real broker. The resume line has no asterisk. Redpanda remains the answer to "what would you run on a tiny box," and it would be an image swap, not a code change.
+
+Three brokers in the cloud is the change from the first draft. On one VM, three brokers would have been fake: the VM dies and all three die with it. On EKS the brokers sit on machines in separate data centers, so killing one is a real failure and Kafka's own leader election is something you can watch happen.
 
 ### 3. Two stages, not one
 
@@ -195,31 +226,33 @@ Event type is not the key. A touchdown and a field goal from the same game share
 
 **Gave up.** A Kafka copy of events we refused (duplicates and late plays that would move the score backwards). We also accept a crash window: the script can say yes, and the process can die before Kafka acknowledges the write. A naive retry then looks like a duplicate and the play never arrives. The produce has to be retried without the script treating that retry as a new claim. Rejected events get an application log line, not a topic.
 
+**How the window closes.** The claim key has two states. The script sets `processed:<eventId>` to `claimed` when it accepts the event. After Kafka acknowledges the produce, Event Processing sets it to `produced`. A retry of the same event that finds `claimed` skips the score write and produces again. The worst case is the same play on the topic twice, which the per-user dedup key already absorbs. This only works if a retry carries the same event id, which is why the poller's ids have to come from ESPN's data and not from a random UUID.
+
 **Why not the other way.** Produce-then-script makes Kafka a complete inbox of everything the poller sent, and a crash cannot eat the raw event. Every reader of that topic then has to apply the stale check. The check is cheap (well under a millisecond). Forgetting it in one new consumer is a bug: a history writer or a metrics job would treat a rejected score as real. A second "accepted only" topic fixes that and puts the gate one hop later, with extra lag that looks like real backlog when the inbox is full of duplicates.
 
 The scoring timeline stays correct on the normal path. The poller sends plays in order. Each is newer than the last, so each is accepted. The jump from 2–2 to 4–2 happens only when the older play arrives after the newer one was already saved. The script is protecting the live score in that case.
 
 ### 6. Buy coordination. Do not write leader election
 
-**Chose.** Kafka's consumer group assigns lanes. Workers heartbeat to the broker. Miss the heartbeat and the broker gives those lanes to someone else. Redis's single-threaded script is the authority for the score. There is no leader among the Java workers.
+**Chose.** Kafka's consumer group assigns lanes. Workers heartbeat to the broker. Miss the heartbeat and the broker gives those lanes to someone else. In the cloud, Kafka also elects a new leader for each lane when a broker dies. Redis's single-threaded script is the authority for the score. There is no leader among the Java workers.
 
-**Gave up.** The fall project's property: any single machine can die and the remaining workers elect a replacement. Here, if the one Kafka broker dies, or the one Redis dies, assignment and score updates stop until that process is restarted. Making them survive that crash means running more than one broker or more than one Redis, on separate machines, and using their own election. We are not doing that.
+**Gave up.** The fall project's property: any single machine can die and the remaining workers elect a replacement. Kafka gets that property in the cloud, from its own election, not from ours. Redis and Postgres do not. If the Redis pod or the Postgres pod dies, score updates or account writes stop until Kubernetes restarts it. Making them survive that means Redis Sentinel and a Postgres replica. We are not doing that.
 
-**What "restart" means.** The process is dead. Docker or the VM starts it again. Workers keep running and their calls fail and retry. Plays Kafka had already acknowledged are still on disk. Plays in flight are retried. Users get nothing new until the process accepts connections again. That gap is usually seconds.
+**What "restart" means.** The process is dead. Kubernetes starts it again, on another machine if the first one is gone. Workers keep running and their calls fail and retry. Plays Kafka had already acknowledged are still on disk. Plays in flight are retried. Users get nothing new until the process accepts connections again. That gap is usually seconds. One catch: a Redis or Postgres disk on AWS lives in one availability zone, so that pod can only restart in the same zone.
 
-**What "more than one" would mean.** Three Kafka brokers, each lane with a copy on another broker. If the leader broker for a lane dies, the others elect a copy. Redis Sentinel is a primary, a replica, and sentinels that elect the replica. On one VM this is mostly fake: the machine dies and all the copies die with it. It matters when the copies are on separate machines. That is a later infrastructure add, not Java election code.
+**What "more than one" means here.** Three Kafka brokers, each lane with a copy on every broker. If the leader broker for a lane dies, the remaining copies elect a new leader, and a write acknowledged by two copies is not lost. That is the one piece of replicated, self-electing infrastructure in the system, and the chaos suite kills a broker to show it. Redis Sentinel (a primary, a replica, and sentinels that promote the replica) and Postgres replicas are the next adds if this ever needed to stay up. They are infrastructure, not Java election code.
 
 A dead worker is the failure this design absorbs by itself. Kill Stage 1 mid-game. The lane waits out the session timeout. Another worker reads from the last committed offset. The per-user dedup key (`notif:<eventId>:<userId>`, set-if-absent) stops a double notification.
 
-### 7. One computer, even though the processes are distributed
+### 7. Kubernetes, not Compose on one VM
 
-**Chose.** One cloud VM for the real deployment. Containers on that VM are separate processes. They talk over the network. They share CPU, disk, and fate.
+**Chose.** Kubernetes everywhere. k3d on the laptop, EKS on AWS. One Helm chart for both. In the cloud, nodes are spread across three availability zones.
 
-**Gave up.** The sentence "it runs across machines." If the VM dies, everything dies together.
+**Gave up.** The simplicity of one Compose file on one VM, which was the first draft. Kubernetes is more to learn: pods, deployments, services, persistent volumes, a Helm chart instead of one YAML file. Also gave up ECS, AWS's simpler container service. ECS would mean Compose on the laptop and ECS task definitions in the cloud, two descriptions of the same system that drift apart.
 
-**Why it is still a distributed system.** The services do not share memory. Moving one of them to another address is configuration. We prove the worker story by running several workers in Compose and killing one. We do not prove multi-machine survival, and we do not claim it.
+**Why.** Three reasons. The laptop and the cloud run the same chart, so "works locally" means something. Machines in the cloud are actually separate, so killing a node or a broker tests real failure domains instead of processes that share one VM's fate. And KEDA can scale workers on Kafka lag, which is the right signal (decision 12). Kubernetes is also what most teams run, so the resume line is one people recognize.
 
-Two VMs later (data stores on one, Java on the other) would make the failure domains real. Not before the single VM is up and the kill-a-worker test has passed.
+**What it still is not.** Redis and Postgres are single pods. Losing the zone that holds their disk stops them. We say that out loud.
 
 ### 8. Postgres for durable user data, Redis for speed
 
@@ -231,15 +264,24 @@ Two VMs later (data stores on one, Java on the other) would make the failure dom
 
 The live score in Redis is rebuilt from the accepted log if we need it (replay `game-events`). It is not a Postgres table.
 
-### 9. Laptop and one VM, same Compose file
+### 9. AWS on demand, not always on
 
-**Chose.** Develop on your machine. Deploy the same Compose file to one small cloud VM. Cloudflare in front of the VM for DNS and HTTPS.
+**Chose.** The laptop is where you work, in k3d. AWS is where you demo, load-test, and let friends use it, and it is up only when you want it. Terraform describes the AWS side: the network, the EKS cluster, an S3 bucket, and an ECR registry. `terraform apply` creates it, `terraform destroy` deletes it. An AWS load balancer with a TLS certificate is the public entry point, and only the gateway sits behind it.
 
-**Gave up.** A public URL that stays up when the laptop sleeps, if we only ran it locally. Also gave up AWS as the place the processes run. A few dollars a month on a small VM (Hetzner is the one we aimed at) instead of a larger AWS bill. S3 for backups is an optional cheap AWS touch. Managed Kafka (MSK) is out; it costs more than the rest of the project.
+What survives a teardown:
 
-**Why.** The code does not know which machine it is on. The resume claim is the VM that stays up. The laptop is how you work. Cloudflare Tunnel is the way the VM can avoid exposing every port: the VM dials out, users hit Cloudflare.
+- **Postgres** is dumped to S3 before destroy and restored after apply. Accounts, preferences, and history survive.
+- **Redis** is rebuilt from Postgres on startup, which decision 8 already requires. Sessions are lost; people log in again.
+- **Kafka** is deleted. It only holds plays in flight.
+- The S3 bucket and the Terraform state stay. They cost cents a month.
 
-The app cannot move to Cloudflare Workers. Workers run short JavaScript, not a JVM, not Kafka, not a process that polls forever. Your expense-tracker PWA fits Workers. This system does not.
+**Gave up.** A URL that is always up. Friends can use it while it is running, not at 3 a.m. Also gave up the first draft's cheap always-on VM on Hetzner. Cloud cost is hourly (the EKS control plane is about $0.10 an hour, plus the machines), so a demo afternoon is a few dollars and an idle month is almost nothing.
+
+Watch for: a NAT gateway costs money every hour it exists and is easy to create by accident. Nodes in public subnets with locked-down security groups avoid it. Anything a load test adds has to go away on destroy.
+
+**Why.** The resume claim is "runs on AWS, comes up from code, survives a teardown," not "has been up for 200 days." Starting from zero with one command is a stronger demo than a VM nobody rebuilt. It also forces the data story to be real: if Redis could not be rebuilt from Postgres, a teardown would show it.
+
+The app cannot move to Cloudflare Workers, Lambda, or Cloud Run. Those run short request handlers, not a JVM consumer that holds a Kafka partition or a poller that runs forever.
 
 ### 10. ESPN behind an interface, no paid feed
 
@@ -261,6 +303,44 @@ The app cannot move to Cloudflare Workers. Workers run short JavaScript, not a J
 
 **Why it waits.** If the extra hop is a few milliseconds on top of a multi-second data delay, the hybrid is a second code path nobody can feel. "Designed, measured, skipped" is a better result than building it early. The direct path also pulls I/O back onto the game's only Stage 1 worker, which is the ceiling two stages exist to remove. Web Push on the direct path makes that worse. If we build it, the direct path should do the fast channel only, and history plus push should stay on the topic.
 
+### 12. Scale workers on Kafka lag, not CPU
+
+**Chose.** KEDA scales Stage 1 and Stage 2 workers on consumer-group lag: how many messages are waiting that no worker has read yet. The ceiling is the partition count, 12 for Stage 1 and 48 for Stage 2, because a consumer with no partition sits idle. The floor is one of each. Gateways scale on open connections.
+
+**Gave up.** CPU-based scaling, which is the Kubernetes default. Fan-out spends its time waiting on Redis and Postgres, so CPU stays low while the backlog grows. Also gave up adding partitions later: changing the count changes which lane a game hashes to, which splits a live game. The counts are fixed up front.
+
+**The costs of scaling, handled on purpose:**
+
+- **Rebalances.** Every worker added or removed makes Kafka reassign lanes. Use the cooperative-sticky assignor so only the moved lanes pause, and a scale-in cooldown so a spike does not cause flapping.
+- **The bottleneck moves.** Twenty Stage 2 workers doing one-row inserts will swamp Postgres. History inserts are batched, and each worker's connection pool is sized so that max workers × pool size stays under Postgres's connection limit.
+- **Gateways drain.** A gateway being removed tells its clients to reconnect, the load balancer stops sending it new connections first, and clients reconnect with random jitter so they do not all arrive at once.
+
+**Why it is not the headline.** Friends-scale traffic never triggers it. The load test does. Autoscaling is about twenty lines of config on Kubernetes. The interesting part is the three bullets above.
+
+### 13. Send each notification to the gateway that holds the socket
+
+**Chose.** When a user's WebSocket connects, the gateway records `conn:<userId> → <gatewayId>` in Redis with a TTL it refreshes while the socket is open. Stage 2 looks that up and publishes on `gw:<gatewayId>`. Each gateway subscribes only to its own channel. No entry means the user is offline; history in Postgres still gets the row.
+
+**Gave up.** The course version's broadcast: every gateway subscribes to `notify:*` and throws away messages for users it does not hold. That is simpler and has no lookup, and it is correct.
+
+**Why.** With broadcast, adding a gateway does not reduce any gateway's work. Every gateway still reads every notification. With routing, each gateway reads only its own users' messages, so gateways scale out. The TTL handles a gateway that dies without cleaning up: its entries expire, and a reconnect to another gateway overwrites them. A user with tabs on two gateways needs a set of gateway ids, not one.
+
+### 14. Prove it with a checker, not a demo
+
+**Chose.** Three tools, built before the cloud deploy:
+
+- **Recorded-game replay.** Record a real game's ESPN responses once and replay them at 1× or 10×. Demos and tests no longer need a live game, and a run is repeatable.
+- **The correctness checker.** Synthetic users follow teams. After a replay, the checker compares what each user received with what the accepted plays say they should have received. The rule: every subscribed user got every accepted play they asked for, exactly once, in game order.
+- **The chaos suite.** Scripts that kill a Stage 1 worker, a Stage 2 worker, a Kafka broker, and a gateway during a replay, and cut the network between a worker and Kafka. The checker runs after each one.
+
+Tracing runs alongside it. OpenTelemetry carries a trace id in each Kafka message's headers, so one touchdown is one timeline in Grafana from poller to gateway. The p50 and p99 in the README come from those traces.
+
+**Gave up.** Time that could have gone to features. A chaos run finding a duplicate is a week of debugging nobody sees in a screenshot.
+
+**Why.** "Exactly once under injected failure, verified by a checker" is the claim distributed-systems interviewers probe, and almost no side project can back it up. It is a small version of what Jepsen does to databases. It also finds the bugs the design missed, and those bugs are the best interview stories.
+
+Optional, if the checker finds duplicates from Stage 1 crashes: Kafka transactions, which commit Stage 1's read of a play and its writes to `notifications` as one unit. The per-user dedup key stays either way, because Redis and Postgres writes are outside Kafka's transaction.
+
 ---
 
 ## Failure behavior you should be able to walk
@@ -268,9 +348,12 @@ The app cannot move to Cloudflare Workers. Workers run short JavaScript, not a J
 | What dies | What happens |
 |---|---|
 | Stage 1 or Stage 2 worker | Kafka session timeout, lanes move to another worker, dedup key prevents a second notification. |
-| Gateway | That machine's WebSockets drop. Users reconnect. Sessions are in Redis. A second gateway would also receive `notify:*` and push to its own sockets. |
-| Kafka or Redis process | Pipeline stalls, retries, then continues when the process is back. Disk has the acknowledged log and the Redis snapshot. |
-| The VM | Everything is down until the VM is back. No election. |
+| Gateway | Its WebSockets drop. Users reconnect to another gateway, which overwrites their `conn:` entry. Sessions are in Redis. Anything sent in the gap is in history. |
+| Kafka broker, laptop (one broker) | Pipeline stalls, retries, then continues when Kubernetes restarts the broker. Disk has the acknowledged log. |
+| Kafka broker, cloud (three brokers) | Kafka elects a new leader for that broker's lanes from the remaining copies. Writes acknowledged by two copies are not lost. The pipeline pauses for seconds, not minutes. |
+| Redis or Postgres pod | Score updates, sessions, or account writes stop until Kubernetes restarts the pod. Disk has the Redis snapshot and the Postgres data. Only in the same availability zone as its disk. |
+| A cloud node | Kubernetes restarts its pods on other nodes. If it held a broker, see above. If it held Redis or Postgres, see above. |
+| The whole cloud environment (`terraform destroy`) | Expected. Postgres comes back from the S3 dump, Redis is rebuilt from Postgres, Kafka starts empty. |
 | Poller | No new plays until it restarts. Restart does not replay a burst of false "game start" events, because the last snapshot is in Redis. |
 | Duplicate or late old play | Lua script rejects it. Live score does not move backwards. Log line, not a Kafka record. |
 
@@ -282,37 +365,45 @@ In-system speed, once a play exists: produce with no intentional batching delay 
 
 These are known bugs in the course code. They get fixed before or as the new pipeline lands. They are not optional polish.
 
-- The Lua script and the publish are separate steps. A crash between them marks the event processed and never publishes it. The Kafka version has to close that window (decision 5).
+- The Lua script and the publish are separate steps. A crash between them marks the event processed and never publishes it. The Kafka version closes that window with the two-state claim (decision 5).
+- The ESPN poller uses a random UUID as the event id and its own clock as the timestamp (`EspnPollerMain.java`). The Lua dedup never fires on real data, and two pollers running at once, as happens during a Kubernetes rolling update, both get accepted and send duplicates. Build the id and timestamp from ESPN's data. Then an overlapping poller is harmless and no singleton lock is needed.
+- The poller saves its snapshot before the POST succeeds. A failed POST loses that play for good. Save the snapshot after.
+- Every gateway subscribes to `notify:*` and reads every notification (`NotificationFanOut.java`). Route to the gateway that holds the socket (decision 13).
 - Fan-out matches only the team that just scored. Following the Lakers misses Celtics baskets in a Lakers game. Match home and away as well.
 - If a worker dies before ack, the entry sits forever. Kafka's session timeout replaces the missing Redis reclaim. Per-user dedup has to exist before retries are turned on, or people get duplicates.
 - Poller memory is a `HashMap`. Restart spams game-start events. Persist snapshots in Redis.
 - Game keys never expire, and the game list scans all of them. TTL finished games. Keep a bounded set of live games.
-- Internal ports have no auth. Only the gateway is reachable from outside. Signup does get-then-set on the username and can create two users. Login is unthrottled. Password minimum is 4 characters. The session cookie is missing `Secure` and `SameSite`.
+- Internal ports have no auth. Only the gateway is reachable from outside. On Kubernetes, network policies limit which pods can reach each internal service. Signup does get-then-set on the username and can create two users. Login is unthrottled. Password minimum is 4 characters. The session cookie is missing `Secure` and `SameSite`.
 - `GameStateService.updateGameState` is only called from tests. The script does the real write. Do not describe the unused method as defense in depth.
 
 ---
 
 ## Build order
 
-We implement in this order. The system runs at the end of each step.
+We implement in this order. The system runs at the end of each step. Everything through step 4 happens on the laptop and costs nothing. Mistakes are free there.
 
-1. **Foundation.** Git, flatten `com3810/`, Docker Compose with Kafka, Postgres, and Redis, tests in GitHub Actions.
-2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis.
-3. **Deploy.** Same Compose file on one VM, Cloudflare in front, so there is a URL before the rest lands.
-4. **Postgres.** Accounts, preferences, history. Redis subscriber sets rebuilt on startup.
-5. **Kafka.** The two topics, the script-then-produce path, consumer groups, per-user dedup.
-6. **Observability.** Structured logs, request ids, lag and latency metrics.
-7. **Evidence.** Load test, kill a worker, restart Redis, two gateways. Put the numbers in the README.
-8. **Push.** Web Push for a closed browser, quiet hours, rate caps. Sport-specific notification types from the play-by-play feed.
-9. **Maybe.** Hybrid fan-out, only if step 7 says the extra hop matters.
+0. **Lock the plan.** This document. Git init, and commit the course code untouched first, so the original is always there to point back to.
+1. **Foundation.** Flatten `com3810/`. One Dockerfile, `SERVICE` picks the main. A Helm chart running the current services and Redis on k3d. Tests in GitHub Actions.
+2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data.
+3. **The new pipeline.** Postgres for accounts, preferences, and history, with Redis subscriber sets rebuilt on startup. Kafka through Strimzi with one broker. The two topics, the script-then-produce path with the two-state claim, consumer groups, per-user dedup. Gateway routing (decision 13).
+4. **Proof tools.** Recorded-game replay, the correctness checker, OpenTelemetry traces, Prometheus and Grafana for lag and latency.
+5. **AWS.** Terraform for the network, EKS, ECR, and S3. The Postgres dump and restore. Three Kafka brokers. KEDA on lag. GitHub Actions pushes the image to ECR.
+6. **Evidence.** The chaos suite with the checker, on EKS. A load test that makes KEDA scale out and back in. The numbers, a trace screenshot, and the scaling graph go in the README.
+7. **Push.** Web Push for a closed browser, quiet hours, rate caps. Sport-specific notification types from the play-by-play feed.
+8. **Maybe.** Hybrid fan-out, only if step 6 says the extra hop matters. Kafka transactions for Stage 1, only if the checker finds duplicates.
+9. **Next project phase: AI layer.** Scoped separately once the pipeline works. It would be its own consumer group, so it cannot slow delivery.
 
 ---
 
 ## What we are not building
 
 - A leader-election library, heartbeats between workers, or ZooKeeper.
-- Three Kafka brokers, Redis Sentinel, or a multi-VM cluster, until a single VM is actually in use.
+- Redis Sentinel or Postgres replicas. Kafka is the only replicated piece, and only in the cloud.
+- Always-on hosting. The cloud is up when you want it.
+- Amazon MSK, ECS, Fly.io, Railway, Hetzner, or Lambda as the place it runs.
+- Multi-region, a service mesh, a schema registry, or Redis Cluster.
 - A paid sports feed.
 - A React rewrite of the frontend.
-- Kafka as a replacement for Redis pub/sub on the last hop to the browser. Open sockets stay a gateway concern. Redis pub/sub is how every gateway hears a notification.
+- Kafka as a replacement for Redis pub/sub on the last hop to the browser. Open sockets stay a gateway concern. Redis pub/sub is how the right gateway hears a notification.
+- The AI layer, inside this redesign. It is the next phase.
 - "Designed for millions of users" as an unmeasured claim. The measured claim is: lanes by game, delivery by user, a dead worker loses nothing, here are the timings.
