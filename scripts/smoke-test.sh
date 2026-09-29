@@ -3,6 +3,10 @@
 # sign up, follow a team, run the simulator, and wait for the notification in history.
 set -euo pipefail
 
+# Always the k3d cluster, whatever kubectl's current context is.
+KUBE_CONTEXT=${KUBE_CONTEXT:-k3d-sports-notifier}
+k() { kubectl --context "$KUBE_CONTEXT" "$@"; }
+
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 BASE_URL=${BASE_URL:-http://localhost:8080}
 jar=$(mktemp)
@@ -17,9 +21,9 @@ trap 'fail "command failed on line $LINENO"' ERR
 trap 'rm -f "$jar"' EXIT
 
 # 1. Wait for the cluster and the route through Traefik.
-kubectl -n kube-system rollout status deployment/traefik --timeout=180s
-kubectl wait --for=condition=available deployment -l app.kubernetes.io/part-of=sports-notifier --timeout=180s
-kubectl rollout status statefulset/redis --timeout=180s
+k -n kube-system rollout status deployment/traefik --timeout=180s
+k wait --for=condition=available deployment -l app.kubernetes.io/part-of=sports-notifier --timeout=180s
+k rollout status statefulset/redis --timeout=180s
 for _ in $(seq 1 60); do
   curl -fsS "$BASE_URL/health" >/dev/null 2>&1 && break
   sleep 1
@@ -43,7 +47,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -b "$jar" -X PUT -H 'Content-Type:
 # 4. Play one wave of games. Stop any simulator still running first: every run reuses the same
 #    game ids and stamps events with its own pod's clock, so an overlapping run can make the
 #    Lua script reject our GAME_START as stale (it is older than the other run's latest event).
-kubectl delete jobs -l app.kubernetes.io/name=simulator --cascade=foreground --wait=true --ignore-not-found >/dev/null
+k delete jobs -l app.kubernetes.io/name=simulator --cascade=foreground --wait=true --ignore-not-found >/dev/null
 job=$("$repo_root/scripts/simulate.sh" SIM_WAVES=1)
 echo "simulator job: $job"
 

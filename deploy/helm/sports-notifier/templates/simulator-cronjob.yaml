@@ -36,3 +36,5 @@ spec:
                   value: {{ .Values.simulator.intervalMs | quote }}
                 - name: SIM_WAVES
                   value: {{ .Values.simulator.waves | quote }}
+              resources:
+                {{- toYaml .Values.javaResources | nindent 16 }}

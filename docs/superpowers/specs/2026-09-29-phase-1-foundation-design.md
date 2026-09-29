@@ -87,7 +87,7 @@ Terms, as used here:
 
 ### Cluster
 
-`make cluster` runs `k3d cluster create sports-notifier -p "8080:80@loadbalancer"`. k3d ships with Traefik as its ingress controller. The port mapping sends `localhost:8080` on the laptop to Traefik, and Traefik sends it to the gateway. WebSockets pass through Traefik without extra configuration. `make cluster` does nothing if the cluster already exists.
+`make cluster` runs `k3d cluster create sports-notifier -p "127.0.0.1:8080:80@loadbalancer"` (bound to localhost only, so the app is not reachable from the local network). k3d ships with Traefik as its ingress controller. The port mapping sends `localhost:8080` on the laptop to Traefik, and Traefik sends it to the gateway. WebSockets pass through Traefik without extra configuration. `make cluster` does nothing if the cluster already exists.
 
 ### What the chart creates
 

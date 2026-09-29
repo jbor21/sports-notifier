@@ -31,4 +31,6 @@ spec:
               value: http://event-processing:8083
             - name: ESPN_POLL_INTERVAL_MS
               value: {{ .Values.espnPoller.pollIntervalMs | quote }}
+          resources:
+            {{- toYaml .Values.javaResources | nindent 12 }}
 {{- end }}

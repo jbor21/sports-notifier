@@ -4,6 +4,9 @@ TEST_REDIS := sports-notifier-test-redis
 CLUSTER    := sports-notifier
 RELEASE    := sports-notifier
 CHART      := deploy/helm/sports-notifier
+# Always talk to the k3d cluster, whatever kubectl's current context is (e.g. after switching to EKS).
+KUBE_CONTEXT ?= k3d-$(CLUSTER)
+export KUBE_CONTEXT
 # A new tag per build so Kubernetes always rolls pods onto new code. Uncommitted changes get a unique suffix.
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
@@ -13,14 +16,14 @@ cluster:
 	@if k3d cluster get $(CLUSTER) >/dev/null 2>&1; then \
 		echo "Cluster $(CLUSTER) already exists"; \
 	else \
-		k3d cluster create $(CLUSTER) -p "8080:80@loadbalancer" --wait; \
+		k3d cluster create $(CLUSTER) -p "127.0.0.1:8080:80@loadbalancer" --wait; \
 	fi
 
 up:
 	@k3d cluster get $(CLUSTER) >/dev/null 2>&1 || { echo "Cluster $(CLUSTER) not found. Run: make cluster"; exit 1; }
 	docker build -t sports-notifier:$(TAG) .
 	k3d image import sports-notifier:$(TAG) -c $(CLUSTER)
-	helm upgrade --install $(RELEASE) $(CHART) -f $(CHART)/values-local.yaml --set image.tag=$(TAG) --wait --timeout 5m
+	helm upgrade --install --kube-context $(KUBE_CONTEXT) $(RELEASE) $(CHART) -f $(CHART)/values-local.yaml --set image.tag=$(TAG) --wait --timeout 5m
 
 simulate:
 	@scripts/simulate.sh
@@ -29,9 +32,9 @@ smoke:
 	@scripts/smoke-test.sh
 
 logs:
-	-kubectl get pods -o wide
-	-kubectl logs -l app.kubernetes.io/part-of=sports-notifier --all-containers --prefix --tail=50 --max-log-requests=20
-	-kubectl get events --sort-by=.lastTimestamp | tail -30
+	-kubectl --context $(KUBE_CONTEXT) get pods -o wide
+	-kubectl --context $(KUBE_CONTEXT) logs -l app.kubernetes.io/part-of=sports-notifier --all-containers --prefix --tail=50 --max-log-requests=20
+	-kubectl --context $(KUBE_CONTEXT) get events --sort-by=.lastTimestamp | tail -30
 
 down:
 	k3d cluster delete $(CLUSTER)
@@ -42,7 +45,10 @@ test:
 	@if nc -z localhost 6379 2>/dev/null; then \
 		echo "Port 6379 is in use (local Redis?). Stop it and re-run make test."; exit 1; \
 	fi
-	@docker run -d --rm --name $(TEST_REDIS) -p 6379:6379 redis:7.4 >/dev/null; \
+	@docker run -d --rm --name $(TEST_REDIS) -p 6379:6379 redis:7.4 >/dev/null \
+		|| { echo "Could not start the test Redis container (is Docker running?)"; exit 1; }; \
 	trap 'docker rm -f $(TEST_REDIS) >/dev/null 2>&1' EXIT; \
-	until docker exec $(TEST_REDIS) redis-cli ping >/dev/null 2>&1; do sleep 0.2; done; \
+	for i in $$(seq 1 50); do docker exec $(TEST_REDIS) redis-cli ping >/dev/null 2>&1 && break; sleep 0.2; done; \
+	docker exec $(TEST_REDIS) redis-cli ping >/dev/null 2>&1 \
+		|| { echo "Test Redis did not answer within 10s"; exit 1; }; \
 	mvn -B test
