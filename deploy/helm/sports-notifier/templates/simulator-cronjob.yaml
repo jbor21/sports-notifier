@@ -10,6 +10,9 @@ spec:
   suspend: true
   schedule: "0 0 1 1 *"
   jobTemplate:
+    metadata:
+      labels:
+        {{- include "sports-notifier.labels" "simulator" | nindent 8 }}
     spec:
       backoffLimit: 0
       ttlSecondsAfterFinished: 600

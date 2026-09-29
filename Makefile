@@ -7,7 +7,7 @@ CHART      := deploy/helm/sports-notifier
 # A new tag per build so Kubernetes always rolls pods onto new code. Uncommitted changes get a unique suffix.
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
-.PHONY: test cluster up simulate logs down
+.PHONY: test cluster up simulate smoke logs down
 
 cluster:
 	@if k3d cluster get $(CLUSTER) >/dev/null 2>&1; then \
@@ -24,6 +24,9 @@ up:
 
 simulate:
 	@scripts/simulate.sh
+
+smoke:
+	@scripts/smoke-test.sh
 
 logs:
 	-kubectl get pods -o wide
