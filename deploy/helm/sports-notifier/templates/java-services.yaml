@@ -1,0 +1,60 @@
+{{- /* One Deployment per entry in .Values.services, all from the same image; SERVICE picks the program. */}}
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sports-notifier.labels" $name | nindent 4 }}
+spec:
+  replicas: {{ $svc.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "sports-notifier.labels" $name | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: {{ include "sports-notifier.image" $ }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ $svc.port }}
+          env:
+            - name: SERVICE
+              value: {{ $name }}
+            {{- include "sports-notifier.baseEnv" $ | nindent 12 }}
+            - name: {{ $svc.portEnv }}
+              value: {{ $svc.port | quote }}
+            {{- range $k, $v := $svc.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- with $svc.podNameEnv }}
+            - name: {{ . }}
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- end }}
+          {{- include "sports-notifier.httpProbes" (dict "port" $svc.port "probes" $.Values.probes) | nindent 10 }}
+          resources:
+            {{- toYaml $.Values.javaResources | nindent 12 }}
+{{- if $svc.clusterService }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sports-notifier.labels" $name | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+    - port: {{ $svc.port }}
+      targetPort: {{ $svc.port }}
+{{- end }}
+{{- end }}

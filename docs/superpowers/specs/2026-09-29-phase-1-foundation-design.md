@@ -252,3 +252,4 @@ Recorded here so they are not lost. Phase 1 fixes none of them.
    - `GameStateService.updateGameState` used only by tests.
    - No service-to-service auth or network policies.
    - Inline `user:` / `username:` keys in `UserPreferenceServiceMain`.
+4. **Services crash at startup if Redis is not reachable yet** (found in Phase 1). On a fresh deploy, pubsub-worker exits with `UnknownHostException: redis` and Kubernetes restarts it until Redis is up. This heals itself, but it's noisy. Fold it into Phase 2's retry work: connect with backoff at startup instead of crashing.

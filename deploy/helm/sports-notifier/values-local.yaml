@@ -1,0 +1,8 @@
+# Laptop settings (k3d). Phase 5 adds values-aws.yaml; the templates stay the same.
+
+espnPoller:
+  enabled: false   # turn on for live ESPN data
+
+javaResources:
+  requests: { cpu: 50m, memory: 256Mi }
+  limits: { memory: 512Mi }
