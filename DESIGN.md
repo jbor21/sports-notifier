@@ -6,6 +6,8 @@ Last updated 2026-09-28. Nothing in the "target" sections is built yet. The code
 
 Revised 2026-09-28: hosting moved from one always-on Hetzner VM to Kubernetes, run on your laptop (k3d) and on AWS (EKS) only when you want it up. Kafka gets three brokers in the cloud. The evidence step became a correctness checker plus a chaos suite. Decisions 2, 6, 7, and 9 changed; 12 through 14 are new.
 
+Revised 2026-09-29: decision 15, the notification catalog. Four sports, alerts as moments rather than every score, switches per follow, detected from the scoreboard.
+
 ---
 
 ## The full picture
@@ -53,11 +55,7 @@ A real-time sports notification platform. A person creates an account, follows t
 
 The product goal is the thing the original design doc promised: updates arrive as they happen, so the person does not have to keep the app open and refresh. The course version only does that while a browser tab is open. Real push to a closed phone is a later phase.
 
-Different sports get different notification types, because the games do not produce events at the same rate.
-
-- NFL: touchdowns, field goals, turnovers, game start, final. Scoring plays are rare. The free feed already labels them.
-- MLB: scoring plays, not every pitch.
-- NBA: game start, final, and maybe lead changes. Not every basket. A basket happens too often to notify on by default.
+Four sports at launch: NFL, NBA, MLB, NHL. Each has its own list of alerts, because the games do not produce events at the same rate. Alerts are moments, not every score: the NFL alerts on every touchdown because scores are rare, and the NBA does not alert on every basket because there are hundreds. The full catalog is decision 15.
 
 Those choices are user preferences. They do not decide which Kafka lane a game uses.
 
@@ -341,6 +339,117 @@ Tracing runs alongside it. OpenTelemetry carries a trace id in each Kafka messag
 
 Optional, if the checker finds duplicates from Stage 1 crashes: Kafka transactions, which commit Stage 1's read of a play and its writes to `notifications` as one unit. The per-user dedup key stays either way, because Redis and Postgres writes are outside Kafka's transaction.
 
+### 15. Alerts are moments, chosen per follow, detected from the scoreboard
+
+Decided 2026-09-29. This replaces the course version's three generic types (`GAME_START`, `SCORE_UPDATE`, `GAME_END`).
+
+**Chose.** Each sport has its own catalog of alert types. Every follow (a league, a team, or one game) has its own switches, drawn from that sport's catalog. A new follow starts from defaults, so nobody has to set fifteen switches to follow a team. Some switches carry options, not just on and off: "only my team's scores," or which innings get an end-of-inning alert. Rules that hold across every sport:
+
+- **Your team's game, not just your team.** Following the Bears means alerts for Bears games. A Raiders touchdown in Bears–Raiders reaches a Bears follower. Following both teams gives one alert, not two.
+- **Every in-game alert carries the score, the period, and the clock.** "Halftime: Bears 14, Raiders 10," not "Halftime."
+- **League follows start with the big moments only** (close game late, comeback, overtime, final). Every switch can be changed. Following the whole NBA with every alert on would be ten games of quarter ends a night.
+- **Scoring alerts cover both teams** by default, with a per-follow "only my team's scores" option.
+- **Some alerts fire once per game**, such as close game late and big lead. The game state records that it fired.
+- **Comeback is two steps under one switch.** "Comeback on" fires when a team that was far behind gets close in the second half: the moment to turn the game on. "Comeback complete" fires when it takes the lead, only if step one fired. Hockey completes on the tying goal instead, because a tied hockey game is usually decided in overtime or a shootout.
+- **v1 uses the scoreboard only.** Everything below comes from the scoreboard the poller already reads for every game. Rows marked **?** depend on a field that has to be confirmed in ESPN's live JSON before the alert is promised.
+
+In the tables, **Team** and **League** say whether the alert starts on for a new team follow or league follow.
+
+**Every sport** (wording varies: kickoff, tip-off, first pitch, puck drop):
+
+| Alert | Team | League | Rule |
+|---|---|---|---|
+| Starting soon | off | off | 15 minutes before the scheduled start |
+| Game start | on | off | Status turns in progress |
+| Delayed / postponed | on | off | Status changes to delayed, postponed, or canceled. MLB also alerts when play resumes |
+| Close game late | on | on | Sport thresholds below. Once per game |
+| Comeback | on | on | Two steps, sport thresholds below |
+| Overtime / extra innings | on | on | Period goes past regulation |
+| Final | on | on | Final score, and win or loss for your team |
+
+**NFL.** Scoring alerts go out on every score.
+
+| Alert | Team | League | Rule |
+|---|---|---|---|
+| Touchdown | on | off | Score jumps by 6. Sent at once with "extra point pending" |
+| Extra point / 2-pt result | on | off | Follow-up to the touchdown: extra point good, 2-point conversion good, or try no good |
+| Field goal | on | off | Score jumps by 3 |
+| Safety | on | off | Score jumps by 2 outside a pending try |
+| End of quarter (Q1, Q3) | on | off | |
+| Halftime | on | off | |
+| Two-minute warning | off | off | Clock reaches 2:00 in Q2 or Q4 |
+| Red zone | off | off | ? Team with the ball inside the 20 |
+| Lead change | off | off | Any quarter |
+| Chance to tie or win | on | on | ? Trailing by 8 or less, has the ball, last 2:00 of Q4 |
+
+Close game late: within 8 points, 5:00 or less in Q4, or overtime. Comeback: down 14 or more, then within 8 in the second half.
+
+The touchdown rules need memory. After a touchdown the game is in "try pending." A +1 or +2 by the scoring team resolves it as good, and a +2 is read as a 2-point conversion, not a safety. If the clock starts moving again or the quarter ends with no points added, the try failed. If the touchdown and the try land in the same snapshot (+7 or +8), one combined alert goes out.
+
+**NBA.** No alert per basket.
+
+| Alert | Team | League | Rule |
+|---|---|---|---|
+| End of quarter (Q1, Q3) | on | off | |
+| Halftime | on | off | |
+| Big run | off | off | One team scores 10 or more straight points, read from consecutive snapshots |
+| Big lead | off | off | A 20-point lead. Once per game |
+| Lead change | off | off | Q4 and overtime only |
+| Tie game late | off | off | Q4 and overtime only |
+
+Close game late: within 5 points, 5:00 or less in Q4, or overtime. Comeback: down 15 or more, then within 3 in the second half.
+
+**MLB.** Innings read "Bot 4th."
+
+| Alert | Team | League | Rule |
+|---|---|---|---|
+| Run scored | on | off | One alert per snapshot, however many runs scored ("Cubs score 2!") |
+| End of inning | off | off | Full innings only. Option: every inning, or chosen innings |
+| Big inning | off | off | 3 or more runs in one inning |
+| Lead change | off | off | Any inning |
+| Tie game late | off | off | 7th inning or later |
+| Bases loaded | off | off | ? |
+| No-hitter watch | on | on | ? After the 6th inning, then after every inning while it lasts. "No-hitter over" if broken up. The final alert says "no-hitter" if it holds |
+| Walk-off | on | on | Home team takes the lead in the bottom of the 9th or later, which ends the game |
+
+Close game late: within 2 runs, 8th inning or later. Comeback: down 4 or more, then within 1, from the 6th inning on.
+
+**NHL.**
+
+| Alert | Team | League | Rule |
+|---|---|---|---|
+| Goal | on | off | |
+| End of period (1st, 2nd) | on | off | |
+| Lead change | off | off | |
+| Tie game late | off | off | 3rd period, 5:00 or less |
+| Big lead | off | off | 3 or more goals. Once per game |
+| Shutout watch | off | off | A team scoreless after two periods, with a follow-up if they score |
+| Shootout | on | on | Separate from overtime |
+
+Close game late: within 1 goal, 5:00 or less in the 3rd, or overtime. Comeback: down 3 or more, then within 1, from the 2nd period on; complete on the tying goal. The final notes OT or SO.
+
+**How alerts are detected.** ESPN gives facts: a score, a clock, a status. "Close game," "lead change," and "comeback on" are not in the feed. They come from comparing this snapshot with the previous one for the same game. That comparison is a set of small detectors, one per alert type, each a pure function of (previous state, current state) → alerts, so each one is unit-tested without Redis or Kafka. The previous state and the "already fired" flags live with the game state in Redis, next to the score the Lua script owns. Detection is correct because every snapshot for a game is handled in order: `game-events` is keyed by game id, so one worker owns a game at a time (decision 4). The exact place the detectors run, and how they survive a crash between detection and produce, is settled in the Phase 3 spec.
+
+**How preferences reach fan-out.** Preferences are resolved when they are saved, not when an event arrives. Postgres keeps the raw settings: each follow and its switches. On save, the user service writes the result into Redis sets per follow target and alert type, such as `sub:team:LAL:CLOSE_LATE`. When a Lakers–Celtics close-game alert fires, the audience is one union: the LAL set, the BOS set, the NBA league set, and the set for that game. The union is already filtered, and a user who follows both teams appears once. That removes the per-subscriber `SISMEMBER` loop and the scoring-team-only bug from the fix list, and the sets are rebuildable from Postgres like the rest of Redis (decision 8). Options such as "only my team's scores" become separate sets. Chosen innings for MLB are checked at delivery, because they are rare and small.
+
+**Gave up.** Play-by-play alerts in v1: home runs, turnovers, big plays, hat tricks, and the exact reason a try failed. Also a simple UI: a screen per follow with a dozen switches is more to build than three checkboxes. Also exactness between snapshots: the poller sees the game every few seconds. Two lead changes inside one poll are one change or none. A big run is read from snapshots and is almost always right because both teams rarely score in the same few seconds. It is not a play-by-play count.
+
+**Why.** A notification app that pings every basket gets muted. Alerts people actually want are moments: the end of a quarter with the score, a close finish, a comeback worth turning on. Resolving preferences at save time moves the work to the rare event (someone changes a setting) and off the common one (a play happens). That is the same trade the subscriber index already makes. Detecting alerts from ordered per-game state is a direct use of the lane-per-game decision, not a feature bolted beside it.
+
+**Build in waves.** The detector framework is built once. Each alert after that is one small class and its tests.
+
+- Wave 1: game start, final, scores (with the NFL try follow-up), end of period and halftime, close game late, overtime and shootout, delayed or postponed.
+- Wave 2: comeback, lead change, tie game late, big run, big lead, big inning, walk-off, no-hitter watch, shutout watch, starting soon, two-minute warning.
+- Wave 3, needs a field confirmed first: red zone, chance to tie or win, bases loaded.
+
+**Later, with play-by-play and box scores.** These come together with player alerts, because both need the same extra feed, polled only for games someone follows:
+
+- **Player alerts.** Follow a player; milestones such as 40 points, a triple-double, 100 rushing yards, a hat trick.
+- **NFL.** "Try no good" becomes "extra point missed" or "2-point try failed"; missed field goals, turnovers, 40+ yard plays, sacks.
+- **MLB.** Home runs, grand slams, perfect game watch (walks are not on the scoreboard), cycle watch, 10+ strikeouts, pitching changes, the pitcher's name on a no-hitter.
+- **NBA.** Buzzer-beaters, game-winning shots, ejections.
+- **NHL.** Power-play goals, pulled goalie and empty net, penalty shots.
+
 ---
 
 ## Failure behavior you should be able to walk
@@ -369,7 +478,7 @@ These are known bugs in the course code. They get fixed before or as the new pip
 - The ESPN poller uses a random UUID as the event id and its own clock as the timestamp (`EspnPollerMain.java`). The Lua dedup never fires on real data, and two pollers running at once, as happens during a Kubernetes rolling update, both get accepted and send duplicates. Build the id and timestamp from ESPN's data. Then an overlapping poller is harmless and no singleton lock is needed.
 - The poller saves its snapshot before the POST succeeds. A failed POST loses that play for good. Save the snapshot after.
 - Every gateway subscribes to `notify:*` and reads every notification (`NotificationFanOut.java`). Route to the gateway that holds the socket (decision 13).
-- Fan-out matches only the team that just scored. Following the Lakers misses Celtics baskets in a Lakers game. Match home and away as well.
+- Fan-out matches only the team that just scored. Following the Lakers misses Celtics baskets in a Lakers game. Match home and away as well. This is the first Phase 2 task, test-first. Decision 15's audience union (both teams' sets) keeps it fixed once the new preferences land.
 - If a worker dies before ack, the entry sits forever. Kafka's session timeout replaces the missing Redis reclaim. Per-user dedup has to exist before retries are turned on, or people get duplicates.
 - Poller memory is a `HashMap`. Restart spams game-start events. Persist snapshots in Redis.
 - Game keys never expire, and the game list scans all of them. TTL finished games. Keep a bounded set of live games.
@@ -385,11 +494,11 @@ We implement in this order. The system runs at the end of each step. Everything 
 0. **Lock the plan.** This document. Git init, and commit the course code untouched first, so the original is always there to point back to.
 1. **Foundation.** Flatten `com3810/`. One Dockerfile, `SERVICE` picks the main. A Helm chart running the current services and Redis on k3d. Tests in GitHub Actions.
 2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data.
-3. **The new pipeline.** Postgres for accounts, preferences, and history, with Redis subscriber sets rebuilt on startup. Kafka through Strimzi with one broker. The two topics, the script-then-produce path with the two-state claim, consumer groups, per-user dedup. Gateway routing (decision 13).
-4. **Proof tools.** Recorded-game replay, the correctness checker, OpenTelemetry traces, Prometheus and Grafana for lag and latency.
+3. **The new pipeline.** Postgres for accounts, preferences, and history, with Redis subscriber sets rebuilt on startup. Kafka through Strimzi with one broker. The two topics, the script-then-produce path with the two-state claim, consumer groups, per-user dedup. Gateway routing (decision 13). The notification catalog's first wave: per-follow preferences in Postgres resolved into Redis sets, the detector framework, and wave 1 alerts (decision 15).
+4. **Proof tools.** Recorded-game replay, the correctness checker, OpenTelemetry traces, Prometheus and Grafana for lag and latency. Alert waves 2 and 3, each detector tested against recorded games.
 5. **AWS.** Terraform for the network, EKS, ECR, and S3. The Postgres dump and restore. Three Kafka brokers. KEDA on lag. GitHub Actions pushes the image to ECR.
 6. **Evidence.** The chaos suite with the checker, on EKS. A load test that makes KEDA scale out and back in. The numbers, a trace screenshot, and the scaling graph go in the README.
-7. **Push.** Web Push for a closed browser, quiet hours, rate caps. Sport-specific notification types from the play-by-play feed.
+7. **Push.** Web Push for a closed browser, quiet hours, rate caps. Then play-by-play and box scores for followed games: player alerts and the rest of decision 15's "later" list.
 8. **Maybe.** Hybrid fan-out, only if step 6 says the extra hop matters. Kafka transactions for Stage 1, only if the checker finds duplicates.
 9. **Next project phase: AI layer.** Scoped separately once the pipeline works. It would be its own consumer group, so it cannot slow delivery.
 

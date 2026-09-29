@@ -196,6 +196,12 @@ not a new product. Full rationale is in `DESIGN.md`. Locked:
 - **Proof before scale claims:** recorded-game replay, a correctness checker
   (every subscriber gets every accepted play exactly once, in order), a chaos
   suite, and OpenTelemetry traces through Kafka headers.
+- **Notification catalog is decided** (`DESIGN.md` decision 15): NFL, NBA,
+  MLB, NHL; alerts are moments, not every score (no per-basket NBA alerts);
+  switches per follow with defaults; every in-game alert carries the score;
+  a team follow covers both teams' events in that game; v1 is scoreboard-only,
+  play-by-play and player alerts later. It replaces `GAME_START` /
+  `SCORE_UPDATE` / `GAME_END`. Do not reopen the tables unless the user asks.
 - **ESPN** stays behind a provider interface. No paid feed. Frontend stays as
   is unless a backend change forces a touch.
 - Hybrid fan-out (deliver small audiences inside Stage 1) and Kafka
