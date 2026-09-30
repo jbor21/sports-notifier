@@ -8,6 +8,8 @@ Revised 2026-09-28: hosting moved from one always-on Hetzner VM to Kubernetes, r
 
 Revised 2026-09-29: decision 15, the notification catalog. Four sports, alerts as moments rather than every score, switches per follow, detected from the scoreboard.
 
+Revised 2026-09-30: decision 15 tightened. Team follows alert only on their own team's scores. League follows get a daily summary instead of a final per game. Close-game conditions are explicit and never apply in overtime. Game-follow defaults, precedence between follows, overlap rules, NFL ties, and duplicate-proof alert ids are defined.
+
 ---
 
 ## The full picture
@@ -341,108 +343,195 @@ Optional, if the checker finds duplicates from Stage 1 crashes: Kafka transactio
 
 ### 15. Alerts are moments, chosen per follow, detected from the scoreboard
 
-Decided 2026-09-29. This replaces the course version's three generic types (`GAME_START`, `SCORE_UPDATE`, `GAME_END`).
+Decided 2026-09-29, revised 2026-09-30. This replaces the course version's three generic types (`GAME_START`, `SCORE_UPDATE`, `GAME_END`).
 
-**Chose.** Each sport has its own catalog of alert types. Every follow (a league, a team, or one game) has its own switches, drawn from that sport's catalog. A new follow starts from defaults, so nobody has to set fifteen switches to follow a team. Some switches carry options, not just on and off: "only my team's scores," or which innings get an end-of-inning alert. Rules that hold across every sport:
+**Chose.** Each sport has its own catalog of alert types. Every follow (a league, a team, or one game) has its own switches, drawn from that sport's catalog. A new follow starts from defaults, so nobody has to set fifteen switches to follow a team. Some switches carry options, not just on and off, such as which innings get an end-of-inning alert.
 
-- **Your team's game, not just your team.** Following the Bears means alerts for Bears games. A Raiders touchdown in Bears–Raiders reaches a Bears follower. Following both teams gives one alert, not two.
+#### Rules across every sport
+
+- **Team follows get their own team's scores.** Following the Bears, a Bears touchdown alerts you and a Raiders touchdown does not. The alert still shows both teams' scores. Every other alert in a Bears game (start, halftime, close game, lead change, final) reaches Bears followers and Raiders followers alike. Lead change is on by default for team follows, so you still hear when the other team goes ahead.
+- **Game follows get both teams' scores.** Following one game means you chose the game, not a side.
+- **League follows get significant live moments and one daily summary.** They start with close game late, comeback, overtime, and the sport's big-moment alerts. Instead of a final for every game, one end-of-day summary lists that day's final scores. A final per game is an option, off by default. Following the whole NBA with every alert on would be ten games of quarter ends a night.
 - **Every in-game alert carries the score, the period, and the clock.** "Halftime: Bears 14, Raiders 10," not "Halftime."
-- **League follows start with the big moments only** (close game late, comeback, overtime, final). Every switch can be changed. Following the whole NBA with every alert on would be ten games of quarter ends a night.
-- **Scoring alerts cover both teams** by default, with a per-follow "only my team's scores" option.
-- **Some alerts fire once per game**, such as close game late and big lead. The game state records that it fired.
+- **The most specific follow wins.** For one game, a user's switches come from their follow of that game if they have one, otherwise from their follow of either team in it, otherwise from their league follow. Turning an alert off on a game you picked silences it even if your team follow has it on. Following both teams in a game combines those two teams' switches, and each team's scores still reach only that team's followers.
+- **One push per moment per user.** However many follows lead a user to the same alert, they get it once (see "Overlapping alerts").
 - **Comeback is two steps under one switch.** "Comeback on" fires when a team that was far behind gets close in the second half: the moment to turn the game on. "Comeback complete" fires when it takes the lead, only if step one fired. Hockey completes on the tying goal instead, because a tied hockey game is usually decided in overtime or a shootout.
-- **v1 uses the scoreboard only.** Everything below comes from the scoreboard the poller already reads for every game. Rows marked **?** depend on a field that has to be confirmed in ESPN's live JSON before the alert is promised.
+- **Close game late is a regulation alert in every sport.** It never fires in overtime or extra innings. Overtime has its own alert, and an overtime game is close by definition.
+- **Finals are win, loss, or tie.** A tie only happens in the NFL regular season: "Final (OT): Bears 20, Raiders 20. Tie."
+- **v1 uses the scoreboard only.** Every alert below comes from the scoreboard the poller already reads for every game, or from the schedule. Rows marked **?** depend on a field that has to be confirmed in ESPN's live JSON before the alert is promised.
 
-In the tables, **Team** and **League** say whether the alert starts on for a new team follow or league follow.
+#### The catalog
+
+**Team**, **League**, and **Game** say whether the alert starts on for a new follow of that kind. A dash means the alert does not apply to that kind of follow.
 
 **Every sport** (wording varies: kickoff, tip-off, first pitch, puck drop):
 
-| Alert | Team | League | Rule |
+| Alert | Team | League | Game | Rule |
+|---|---|---|---|---|
+| Starting soon | off | off | off | 15 minutes before the scheduled start. Comes from the schedule, not a snapshot |
+| Game start | on | off | on | Status turns in progress |
+| Delayed / postponed | on | off | on | Status changes to delayed, postponed, or canceled. MLB also alerts when play resumes |
+| Lead change | on | off | on | The leading team changes. NBA: Q4 and overtime only. Other sports: any time |
+| Close game late | on | on | on | Conditions in the close-game table. Once per game, never in overtime |
+| Comeback | on | on | on | Two steps. Thresholds below |
+| Overtime / extra innings | on | on | on | Fires when overtime starts. Each further overtime period fires again ("Double overtime"). MLB fires once, when extra innings start |
+| Final | on | off | on | Final score and win, loss, or tie for your team. An option for league follows |
+| Daily league summary | — | on | — | After the last game of the user's local calendar day ends, one push with every final score from that day. Postponed games are left out; suspended games are noted |
+
+**Close game late**, written as a score-gap condition and a late-game condition. The gap is the absolute difference in score, so a tie is a gap of 0. The alert fires on the first snapshot where both conditions hold, and not again that game.
+
+| Sport | Score gap | Late-game condition | In overtime |
 |---|---|---|---|
-| Starting soon | off | off | 15 minutes before the scheduled start |
-| Game start | on | off | Status turns in progress |
-| Delayed / postponed | on | off | Status changes to delayed, postponed, or canceled. MLB also alerts when play resumes |
-| Close game late | on | on | Sport thresholds below. Once per game |
-| Comeback | on | on | Two steps, sport thresholds below |
-| Overtime / extra innings | on | on | Period goes past regulation |
-| Final | on | on | Final score, and win or loss for your team |
+| NBA | 5 or fewer | 4th quarter, 5:00 or less remaining | Never |
+| NFL | 8 or fewer | 4th quarter, 5:00 or less remaining | Never |
+| NHL | 1 or fewer | 3rd period, 5:00 or less remaining | Never |
+| MLB | 2 or fewer | 8th or 9th inning, either half | Never (extra innings have their own alert) |
 
-**NFL.** Scoring alerts go out on every score.
+**NFL.**
 
-| Alert | Team | League | Rule |
-|---|---|---|---|
-| Touchdown | on | off | Score jumps by 6. Sent at once with "extra point pending" |
-| Extra point / 2-pt result | on | off | Follow-up to the touchdown: extra point good, 2-point conversion good, or try no good |
-| Field goal | on | off | Score jumps by 3 |
-| Safety | on | off | Score jumps by 2 outside a pending try |
-| End of quarter (Q1, Q3) | on | off | |
-| Halftime | on | off | |
-| Two-minute warning | off | off | Clock reaches 2:00 in Q2 or Q4 |
-| Red zone | off | off | ? Team with the ball inside the 20 |
-| Lead change | off | off | Any quarter |
-| Chance to tie or win | on | on | ? Trailing by 8 or less, has the ball, last 2:00 of Q4 |
+| Alert | Team | League | Game | Rule |
+|---|---|---|---|---|
+| Touchdown | on | off | on | Score jumps by 6. Sent at once with "extra point pending" |
+| Extra point / 2-pt result | on | off | on | Follow-up to a touchdown, to the same people: extra point good, 2-point conversion good, or try no good |
+| Field goal | on | off | on | Score jumps by 3 |
+| Safety | on | off | on | Score jumps by 2 outside a pending try. Goes to followers of the team awarded the points |
+| End of quarter (Q1, Q3) | on | off | on | |
+| Halftime | on | off | on | |
+| Two-minute warning | off | off | off | Clock crosses 2:00 in Q2 or Q4 |
+| Red zone | off | off | off | ? Team with the ball inside the 20 |
+| Chance to tie or win | on | on | on | ? Trailing by 8 or less, has the ball, last 2:00 of Q4 |
 
-Close game late: within 8 points, 5:00 or less in Q4, or overtime. Comeback: down 14 or more, then within 8 in the second half.
+Comeback: down 14 or more, then within 8 in the second half.
 
 The touchdown rules need memory. After a touchdown the game is in "try pending." A +1 or +2 by the scoring team resolves it as good, and a +2 is read as a 2-point conversion, not a safety. If the clock starts moving again or the quarter ends with no points added, the try failed. If the touchdown and the try land in the same snapshot (+7 or +8), one combined alert goes out.
 
 **NBA.** No alert per basket.
 
-| Alert | Team | League | Rule |
-|---|---|---|---|
-| End of quarter (Q1, Q3) | on | off | |
-| Halftime | on | off | |
-| Big run | off | off | One team scores 10 or more straight points, read from consecutive snapshots |
-| Big lead | off | off | A 20-point lead. Once per game |
-| Lead change | off | off | Q4 and overtime only |
-| Tie game late | off | off | Q4 and overtime only |
+| Alert | Team | League | Game | Rule |
+|---|---|---|---|---|
+| End of quarter (Q1, Q3) | on | off | on | |
+| Halftime | on | off | on | |
+| Big run | off | off | off | One team scores 10 or more straight points, read from consecutive snapshots. Either team |
+| Big lead | off | off | off | A 20-point lead. Once per game |
+| Tie game late | off | off | off | Q4 and overtime only |
 
-Close game late: within 5 points, 5:00 or less in Q4, or overtime. Comeback: down 15 or more, then within 3 in the second half.
+Comeback: down 15 or more, then within 3 in the second half.
 
 **MLB.** Innings read "Bot 4th."
 
-| Alert | Team | League | Rule |
-|---|---|---|---|
-| Run scored | on | off | One alert per snapshot, however many runs scored ("Cubs score 2!") |
-| End of inning | off | off | Full innings only. Option: every inning, or chosen innings |
-| Big inning | off | off | 3 or more runs in one inning |
-| Lead change | off | off | Any inning |
-| Tie game late | off | off | 7th inning or later |
-| Bases loaded | off | off | ? |
-| No-hitter watch | on | on | ? After the 6th inning, then after every inning while it lasts. "No-hitter over" if broken up. The final alert says "no-hitter" if it holds |
-| Walk-off | on | on | Home team takes the lead in the bottom of the 9th or later, which ends the game |
+| Alert | Team | League | Game | Rule |
+|---|---|---|---|---|
+| Run scored | on | off | on | One alert per snapshot, however many runs scored ("Cubs score 2!") |
+| End of inning | off | off | off | Full innings only. Option: every inning, or chosen innings |
+| Big inning | off | off | off | 3 or more runs in one inning. Either team |
+| Tie game late | off | off | off | 7th inning or later |
+| Bases loaded | off | off | off | ? |
+| No-hitter watch | on | on | on | ? After the 6th inning, then after every inning while it lasts. "No-hitter over" if broken up. The final says "no-hitter" if it holds |
+| Walk-off | on | on | on | Home team takes the lead in the bottom of the 9th or later, which ends the game |
 
-Close game late: within 2 runs, 8th inning or later. Comeback: down 4 or more, then within 1, from the 6th inning on.
+Comeback: down 4 or more, then within 1, from the 6th inning on.
 
 **NHL.**
 
-| Alert | Team | League | Rule |
-|---|---|---|---|
-| Goal | on | off | |
-| End of period (1st, 2nd) | on | off | |
-| Lead change | off | off | |
-| Tie game late | off | off | 3rd period, 5:00 or less |
-| Big lead | off | off | 3 or more goals. Once per game |
-| Shutout watch | off | off | A team scoreless after two periods, with a follow-up if they score |
-| Shootout | on | on | Separate from overtime |
+| Alert | Team | League | Game | Rule |
+|---|---|---|---|---|
+| Goal | on | off | on | |
+| End of period (1st, 2nd) | on | off | on | |
+| Tie game late | off | off | off | 3rd period, 5:00 or less remaining |
+| Big lead | off | off | off | 3 or more goals. Once per game |
+| Shutout watch | off | off | off | A team scoreless after two periods, with a follow-up if they score |
+| Shootout | on | on | on | Separate from overtime |
 
-Close game late: within 1 goal, 5:00 or less in the 3rd, or overtime. Comeback: down 3 or more, then within 1, from the 2nd period on; complete on the tying goal. The final notes OT or SO.
+Comeback: down 3 or more, then within 1, from the 2nd period on; complete on the tying goal. The final notes OT or SO.
 
-**How alerts are detected.** ESPN gives facts: a score, a clock, a status. "Close game," "lead change," and "comeback on" are not in the feed. They come from comparing this snapshot with the previous one for the same game. That comparison is a set of small detectors, one per alert type, each a pure function of (previous state, current state) → alerts, so each one is unit-tested without Redis or Kafka. The previous state and the "already fired" flags live with the game state in Redis, next to the score the Lua script owns. Detection is correct because every snapshot for a game is handled in order: `game-events` is keyed by game id, so one worker owns a game at a time (decision 4). The exact place the detectors run, and how they survive a crash between detection and produce, is settled in the Phase 3 spec.
+Big run and big inning are momentum alerts, not scoring alerts, so they cover either team on a team follow.
 
-**How preferences reach fan-out.** Preferences are resolved when they are saved, not when an event arrives. Postgres keeps the raw settings: each follow and its switches. On save, the user service writes the result into Redis sets per follow target and alert type, such as `sub:team:LAL:CLOSE_LATE`. When a Lakers–Celtics close-game alert fires, the audience is one union: the LAL set, the BOS set, the NBA league set, and the set for that game. The union is already filtered, and a user who follows both teams appears once. That removes the per-subscriber `SISMEMBER` loop and the scoring-team-only bug from the fix list, and the sets are rebuildable from Postgres like the rest of Redis (decision 8). Options such as "only my team's scores" become separate sets. Chosen innings for MLB are checked at delivery, because they are rare and small.
+#### Overlapping alerts
 
-**Gave up.** Play-by-play alerts in v1: home runs, turnovers, big plays, hat tricks, and the exact reason a try failed. Also a simple UI: a screen per follow with a dozen switches is more to build than three checkboxes. Also exactness between snapshots: the poller sees the game every few seconds. Two lead changes inside one poll are one change or none. A big run is read from snapshots and is almost always right because both teams rarely score in the same few seconds. It is not a play-by-play count.
+**What can fire more than once in a game:** each score, each lead change, each new tie in tie-game-late, each big run (a new run starts after the other team scores), each chosen end of inning, each no-hitter update, each further overtime period.
 
-**Why.** A notification app that pings every basket gets muted. Alerts people actually want are moments: the end of a quarter with the score, a close finish, a comeback worth turning on. Resolving preferences at save time moves the work to the rare event (someone changes a setting) and off the common one (a play happens). That is the same trade the subscriber index already makes. Detecting alerts from ordered per-game state is a direct use of the lane-per-game decision, not a feature bolted beside it.
+**What fires at most once per game:** starting soon, game start, halftime, each period's end, close game late, comeback on, comeback complete, big lead (per team), shutout watch (per team) and its follow-up, shootout, walk-off, final.
+
+**One moment, one push.** Every alert produced by the same snapshot of the same game is combined into one notification per user. The headline is the most important alert and the rest ride along. Priority, highest first: final or walk-off, comeback complete, overtime or shootout, score, lead change, close game late, comeback on, tie game late, big run or big lead or big inning, end of period or halftime, the rest. Some alerts absorb others outright:
+
+- A walk-off absorbs the run scored, the lead change, and the final.
+- Overtime starting absorbs the end of regulation's last period.
+- Halftime absorbs the end of the 2nd quarter (NFL, NBA).
+- The final absorbs the last period's end, and the no-hitter or shutout result.
+- "Touchdown, Bears take the lead, comeback complete" is one push, not three.
+
+Genuinely distinct moments stay separate. A lead change in the 2nd quarter and another in the 4th are two alerts. So are a touchdown and its extra point, which happen a minute apart.
+
+In the pipeline, the combining happens in Stage 1. It already works out every alert's audience for a snapshot, so it groups them by user and writes one `notifications` message per user per moment.
+
+#### Scoreboard limits and reliability
+
+**What snapshots can and cannot promise.** The poller sees each game every few seconds.
+
+- **Exact:** start, final, period and halftime ends, overtime, shootout, scores, the NFL try result, close game late, big lead, walk-off, delays.
+- **From snapshots:**
+  - Lead change and tie game late can be missed if the lead flips twice inside one poll.
+  - Big run is almost always right, because both teams rarely score within the same few seconds, but it is not a play-by-play count.
+  - Comeback relies on the largest deficit seen in a snapshot.
+
+The catalog promises only these.
+
+**Detection that does not depend on catching a brief moment:**
+
+- **Period ends** are detected from the period number going up, not from ESPN's short "end of period" status, which a poll can miss.
+- **Clock thresholds** (5:00, 2:00) count as crossed when one snapshot is above and the next is at or below, even if no snapshot shows the exact time.
+
+**Score corrections.** When a touchdown is overturned or a stat is corrected, the score goes down. That sends no alert. Detectors update their state from the corrected score, and the score counter keeps counting up, so a later real score still alerts.
+
+**No alert is sent twice.** Every alert has a deterministic id built from the game, the alert type, and what makes it distinct:
+
+- the period, for a period end;
+- the inning, for an end of inning or a no-hitter update;
+- the scoring team and that team's count of scoring events this game, for a score;
+- the lead change's sequence number, for a lead change;
+- nothing extra, for once-per-game alerts.
+
+Retries, repeated snapshots, and two pollers overlapping during a rolling update all produce the same id. The "already fired" flags live with the game state in Redis and are claimed atomically. The per-user dedup key is `notif:<alertId>:<userId>` (decision 5), so a crash and retry after a partial delivery does not notify anyone twice.
+
+#### How alerts are detected
+
+ESPN gives facts: a score, a clock, a status. "Close game," "lead change," and "comeback on" are not in the feed. They come from comparing this snapshot with the previous one for the same game. That comparison is a set of small detectors, one per alert type. Each is a pure function of (previous state, current state) → alerts, so each one is unit-tested without Redis or Kafka.
+
+The previous state and the "already fired" flags live with the game state in Redis, next to the score the Lua script owns. Detection is correct because every snapshot for a game is handled in order: `game-events` is keyed by game id, so one worker owns a game at a time (decision 4). The exact place the detectors run, and how they survive a crash between detection and produce, is settled in the Phase 3 spec.
+
+Starting soon and the daily league summary are not triggered by a snapshot. They come from a small scheduler that reads the schedule and each user's timezone, which is stored with their preferences.
+
+#### How preferences reach fan-out
+
+Preferences are resolved when they are saved, not when an event arrives. Postgres keeps the raw settings: each follow and its switches. On save, the user service writes the result into Redis sets per follow target and alert type, such as `sub:team:LAL:CLOSE_LATE` and `sub:game:<gameId>:HALFTIME`.
+
+At fan-out, the audience for an alert in one game is built in a few set operations, with the most specific follow winning:
+
+1. Everyone in the game's set for that alert.
+2. Plus the two teams' sets, minus anyone who follows this game. For a scoring alert, only the scoring team's set.
+3. Plus the league's set, minus anyone who follows this game or either team.
+
+The result is already filtered, and a user reached through several follows appears once. This removes the per-subscriber `SISMEMBER` loop from the fix list. The sets can be rebuilt from Postgres like the rest of Redis (decision 8). Chosen innings for MLB are checked at delivery, because they are rare and small.
+
+#### Gave up, why, and build order
+
+**Gave up.**
+
+- **Play-by-play alerts in v1:** home runs, turnovers, big plays, hat tricks, and the exact reason a try failed.
+- **A simple UI:** a screen per follow with a dozen switches is more to build than three checkboxes.
+- **Exactness between snapshots**, as listed above.
+- **Opponent scores on team follows:** a Bears fan hears a Raiders touchdown through lead change or close game late, not as its own push.
+- **A final per game for league follows:** one daily summary instead.
+
+**Why.** A notification app that pings every basket gets muted. Alerts people actually want are moments: the end of a quarter with the score, a close finish, a comeback worth turning on. Resolving preferences at save time moves the work to the rare event (someone changes a setting) and off the common one (a play happens), the same trade the subscriber index already makes. Detecting alerts from ordered per-game state is a direct use of the lane-per-game decision, not a feature bolted beside it. Deterministic alert ids make "no duplicate alerts" a property the Phase 4 checker can verify.
 
 **Build in waves.** The detector framework is built once. Each alert after that is one small class and its tests.
 
-- Wave 1: game start, final, scores (with the NFL try follow-up), end of period and halftime, close game late, overtime and shootout, delayed or postponed.
-- Wave 2: comeback, lead change, tie game late, big run, big lead, big inning, walk-off, no-hitter watch, shutout watch, starting soon, two-minute warning.
-- Wave 3, needs a field confirmed first: red zone, chance to tie or win, bases loaded.
+- **Wave 1:** game start, final (win, loss, tie), scores (with the NFL try follow-up), end of period and halftime, lead change, close game late, overtime and shootout, delayed or postponed. Also the combining rules and deterministic ids.
+- **Wave 2:** the scheduler with starting soon and the daily league summary. Until it lands, league follows use the per-game final. Also comeback, tie game late, big run, big lead, big inning, walk-off, no-hitter watch, shutout watch, and two-minute warning.
+- **Wave 3:** the alerts that need a field confirmed first (red zone, chance to tie or win, bases loaded).
 
-**Later, with play-by-play and box scores.** These come together with player alerts, because both need the same extra feed, polled only for games someone follows:
+**Later, with play-by-play and box scores.** These come together with player alerts, because both need the same extra feed, polled only for games someone follows.
 
 - **Player alerts.** Follow a player; milestones such as 40 points, a triple-double, 100 rushing yards, a hat trick.
 - **NFL.** "Try no good" becomes "extra point missed" or "2-point try failed"; missed field goals, turnovers, 40+ yard plays, sacks.
@@ -478,7 +567,7 @@ These are known bugs in the course code. They get fixed before or as the new pip
 - The ESPN poller uses a random UUID as the event id and its own clock as the timestamp (`EspnPollerMain.java`). The Lua dedup never fires on real data, and two pollers running at once, as happens during a Kubernetes rolling update, both get accepted and send duplicates. Build the id and timestamp from ESPN's data. Then an overlapping poller is harmless and no singleton lock is needed.
 - The poller saves its snapshot before the POST succeeds. A failed POST loses that play for good. Save the snapshot after.
 - Every gateway subscribes to `notify:*` and reads every notification (`NotificationFanOut.java`). Route to the gateway that holds the socket (decision 13).
-- Fan-out matches only the team that just scored. Following the Lakers misses Celtics baskets in a Lakers game. Match home and away as well. This is the first Phase 2 task, test-first. Decision 15's audience union (both teams' sets) keeps it fixed once the new preferences land.
+- Fan-out matches only the team that just scored. Following the Lakers misses Celtics baskets in a Lakers game. Under decision 15, scores going only to the scoring team's followers is now intended for team follows. The bug that remains is for every other game event: the simulator and poller tag game start and final with the home team, so away-team followers miss them. This is the first Phase 2 task, test-first: a BOS follower must get the game start in LAL–BOS. This supersedes the Phase 1 spec's planned first test (a BOS follower notified when LAL scores) and its planned smoke-test upgrade (follow BOS, wait for a score).
 - If a worker dies before ack, the entry sits forever. Kafka's session timeout replaces the missing Redis reclaim. Per-user dedup has to exist before retries are turned on, or people get duplicates.
 - Poller memory is a `HashMap`. Restart spams game-start events. Persist snapshots in Redis.
 - Game keys never expire, and the game list scans all of them. TTL finished games. Keep a bounded set of live games.
