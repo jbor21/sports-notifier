@@ -422,6 +422,10 @@ paths:
           in: query
           description: Only notifications about games involving this team.
           schema: { type: string, examples: [nfl-chi] }
+        - name: game
+          in: query
+          description: Only notifications about this game. The game page uses it for "recent alerts."
+          schema: { type: string, examples: [nfl-401872948] }
         - name: cursor
           in: query
           schema: { type: string }

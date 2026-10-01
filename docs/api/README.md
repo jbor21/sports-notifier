@@ -16,7 +16,7 @@ Status: **draft, 2026-10-01.** The backend implements it in Phase 3. Until then 
 | Sign up / sign in | `POST /auth/signup`, `POST /auth/login`. Signup sends the browser's timezone. |
 | App start | `GET /me` (401 means show sign in), then open the WebSocket. |
 | Today's games | `GET /games?date=…`, optionally `league=`, `following=true`. Then `subscribe_games` with the ids on screen. |
-| Game page | `GET /games/{id}` (score and line score), then `subscribe_games` with that id. |
+| Game page | `GET /games/{id}` (score and line score), `GET /notifications?game={id}` (recent alerts), then `subscribe_games` with that id. |
 | Follow something | `GET /leagues`, `GET /leagues/{id}/teams` (names, logos, colors), then `POST /follows`. |
 | A follow's alert switches | `GET /leagues/{id}/alerts` draws the switches. `GET /follows/{id}` gives their state. `PATCH /follows/{id}` saves changes. |
 | Notifications | `GET /notifications` (filter by `league` or `team`, page with `cursor`), `POST /notifications/seen` on open, `DELETE /notifications` to clear all. |
