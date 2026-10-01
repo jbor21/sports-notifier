@@ -164,9 +164,11 @@ These are live and unaddressed:
   `make down` deletes the cluster and every account with it until Phase 3.
 - **CI:** GitHub Actions runs the tests, then `make cluster up smoke` on a
   throwaway k3d cluster, on every push and pull request.
-- **Next step:** Phase 1 is done. Next is the notification-catalog brainstorm,
-  then Phase 2. See "Deferred to Phase 2" in
-  `docs/superpowers/specs/2026-09-29-phase-1-foundation-design.md`.
+- **Next step:** Phase 1 is done and the notification catalog is decided
+  (`DESIGN.md` decision 15). Next: the API spec in `docs/api/` (for the new
+  UI, phase 3b), and Phase 2. See "Deferred to Phase 2" in
+  `docs/superpowers/specs/2026-09-29-phase-1-foundation-design.md`; where it
+  disagrees with decision 15, decision 15 wins.
 
 ---
 
@@ -211,8 +213,11 @@ not a new product. Full rationale is in `DESIGN.md`. Locked:
   push per moment, but the final is always its own push; deterministic ids; v1 is scoreboard-only,
   play-by-play and player alerts later. It replaces `GAME_START` /
   `SCORE_UPDATE` / `GAME_END`. Do not reopen the tables unless the user asks.
-- **ESPN** stays behind a provider interface. No paid feed. Frontend stays as
-  is unless a backend change forces a touch.
+- **ESPN** stays behind a provider interface for v1. No paid feed. Phase 2
+  measures MySportsFeeds and the MLB/NHL league feeds against it (delay,
+  fields, cloud-IP blocking); the provider may differ per sport.
+- **New UI is phase 3b**, frontend only, in `web/`, built against the API
+  spec in `docs/api/`. It must not add its own database, auth, or server.
 - Hybrid fan-out (deliver small audiences inside Stage 1) and Kafka
   transactions are later, only if measurement or the checker says so.
 
@@ -264,5 +269,5 @@ delivery.
 None on architecture. `com3810/` was flattened to the repo root in Phase 1. Services
 stay separate processes, deployed by one Helm chart. Postgres, Kafka,
 Kubernetes, and on-demand AWS are decided. Do not propose Fly.io, Railway,
-Redpanda, Redis Streams as the log, ECS, always-on hosting, or a React rewrite
-unless the user asks.
+Redpanda, Redis Streams as the log, ECS, or always-on hosting unless the user
+asks.

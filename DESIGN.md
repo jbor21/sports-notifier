@@ -291,6 +291,8 @@ The app cannot move to Cloudflare Workers, Lambda, or Cloud Run. Those run short
 
 **Why.** Almost all of the delay a user feels is the poll interval plus ESPN, not Kafka. The in-system path is tens of milliseconds. We will measure it (timestamp when the poller saw the play, record the delay at the gateway). The interface is so a push provider is one class later, and so the unofficial API is an adapter you can explain instead of a hidden dependency.
 
+**Provider test in Phase 2.** ESPN stays the v1 source for all four sports, because it covers them in one shape and carries team logos and colors. When Phase 2 builds the provider interface, it also measures the alternatives side by side: MySportsFeeds (free for non-commercial use, all four leagues, play-by-play, an API key), and the leagues' own MLB and NHL feeds (`statsapi.mlb.com`, `api-web.nhle.com`; free, keyless, play-by-play, undocumented). For each: the delay behind live play, which of decision 15's **?** fields it has, and whether it answers requests from a cloud IP. That last one matters for Phase 5: the NBA's own feed is known to block data-center IPs, and ESPN may too. The provider can then differ per sport. The API the UI talks to does not change with that choice.
+
 ### 11. Hybrid fan-out, later, only if measurement says so
 
 **Not in the first build.** After two-stage delivery is load-tested, we may add this:
@@ -581,6 +583,7 @@ We implement in this order. The system runs at the end of each step. Everything 
 1. **Foundation.** Flatten `com3810/`. One Dockerfile, `SERVICE` picks the main. A Helm chart running the current services and Redis on k3d. Tests in GitHub Actions. **Done.**
 2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data.
 3. **The new pipeline.** Postgres for accounts, preferences, and history, with Redis subscriber sets rebuilt on startup. Kafka through Strimzi with one broker. The two topics, the script-then-produce path with the two-state claim, consumer groups, per-user dedup. Gateway routing (decision 13). The notification catalog's first wave: per-follow preferences in Postgres resolved into Redis sets, the detector framework, and wave 1 alerts (decision 15).
+3b. **New UI.** A full redesign of the web UI, frontend only: it calls the gateway's API and WebSocket and has no database, auth, or server code of its own. The code lives in `web/` and ships as static files in the same Helm chart. It is built against the API spec in `docs/api/`, written before Phase 3 and implemented by Phase 3, so the UI can start early against a mock server. Built as an installable web app (PWA) so Phase 7's Web Push can reach a phone. Screens can be designed any time; the build lands after Phase 3.
 4. **Proof tools.** Recorded-game replay, the correctness checker, OpenTelemetry traces, Prometheus and Grafana for lag and latency. Alert waves 2 and 3, each detector tested against recorded games.
 5. **AWS.** Terraform for the network, EKS, ECR, and S3. The Postgres dump and restore. Three Kafka brokers. KEDA on lag. GitHub Actions pushes the image to ECR.
 6. **Evidence.** The chaos suite with the checker, on EKS. A load test that makes KEDA scale out and back in. The numbers, a trace screenshot, and the scaling graph go in the README.
@@ -598,7 +601,7 @@ We implement in this order. The system runs at the end of each step. Everything 
 - Amazon MSK, ECS, Fly.io, Railway, Hetzner, or Lambda as the place it runs.
 - Multi-region, a service mesh, a schema registry, or Redis Cluster.
 - A paid sports feed.
-- A React rewrite of the frontend.
+- A UI with its own backend. Generator tools that add a database or login system are used for the frontend only (phase 3b).
 - Kafka as a replacement for Redis pub/sub on the last hop to the browser. Open sockets stay a gateway concern. Redis pub/sub is how the right gateway hears a notification.
 - The AI layer, inside this redesign. It is the next phase.
 - "Designed for millions of users" as an unmeasured claim. The measured claim is: lanes by game, delivery by user, a dead worker loses nothing, here are the timings.
