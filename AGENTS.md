@@ -164,11 +164,16 @@ These are live and unaddressed:
   `make down` deletes the cluster and every account with it until Phase 3.
 - **CI:** GitHub Actions runs the tests, then `make cluster up smoke` on a
   throwaway k3d cluster, on every push and pull request.
-- **Next step:** Phase 1 is done and the notification catalog is decided
-  (`DESIGN.md` decision 15). Next: the API spec in `docs/api/` (for the new
-  UI, phase 3b), and Phase 2. See "Deferred to Phase 2" in
-  `docs/superpowers/specs/2026-09-29-phase-1-foundation-design.md`; where it
-  disagrees with decision 15, decision 15 wins.
+- **Next step: Phase 2 (Correctness and security),** starting with its
+  brainstorm. Phase 1 is merged (PR #1) and the notification catalog is
+  decided (`DESIGN.md` decision 15). Phase 2's inputs are `DESIGN.md` build
+  order step 2 and "Security and correctness still to fix", plus "Deferred to
+  Phase 2" in `docs/superpowers/specs/2026-09-29-phase-1-foundation-design.md`.
+  Where those disagree with decision 15, decision 15 wins. The API spec
+  draft for the new UI is parked on branch `api-spec` (worktree
+  `.worktrees/api-spec`) until the Phase 3 brainstorm reviews it.
+- **Study quizzes:** `docs/study/phase-<N>-quiz.md`, one per phase. Write it
+  at the end of each phase; quiz the user only when they ask.
 
 ---
 
