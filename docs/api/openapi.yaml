@@ -1,0 +1,894 @@
+openapi: 3.1.0
+info:
+  title: SportsNotifier API
+  version: 1.0.0-draft
+  summary: The HTTP API the web UI calls. Live updates arrive over the WebSocket described in websocket.md.
+  description: |
+    Contract between the web UI (phase 3b, `web/`) and the gateway. Written before
+    Phase 3 so the UI can be built against a mock server while the backend is built.
+    `DESIGN.md` decision 15 defines the alert catalog these endpoints expose.
+
+    Conventions:
+    - All paths are under `/api/v1`. Times are ISO 8601 in UTC; the UI converts to
+      the user's timezone.
+    - Authentication is a session cookie (`sid`: HttpOnly, Secure, SameSite=Lax) set by
+      signup and login. Every endpoint except signup, login, leagues, teams, catalog,
+      and games requires it.
+    - Requests with a body must send `Content-Type: application/json`.
+    - IDs are opaque strings. Team ids are league-qualified (`nba-bos`, `mlb-bos`),
+      because an abbreviation alone is ambiguous across leagues.
+    - Alert types and game statuses may grow. The UI must ignore values it does not
+      know rather than fail.
+    - Errors always use the `Error` shape.
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local k3d cluster
+tags:
+  - name: Auth
+    description: Accounts, sessions, and user settings.
+  - name: Reference
+    description: Leagues, teams, and the alert catalog. Public, cacheable.
+  - name: Games
+    description: Game lists and details. Live changes arrive over the WebSocket.
+  - name: Follows
+    description: What the user follows and which alerts each follow sends.
+  - name: Notifications
+    description: Notification history, unread count, and clearing.
+security:
+  - session: []
+
+paths:
+  /auth/signup:
+    post:
+      tags: [Auth]
+      operationId: signup
+      summary: Create an account and start a session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Credentials' }
+            example: { username: jacob, password: correct-horse-9, timezone: America/New_York }
+      responses:
+        '201':
+          description: Account created. Sets the `sid` cookie.
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SetSession' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '409':
+          description: Username taken.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: username_taken, message: That username is taken. } }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Start a session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Credentials' }
+            example: { username: jacob, password: correct-horse-9 }
+      responses:
+        '200':
+          description: Logged in. Sets the `sid` cookie.
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SetSession' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401':
+          description: Wrong username or password. The message does not say which.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: invalid_credentials, message: Wrong username or password. } }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: End the session
+      responses:
+        '204': { description: Logged out. Clears the cookie. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /me:
+    get:
+      tags: [Auth]
+      operationId: getMe
+      summary: The signed-in user
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    patch:
+      tags: [Auth]
+      operationId: updateMe
+      summary: Update settings (timezone)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                timezone: { $ref: '#/components/schemas/Timezone' }
+            example: { timezone: America/Chicago }
+      responses:
+        '200':
+          description: The updated user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /leagues:
+    get:
+      tags: [Reference]
+      operationId: listLeagues
+      summary: Supported leagues
+      security: []
+      responses:
+        '200':
+          description: The four launch leagues.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/League' }
+
+  /leagues/{leagueId}/teams:
+    get:
+      tags: [Reference]
+      operationId: listTeams
+      summary: Teams in a league, with names, logos, and colors
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/LeagueId'
+      responses:
+        '200':
+          description: Teams, alphabetical by display name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Team' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /leagues/{leagueId}/alerts:
+    get:
+      tags: [Reference]
+      operationId: listAlertTypes
+      summary: The alert catalog for a league
+      description: |
+        Every alert type the league offers, with its defaults per follow kind and any
+        options. The UI draws a follow's switches from this list instead of
+        hard-coding them, so a new alert type appears without a UI change.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/LeagueId'
+      responses:
+        '200':
+          description: The catalog, in display order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AlertType' }
+              example:
+                items:
+                  - type: TOUCHDOWN
+                    name: Touchdown
+                    description: Any touchdown in the game, sent right away with "extra point pending."
+                    category: scoring
+                    appliesTo: [team, game, league]
+                    defaults: { team: true, league: false, game: true }
+                    precision: exact
+                    availability: available
+                  - type: CLOSE_LATE
+                    name: Close game late
+                    description: Within 8 points with 5:00 or less left in the 4th quarter. Never in overtime.
+                    category: big_moment
+                    appliesTo: [team, game, league]
+                    defaults: { team: true, league: true, game: true }
+                    precision: exact
+                    availability: available
+                  - type: RED_ZONE
+                    name: Red zone
+                    description: A team with the ball inside the 20.
+                    category: game_flow
+                    appliesTo: [team, game, league]
+                    defaults: { team: false, league: false, game: false }
+                    precision: exact
+                    availability: coming_soon
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /games:
+    get:
+      tags: [Games]
+      operationId: listGames
+      summary: Games for a day
+      description: |
+        Games on one calendar day in the given timezone, soonest first. Live scores
+        then update over the WebSocket (`subscribe_games`).
+      security: []
+      parameters:
+        - name: date
+          in: query
+          description: Calendar day, `YYYY-MM-DD`. Defaults to today in `tz`.
+          schema: { type: string, format: date }
+        - name: tz
+          in: query
+          description: IANA timezone that defines the day. Defaults to the user's timezone, or UTC when signed out.
+          schema: { $ref: '#/components/schemas/Timezone' }
+        - name: league
+          in: query
+          description: Only this league.
+          schema: { $ref: '#/components/schemas/LeagueIdValue' }
+        - name: team
+          in: query
+          description: Only games involving this team.
+          schema: { type: string, examples: [nfl-chi] }
+        - name: status
+          in: query
+          description: Only games in this state.
+          schema: { $ref: '#/components/schemas/GameStatus' }
+        - name: following
+          in: query
+          description: Only games the signed-in user follows through any follow.
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: The day's games.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [date, items]
+                properties:
+                  date: { type: string, format: date }
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/GameSummary' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /games/{gameId}:
+    get:
+      tags: [Games]
+      operationId: getGame
+      summary: One game, with its line score
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: The game.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GameDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /follows:
+    get:
+      tags: [Follows]
+      operationId: listFollows
+      summary: Everything the user follows
+      responses:
+        '200':
+          description: Follows, grouped by the UI as it likes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Follow' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      tags: [Follows]
+      operationId: createFollow
+      summary: Follow a league, team, or game
+      description: |
+        The server fills in the alert switches from the catalog's defaults for this
+        follow kind. Following something already followed returns the existing follow
+        with 200.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target]
+              properties:
+                target: { $ref: '#/components/schemas/FollowTargetRef' }
+            example: { target: { kind: team, id: nfl-chi } }
+      responses:
+        '201':
+          description: Followed, with default switches.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Follow' }
+        '200':
+          description: Already followed; the existing follow.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Follow' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /follows/{followId}:
+    parameters:
+      - name: followId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Follows]
+      operationId: getFollow
+      summary: One follow and its switches
+      responses:
+        '200':
+          description: The follow.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Follow' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Follows]
+      operationId: updateFollow
+      summary: Change some switches
+      description: |
+        Send only the alert types that change. Each value replaces that alert's
+        setting. Types not in the body keep their current setting. A type the
+        league does not offer, or one not allowed for this follow kind, is a 422.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [alerts]
+              properties:
+                alerts:
+                  type: object
+                  additionalProperties: { $ref: '#/components/schemas/AlertSetting' }
+            example:
+              alerts:
+                END_OF_INNING: { enabled: true, options: { innings: [3, 6, 9] } }
+                LEAD_CHANGE: { enabled: true }
+      responses:
+        '200':
+          description: The follow with every switch.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Follow' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      tags: [Follows]
+      operationId: deleteFollow
+      summary: Unfollow
+      responses:
+        '204': { description: Unfollowed. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      summary: Notification history, newest first
+      description: |
+        Paged with a cursor: pass `nextCursor` from one page to get the next. Kept for
+        30 days, then deleted automatically.
+      parameters:
+        - name: league
+          in: query
+          schema: { $ref: '#/components/schemas/LeagueIdValue' }
+        - name: team
+          in: query
+          description: Only notifications about games involving this team.
+          schema: { type: string, examples: [nfl-chi] }
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Notification' }
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Null on the last page.
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    delete:
+      tags: [Notifications]
+      operationId: clearNotifications
+      summary: Clear all history
+      responses:
+        '204': { description: Cleared. The unread count is now 0. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      operationId: getUnreadCount
+      summary: Notifications newer than the last time the user looked
+      responses:
+        '200':
+          description: The count for the badge.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count]
+                properties:
+                  count: { type: integer, minimum: 0 }
+              example: { count: 3 }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /notifications/seen:
+    post:
+      tags: [Notifications]
+      operationId: markSeen
+      summary: Mark everything up to now as seen
+      description: |
+        The UI calls this when the user opens their notifications. Unread means
+        "created after the last time this was called." There is no per-item read flag.
+      responses:
+        '204': { description: Marked. The unread count is now 0. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: sid
+
+  headers:
+    SetSession:
+      description: '`sid=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400`'
+      schema: { type: string }
+
+  parameters:
+    LeagueId:
+      name: leagueId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/LeagueIdValue' }
+    GameId:
+      name: gameId
+      in: path
+      required: true
+      schema: { type: string, examples: [nfl-401872948] }
+
+  responses:
+    Unauthenticated:
+      description: No valid session.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: unauthenticated, message: Sign in first. } }
+    NotFound:
+      description: No such resource.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: not_found, message: Not found. } }
+    ValidationError:
+      description: The request was understood but a field is invalid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: validation_failed
+              message: Password must be at least 8 characters.
+              fields: { password: too_short }
+    RateLimited:
+      description: Too many attempts. Wait the number of seconds in `Retry-After`.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: rate_limited, message: Too many attempts. Try again in a minute. } }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, description: Stable machine-readable code. }
+            message: { type: string, description: Safe to show the user. }
+            fields:
+              type: object
+              description: Per-field problem codes for form errors.
+              additionalProperties: { type: string }
+
+    Credentials:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 20
+          pattern: '^[a-z0-9_]+$'
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        timezone:
+          $ref: '#/components/schemas/Timezone'
+          description: Signup only. The UI sends the browser's timezone.
+
+    Timezone:
+      type: string
+      description: IANA timezone name.
+      examples: [America/New_York]
+
+    User:
+      type: object
+      required: [id, username, timezone, createdAt]
+      properties:
+        id: { type: string }
+        username: { type: string }
+        timezone: { $ref: '#/components/schemas/Timezone' }
+        createdAt: { type: string, format: date-time }
+      example: { id: u_7f3a, username: jacob, timezone: America/New_York, createdAt: '2026-10-01T15:04:05Z' }
+
+    LeagueIdValue:
+      type: string
+      description: League id. NFL, NBA, MLB, NHL at launch; more may be added.
+      examples: [NFL]
+
+    League:
+      type: object
+      required: [id, name, sport, periodName, regulationPeriods]
+      properties:
+        id: { $ref: '#/components/schemas/LeagueIdValue' }
+        name: { type: string, examples: [National Football League] }
+        sport: { type: string, examples: [football] }
+        periodName:
+          type: string
+          description: What a period is called, for labels.
+          examples: [quarter]
+        regulationPeriods: { type: integer, examples: [4] }
+        logoUrl: { type: string, format: uri }
+
+    Team:
+      type: object
+      required: [id, leagueId, abbreviation, displayName]
+      properties:
+        id: { type: string, examples: [nfl-chi] }
+        leagueId: { $ref: '#/components/schemas/LeagueIdValue' }
+        abbreviation: { type: string, examples: [CHI] }
+        location: { type: string, examples: [Chicago] }
+        name: { type: string, examples: [Bears] }
+        displayName: { type: string, examples: [Chicago Bears] }
+        logoUrl: { type: string, format: uri }
+        colors:
+          type: object
+          properties:
+            primary: { type: string, examples: ['#0B162A'] }
+            secondary: { type: string, examples: ['#C83803'] }
+
+    TeamRef:
+      type: object
+      description: The fields of a team that ride along inside games and notifications.
+      required: [id, abbreviation, displayName]
+      properties:
+        id: { type: string }
+        abbreviation: { type: string }
+        displayName: { type: string }
+        logoUrl: { type: string, format: uri }
+        primaryColor: { type: string }
+
+    GameStatus:
+      type: string
+      description: May grow; treat unknown values like `in_progress`.
+      enum: [scheduled, in_progress, final, delayed, postponed, canceled, suspended]
+
+    GameSide:
+      type: object
+      required: [team, score]
+      properties:
+        team: { $ref: '#/components/schemas/TeamRef' }
+        score: { type: integer, minimum: 0 }
+        record: { type: string, description: 'Season record, when known.', examples: ['3-1'] }
+
+    GameSummary:
+      type: object
+      required: [id, leagueId, status, startTime, home, away, version]
+      properties:
+        id: { type: string, examples: [nfl-401872948] }
+        leagueId: { $ref: '#/components/schemas/LeagueIdValue' }
+        status: { $ref: '#/components/schemas/GameStatus' }
+        startTime: { type: string, format: date-time }
+        home: { $ref: '#/components/schemas/GameSide' }
+        away: { $ref: '#/components/schemas/GameSide' }
+        period:
+          type: [integer, 'null']
+          description: 1-based period number; above regulation means overtime or extra innings.
+        periodLabel:
+          type: [string, 'null']
+          description: Ready to display.
+          examples: [Q4, Half, OT, 2OT, Bot 7th, 3rd, SO]
+        clock:
+          type: [string, 'null']
+          description: Game clock as shown on TV. Null for baseball and between periods.
+          examples: ['4:12']
+        version:
+          type: integer
+          description: |
+            Increases with every change to this game. A WebSocket update with a lower
+            or equal version than the UI already has is stale and must be ignored.
+        updatedAt: { type: string, format: date-time }
+      example:
+        id: nfl-401872948
+        leagueId: NFL
+        status: in_progress
+        startTime: '2026-10-04T17:00:00Z'
+        home: { team: { id: nfl-chi, abbreviation: CHI, displayName: Chicago Bears }, score: 17 }
+        away: { team: { id: nfl-lv, abbreviation: LV, displayName: Las Vegas Raiders }, score: 20 }
+        period: 4
+        periodLabel: Q4
+        clock: '4:12'
+        version: 57
+        updatedAt: '2026-10-04T20:01:13Z'
+
+    GameDetail:
+      allOf:
+        - $ref: '#/components/schemas/GameSummary'
+        - type: object
+          required: [lineScore]
+          properties:
+            lineScore:
+              type: array
+              description: Points per period, in order. Includes overtime periods.
+              items:
+                type: object
+                required: [period, label, home, away]
+                properties:
+                  period: { type: integer }
+                  label: { type: string, examples: [Q1, '7', OT] }
+                  home: { type: integer }
+                  away: { type: integer }
+            venue: { type: string }
+            broadcast: { type: string, examples: [FOX] }
+
+    AlertType:
+      type: object
+      required: [type, name, description, category, appliesTo, defaults, precision, availability]
+      properties:
+        type:
+          type: string
+          description: |
+            Stable id. Known values include GAME_START, STARTING_SOON, DELAYED,
+            LEAD_CHANGE, CLOSE_LATE, COMEBACK, OVERTIME, FINAL, DAILY_SUMMARY,
+            END_OF_PERIOD, HALFTIME, TOUCHDOWN, TRY_RESULT, FIELD_GOAL, SAFETY,
+            TWO_MINUTE_WARNING, RED_ZONE, CHANCE_TO_WIN, BIG_RUN, BIG_LEAD,
+            TIE_LATE, RUN_SCORED, BIG_INNING, BASES_LOADED, NO_HITTER, WALK_OFF,
+            GOAL, SHUTOUT_WATCH, SHOOTOUT. The list grows.
+        name: { type: string }
+        description: { type: string, description: One sentence for under the switch. }
+        category:
+          type: string
+          enum: [before_game, scoring, game_flow, big_moment, summary]
+        appliesTo:
+          type: array
+          description: Follow kinds that offer this switch.
+          items: { $ref: '#/components/schemas/FollowKind' }
+        defaults:
+          type: object
+          description: Whether the switch starts on for a new follow of each kind.
+          properties:
+            team: { type: boolean }
+            league: { type: boolean }
+            game: { type: boolean }
+        options:
+          type: array
+          description: Extra settings beyond on and off.
+          items: { $ref: '#/components/schemas/AlertOption' }
+        precision:
+          type: string
+          enum: [exact, from_snapshots]
+          description: '`from_snapshots` alerts can occasionally miss a moment between polls. The UI may say so.'
+        availability:
+          type: string
+          enum: [available, coming_soon]
+          description: '`coming_soon` switches are shown but disabled.'
+
+    AlertOption:
+      type: object
+      required: [key, kind]
+      properties:
+        key: { type: string, examples: [innings] }
+        kind:
+          type: string
+          enum: [inning_set]
+          description: More kinds may be added. `inning_set` is a set of innings 1–9; empty means every inning.
+        label: { type: string, examples: [Which innings] }
+
+    FollowKind:
+      type: string
+      enum: [league, team, game]
+
+    FollowTargetRef:
+      type: object
+      required: [kind, id]
+      properties:
+        kind: { $ref: '#/components/schemas/FollowKind' }
+        id:
+          type: string
+          description: A league id, team id, or game id.
+          examples: [nfl-chi]
+
+    AlertSetting:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        options:
+          type: object
+          description: Values for the alert's options, keyed by option key.
+          additionalProperties: true
+          examples: [{ innings: [3, 6, 9] }]
+
+    Follow:
+      type: object
+      required: [id, target, leagueId, alerts, createdAt]
+      properties:
+        id: { type: string }
+        target:
+          allOf:
+            - $ref: '#/components/schemas/FollowTargetRef'
+            - type: object
+              required: [displayName]
+              properties:
+                displayName: { type: string, examples: [Chicago Bears] }
+                logoUrl: { type: string, format: uri }
+        leagueId: { $ref: '#/components/schemas/LeagueIdValue' }
+        alerts:
+          type: object
+          description: Every switch this follow offers, keyed by alert type.
+          additionalProperties: { $ref: '#/components/schemas/AlertSetting' }
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+          description: Game follows expire a day after the game ends. Null for leagues and teams.
+        createdAt: { type: string, format: date-time }
+      example:
+        id: f_19c2
+        target: { kind: team, id: nfl-chi, displayName: Chicago Bears }
+        leagueId: NFL
+        alerts:
+          GAME_START: { enabled: true }
+          TOUCHDOWN: { enabled: true }
+          TRY_RESULT: { enabled: true }
+          FIELD_GOAL: { enabled: true }
+          HALFTIME: { enabled: true }
+          LEAD_CHANGE: { enabled: false }
+          CLOSE_LATE: { enabled: true }
+          FINAL: { enabled: true }
+        expiresAt: null
+        createdAt: '2026-10-01T15:10:00Z'
+
+    AlertPart:
+      type: object
+      required: [type, text]
+      properties:
+        type: { type: string, description: An alert type from the catalog. }
+        text: { type: string }
+
+    Notification:
+      type: object
+      description: |
+        One push. For a game moment it is the headline alert plus any alerts merged
+        into it (`extras`), with the score at that moment. A daily summary carries
+        `summary` instead of a game.
+      required: [id, kind, leagueId, createdAt, headline]
+      properties:
+        id: { type: string }
+        kind:
+          type: string
+          enum: [game_moment, daily_summary]
+        leagueId: { $ref: '#/components/schemas/LeagueIdValue' }
+        createdAt: { type: string, format: date-time }
+        headline: { $ref: '#/components/schemas/AlertPart' }
+        extras:
+          type: array
+          items: { $ref: '#/components/schemas/AlertPart' }
+        game:
+          type: object
+          description: Present for `game_moment`.
+          required: [id, home, away]
+          properties:
+            id: { type: string }
+            home: { $ref: '#/components/schemas/GameSide' }
+            away: { $ref: '#/components/schemas/GameSide' }
+            periodLabel: { type: [string, 'null'] }
+            clock: { type: [string, 'null'] }
+        summary:
+          type: object
+          description: Present for `daily_summary`.
+          required: [date, games]
+          properties:
+            date: { type: string, format: date }
+            games:
+              type: array
+              items: { $ref: '#/components/schemas/GameSummary' }
+        sentAt:
+          type: string
+          format: date-time
+          description: When the gateway pushed it. With `detectedAt`, measures in-system delay.
+        detectedAt:
+          type: string
+          format: date-time
+          description: When the poller saw the change.
+      example:
+        id: n_5521
+        kind: game_moment
+        leagueId: NFL
+        createdAt: '2026-10-04T20:01:14Z'
+        headline: { type: TOUCHDOWN, text: 'TD Raiders! Extra point pending.' }
+        extras:
+          - { type: LEAD_CHANGE, text: Raiders take the lead. }
+        game:
+          id: nfl-401872948
+          home: { team: { id: nfl-chi, abbreviation: CHI, displayName: Chicago Bears }, score: 17 }
+          away: { team: { id: nfl-lv, abbreviation: LV, displayName: Las Vegas Raiders }, score: 20 }
+          periodLabel: Q4
+          clock: '4:12'
+        detectedAt: '2026-10-04T20:01:13Z'
+        sentAt: '2026-10-04T20:01:13Z'

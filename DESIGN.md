@@ -567,6 +567,7 @@ These are known bugs in the course code. They get fixed before or as the new pip
 - The poller saves its snapshot before the POST succeeds. A failed POST loses that play for good. Save the snapshot after.
 - Every gateway subscribes to `notify:*` and reads every notification (`NotificationFanOut.java`). Route to the gateway that holds the socket (decision 13).
 - Fan-out matches only the team that just scored. Following the Lakers misses Celtics baskets in a Lakers game. The same bug hits game start and final, which are tagged with the home team, so away-team followers miss them. This is the first Phase 2 task, test-first: a BOS follower must be notified when LAL scores in LAL–BOS, and must get that game's start.
+- Team ids are bare abbreviations (`sub:team:BOS`). `BOS` is the Celtics, the Red Sox, and the Bruins, so following one follows all three. Team ids become league-qualified (`nba-bos`), as the API spec already uses.
 - If a worker dies before ack, the entry sits forever. Kafka's session timeout replaces the missing Redis reclaim. Per-user dedup has to exist before retries are turned on, or people get duplicates.
 - Poller memory is a `HashMap`. Restart spams game-start events. Persist snapshots in Redis.
 - Game keys never expire, and the game list scans all of them. TTL finished games. Keep a bounded set of live games.
