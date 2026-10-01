@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Same versions as the laptop, so "passes in CI" means "works locally".
+  K3D_VERSION: v5.9.0
+  HELM_VERSION: v4.3.0
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      # The tests expect Redis on localhost:6379.
+      redis:
+        image: redis:7.4
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - run: mvn -B test
+
+  # Deploy to a throwaway k3d cluster with the same make targets used on the laptop.
+  deploy-check:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install k3d
+        run: curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=$K3D_VERSION bash
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - run: make cluster up smoke
+      - name: Show pods and logs
+        if: failure()
+        run: make logs

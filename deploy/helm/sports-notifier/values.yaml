@@ -1,0 +1,49 @@
+image:
+  repository: sports-notifier
+  tag: dev            # make up always overrides with the git-based tag
+  pullPolicy: IfNotPresent
+
+javaResources:
+  requests: { cpu: 50m, memory: 256Mi }
+  limits: { memory: 512Mi }
+
+probes:
+  startup:   { periodSeconds: 5,  failureThreshold: 24 }  # up to 2 minutes to boot
+  readiness: { periodSeconds: 10, failureThreshold: 3 }
+  liveness:  { periodSeconds: 20, failureThreshold: 3 }
+
+# One Deployment per entry, named after the key. clusterService: false means no Service object.
+services:
+  gateway:
+    replicas: 1
+    port: 8080
+    portEnv: GATEWAY_PORT
+    clusterService: true
+    env:
+      USER_PREF_URL: http://user-pref:8081
+      GAME_STATE_URL: http://game-state:8082
+      NOTIFICATION_URL: http://notification:8087
+  user-pref:        { replicas: 1, port: 8081, portEnv: USER_PREF_PORT,        clusterService: true }
+  game-state:       { replicas: 1, port: 8082, portEnv: GAME_STATE_PORT,       clusterService: true }
+  event-processing: { replicas: 1, port: 8083, portEnv: EVENT_PROCESSING_PORT, clusterService: true }
+  notification:     { replicas: 1, port: 8087, portEnv: NOTIFICATION_PORT,     clusterService: true }
+  pubsub-worker:
+    replicas: 2
+    port: 8084
+    portEnv: PUBSUB_WORKER_PORT
+    clusterService: false
+    podNameEnv: PUBSUB_CONSUMER_NAME   # unique consumer name per pod in the Redis consumer group
+
+# Always exactly one pod: two Redis pods would be two unrelated databases.
+redis:
+  image: redis:7.4
+  storage: 1Gi
+
+# At most one pod: two pollers send every play twice until Phase 2 fixes poller ids.
+espnPoller:
+  enabled: false
+  pollIntervalMs: 30000
+
+simulator:
+  intervalMs: 2000
+  waves: 3

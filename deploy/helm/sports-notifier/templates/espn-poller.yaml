@@ -1,0 +1,36 @@
+{{- if .Values.espnPoller.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: espn-poller
+  labels:
+    {{- include "sports-notifier.labels" "espn-poller" | nindent 4 }}
+spec:
+  # Hard-coded: two pollers send every play twice until Phase 2 fixes poller ids.
+  replicas: 1
+  # Stop the old poller before starting the new one, so two never overlap during an upgrade.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: espn-poller
+  template:
+    metadata:
+      labels:
+        {{- include "sports-notifier.labels" "espn-poller" | nindent 8 }}
+    spec:
+      containers:
+        - name: espn-poller
+          image: {{ include "sports-notifier.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: SERVICE
+              value: espn-poller
+            {{- include "sports-notifier.baseEnv" . | nindent 12 }}
+            - name: EPS_URL
+              value: http://event-processing:8083
+            - name: ESPN_POLL_INTERVAL_MS
+              value: {{ .Values.espnPoller.pollIntervalMs | quote }}
+          resources:
+            {{- toYaml .Values.javaResources | nindent 12 }}
+{{- end }}
