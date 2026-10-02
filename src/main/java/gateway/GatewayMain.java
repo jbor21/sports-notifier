@@ -65,17 +65,14 @@ public final class GatewayMain {
         app.post("/api/login", ctx -> {
             String username = usernameIn(ctx.body());
             String ip = ClientAddress.of(ctx.header("X-Real-Ip"), ctx.header("X-Forwarded-For"), ctx.ip());
-            if (loginThrottle.blocked(username, ip)) {
+            // Count the attempt before checking the password; see LoginThrottle for why.
+            if (!loginThrottle.admit(username, ip)) {
                 ctx.status(429).json(Map.of("error", "too many failed logins, try again later"));
                 return;
             }
             HttpResponse<String> r = SimpleHttp.postJson(USER_PREF_URL + "/users/login", ctx.body());
-            if (r.statusCode() >= 400) {
-                if (r.statusCode() == 401) loginThrottle.recordFailure(username, ip);
-                ctx.status(r.statusCode()).result(r.body());
-                return;
-            }
-            loginThrottle.recordSuccess(username);
+            if (r.statusCode() >= 400) { ctx.status(r.statusCode()).result(r.body()); return; }
+            loginThrottle.recordSuccess(username, ip);
             String userId = JsonParser.parseString(r.body()).getAsJsonObject().get("userId").getAsString();
             SessionAuth.createSession(pool, ctx, userId);
             ctx.json(JsonParser.parseString(r.body()));
