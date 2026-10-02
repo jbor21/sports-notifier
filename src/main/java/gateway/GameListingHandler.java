@@ -3,8 +3,8 @@ package gateway;
 import io.javalin.http.Context;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.params.ScanParams;
-import redis.clients.jedis.resps.ScanResult;
+import redis.clients.jedis.Pipeline;
+import redis.clients.jedis.Response;
 import util.RedisKeys;
 
 import java.util.ArrayList;
@@ -13,8 +13,9 @@ import java.util.Map;
 
 /**
  * Handles the {@code GET /api/games} endpoint.
- * Iterates all {@code game:*} Redis Hash keys via SCAN (cursor-based, memory-safe)
- * and returns the full state of every active game as a JSON array.
+ * Reads the bounded {@code games:recent} set the Lua script maintains (no scan of every
+ * {@code game:*} key), newest first. Scheduled games are left out; the UI gets those from
+ * {@code /api/upcoming}. Ids whose record has expired are skipped.
  */
 public final class GameListingHandler {
 
@@ -24,31 +25,27 @@ public final class GameListingHandler {
         this.pool = pool;
     }
 
-    /**
-     * Scans all {@code game:*} keys and returns their field maps, each augmented
-     * with a top-level {@code gameId} field derived from the key name.
-     *
-     * @param ctx Javalin request context; response is written as JSON.
-     */
     public void handleList(Context ctx) {
+        ctx.json(listGames());
+    }
+
+    /** Each game's record, plus a {@code gameId} field. */
+    public List<Map<String, String>> listGames() {
         try (Jedis jedis = pool.getResource()) {
+            List<String> ids = new ArrayList<>(jedis.zrevrange(RedisKeys.GAMES_RECENT, 0, -1));
+            Pipeline p = jedis.pipelined();
+            List<Response<Map<String, String>>> records = new ArrayList<>();
+            for (String id : ids) records.add(p.hgetAll(RedisKeys.GAME_PREFIX + id));
+            p.sync();
+
             List<Map<String, String>> games = new ArrayList<>();
-            String cursor = "0";
-            do {
-                ScanParams params = new ScanParams()
-                    .match(RedisKeys.GAME_PREFIX + "*")
-                    .count(100);
-                ScanResult<String> result = jedis.scan(cursor, params);
-                cursor = result.getCursor();
-                for (String key : result.getResult()) {
-                    Map<String, String> state = jedis.hgetAll(key);
-                    if (state != null && !state.isEmpty()) {
-                        state.put("gameId", key.substring(RedisKeys.GAME_PREFIX.length()));
-                        games.add(state);
-                    }
-                }
-            } while (!cursor.equals("0"));
-            ctx.json(games);
+            for (int i = 0; i < ids.size(); i++) {
+                Map<String, String> state = records.get(i).get();
+                if (state == null || state.isEmpty() || "SCHEDULED".equals(state.get("status"))) continue;
+                state.put("gameId", ids.get(i));
+                games.add(state);
+            }
+            return games;
         }
     }
 }

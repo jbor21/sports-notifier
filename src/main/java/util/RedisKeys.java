@@ -11,6 +11,9 @@ public final class RedisKeys {
     /** Hash storing live game state: {@code game:<gameId>} */
     public static final String GAME_PREFIX = "game:";
 
+    /** Sorted set of recently updated game ids, scored by Redis time in seconds: {@code games:recent} */
+    public static final String GAMES_RECENT = "games:recent";
+
     /** SET NX dedup guard per event: {@code processed:<eventId>} */
     public static final String PROCESSED_PREFIX = "processed:";
 
