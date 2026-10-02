@@ -40,9 +40,35 @@ Every host and User-Agent pair returned 200 for every league.
 | site.web.api.espn.com | Mozilla/5.0 | mlb | 200 | 4 |
 | site.web.api.espn.com | Mozilla/5.0 | nhl | 200 | 5 |
 
-## From a GitHub runner (data center)
+## 2026-10-02, from a GitHub runner (data center)
 
-Not run yet. It runs on the Phase 2 pull request (the workflow also triggers on PRs that change the check), then daily once merged; `gh workflow run espn-check.yml` works after merge. Copy the table from the run's summary page here.
+Every host and User-Agent pair returned 200 for every league, including `site.api.espn.com`, which a cloud fetch tool was refused on 2026-10-01. ESPN's filtering evidently differs by address and changes over time; the daily check keeps watching. Run on PR #2 (`ESPN check` workflow).
+
+| host | user agent | league | HTTP | games |
+| site.api.espn.com | sports-notifier/1.0 | nba | 200 | 1 |
+| site.api.espn.com | sports-notifier/1.0 | nfl | 200 | 16 |
+| site.api.espn.com | sports-notifier/1.0 | mlb | 200 | 4 |
+| site.api.espn.com | sports-notifier/1.0 | nhl | 200 | 5 |
+| site.api.espn.com | Java-http-client/17 | nba | 200 | 1 |
+| site.api.espn.com | Java-http-client/17 | nfl | 200 | 16 |
+| site.api.espn.com | Java-http-client/17 | mlb | 200 | 4 |
+| site.api.espn.com | Java-http-client/17 | nhl | 200 | 5 |
+| site.api.espn.com | Mozilla/5.0 | nba | 200 | 1 |
+| site.api.espn.com | Mozilla/5.0 | nfl | 200 | 16 |
+| site.api.espn.com | Mozilla/5.0 | mlb | 200 | 4 |
+| site.api.espn.com | Mozilla/5.0 | nhl | 200 | 5 |
+| site.web.api.espn.com | sports-notifier/1.0 | nba | 200 | 1 |
+| site.web.api.espn.com | sports-notifier/1.0 | nfl | 200 | 16 |
+| site.web.api.espn.com | sports-notifier/1.0 | mlb | 200 | 4 |
+| site.web.api.espn.com | sports-notifier/1.0 | nhl | 200 | 5 |
+| site.web.api.espn.com | Java-http-client/17 | nba | 200 | 1 |
+| site.web.api.espn.com | Java-http-client/17 | nfl | 200 | 16 |
+| site.web.api.espn.com | Java-http-client/17 | mlb | 200 | 4 |
+| site.web.api.espn.com | Java-http-client/17 | nhl | 200 | 5 |
+| site.web.api.espn.com | Mozilla/5.0 | nba | 200 | 1 |
+| site.web.api.espn.com | Mozilla/5.0 | nfl | 200 | 16 |
+| site.web.api.espn.com | Mozilla/5.0 | mlb | 200 | 4 |
+| site.web.api.espn.com | Mozilla/5.0 | nhl | 200 | 5 |
 
 ## If the cloud gets refused
 
