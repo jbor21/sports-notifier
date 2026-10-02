@@ -5,6 +5,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Map;
 
 public final class SimpleHttp {
 
@@ -19,6 +20,14 @@ public final class SimpleHttp {
             .timeout(Duration.ofSeconds(5))
             .GET().build();
         return CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
+    public static HttpResponse<String> get(String url, Map<String, String> headers) throws Exception {
+        HttpRequest.Builder req = HttpRequest.newBuilder(URI.create(url))
+            .timeout(Duration.ofSeconds(5))
+            .GET();
+        headers.forEach(req::header);
+        return CLIENT.send(req.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     public static HttpResponse<String> postJson(String url, String json) throws Exception {

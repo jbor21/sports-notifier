@@ -9,6 +9,7 @@ import io.javalin.http.staticfiles.Location;
 import io.javalin.websocket.WsContext;
 import redis.clients.jedis.JedisPool;
 import util.GsonJsonMapper;
+import feed.EspnClient;
 import util.JedisPoolHolder;
 import util.SimpleHttp;
 
@@ -30,7 +31,7 @@ public final class GatewayMain {
         int port = Integer.parseInt(System.getenv().getOrDefault("GATEWAY_PORT", "8080"));
         JedisPool pool = JedisPoolHolder.create();
         GameListingHandler gameListingHandler = new GameListingHandler(pool);
-        EspnProxyHandler espnProxyHandler = new EspnProxyHandler();
+        EspnProxyHandler espnProxyHandler = new EspnProxyHandler(EspnClient.fromEnv());
         var subscriberJedis = JedisPoolHolder.dedicated();
         NotificationFanOut fanOut = new NotificationFanOut(subscriberJedis);
         fanOut.start();

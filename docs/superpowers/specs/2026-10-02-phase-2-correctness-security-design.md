@@ -179,7 +179,7 @@ Today it answers `202` for everything. The poller needs the difference (section 
 | `feed/Seq` | Snapshot → `seq` (section 2.1) |
 | `feed/PollDecision` | Pure: (saved game record or none, snapshot) → the one event to send, or nothing |
 | `simulator/EspnPollerMain` | The loop only: fetch, decide, post, schedule. The chart now gives it `REDIS_HOST` and `REDIS_PORT` |
-| `gateway/EspnProxyHandler` | `/api/upcoming` reads through `EspnScoreFeed` instead of its own hard-coded `site.api.espn.com` request, so the gateway and the poller share one host and User-Agent setting. Otherwise the poller would work on AWS while the UI's upcoming list broke |
+| `gateway/EspnProxyHandler` | `/api/upcoming` makes its request through the shared `EspnClient` instead of its own hard-coded `site.api.espn.com` request (it keeps its own parsing, which needs logos and full names), so the gateway and the poller share one host and User-Agent setting. Otherwise the poller would work on AWS while the UI's upcoming list broke |
 
 The interface was called `SportsDataProvider` in `DESIGN.md`. It is renamed `ScoreFeed` so it is not mistaken for the paid SportsDataIO service.
 

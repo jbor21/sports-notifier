@@ -19,6 +19,7 @@ services:
     port: 8080
     portEnv: GATEWAY_PORT
     clusterService: true
+    espn: true          # gets ESPN_HOST / ESPN_USER_AGENT for /api/upcoming
     env:
       USER_PREF_URL: http://user-pref:8081
       GAME_STATE_URL: http://game-state:8082
@@ -33,6 +34,12 @@ services:
     portEnv: PUBSUB_WORKER_PORT
     clusterService: false
     podNameEnv: PUBSUB_CONSUMER_NAME   # unique consumer name per pod in the Redis consumer group
+
+# ESPN request settings, shared by the gateway's upcoming-games proxy and the poller. ESPN's
+# filtering changes over time; the daily espn-check workflow says when these stop working.
+espn:
+  host: site.web.api.espn.com
+  userAgent: "sports-notifier/1.0 (+https://github.com/boboborenstein-collab/sports-notifier)"
 
 # Always exactly one pod: two Redis pods would be two unrelated databases.
 redis:
