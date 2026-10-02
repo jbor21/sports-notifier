@@ -12,12 +12,23 @@ TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status 
 
 .PHONY: test cluster up simulate smoke logs down
 
+# Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
+# until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
+# answers "unable to handle the request", and the image import in `make up` then fails (seen in CI).
 cluster:
 	@if k3d cluster get $(CLUSTER) >/dev/null 2>&1; then \
 		echo "Cluster $(CLUSTER) already exists"; \
+		k3d cluster start $(CLUSTER) >/dev/null; \
 	else \
 		k3d cluster create $(CLUSTER) -p "127.0.0.1:8080:80@loadbalancer" --wait; \
 	fi
+	@for i in $$(seq 1 60); do \
+		kubectl --context $(KUBE_CONTEXT) get --raw /readyz >/dev/null 2>&1 && break; \
+		sleep 2; \
+	done
+	@kubectl --context $(KUBE_CONTEXT) get --raw /readyz >/dev/null || { echo "Kubernetes API not ready after 2 minutes"; exit 1; }
+	@kubectl --context $(KUBE_CONTEXT) wait --for=condition=Ready node --all --timeout=120s >/dev/null
+	@echo "Cluster $(CLUSTER) is ready"
 
 up:
 	@k3d cluster get $(CLUSTER) >/dev/null 2>&1 || { echo "Cluster $(CLUSTER) not found. Run: make cluster"; exit 1; }
