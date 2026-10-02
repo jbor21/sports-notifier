@@ -164,8 +164,10 @@ These are live and unaddressed:
   `make down` deletes the cluster and every account with it until Phase 3.
 - **CI:** GitHub Actions runs the tests, then `make cluster up smoke` on a
   throwaway k3d cluster, on every push and pull request.
-- **Next step: Phase 2 (Correctness and security),** starting with its
-  brainstorm. Phase 1 is merged (PR #1) and the notification catalog is
+- **Next step: Phase 2 (Correctness and security).** The brainstorm is done;
+  the spec is `docs/superpowers/specs/2026-10-02-phase-2-correctness-security-design.md`
+  on branch `phase-2-correctness` (worktree `.worktrees/phase-2-correctness`).
+  Next: user review of the spec, then the implementation plan. Phase 1 is merged (PR #1) and the notification catalog is
   decided (`DESIGN.md` decision 15). Phase 2's inputs are `DESIGN.md` build
   order step 2 and "Security and correctness still to fix", plus "Deferred to
   Phase 2" in `docs/superpowers/specs/2026-09-29-phase-1-foundation-design.md`.
@@ -218,9 +220,9 @@ not a new product. Full rationale is in `DESIGN.md`. Locked:
   push per moment, but the final is always its own push; deterministic ids; v1 is scoreboard-only,
   play-by-play and player alerts later. It replaces `GAME_START` /
   `SCORE_UPDATE` / `GAME_END`. Do not reopen the tables unless the user asks.
-- **ESPN** stays behind a provider interface for v1. No paid feed. Phase 2
-  measures MySportsFeeds and the MLB/NHL league feeds against it (delay,
-  fields, cloud-IP blocking); the provider may differ per sport.
+- **ESPN** is the only source for now, behind the `ScoreFeed` interface. No
+  paid feed, no provider comparison (dropped 2026-10-02). Phase 2 checks
+  whether ESPN answers from a data-center IP; another feed is a later version.
 - **New UI is phase 3b**, frontend only, in `web/`, built against the API
   spec in `docs/api/`. It must not add its own database, auth, or server.
 - Hybrid fan-out (deliver small audiences inside Stage 1) and Kafka

@@ -8,6 +8,8 @@ Revised 2026-09-28: hosting moved from one always-on Hetzner VM to Kubernetes, r
 
 Revised 2026-09-29: decision 15, the notification catalog. Four sports, alerts as moments rather than every score, switches per follow, detected from the scoreboard.
 
+Revised 2026-10-02: decision 10 drops the Phase 2 provider comparison. ESPN only for now, plus a check that ESPN answers from a data-center address. The interface is named `ScoreFeed`.
+
 Revised 2026-09-30: decision 15 tightened. League follows get a daily summary instead of a final per game. The final is always its own push. Close-game conditions are explicit and never apply in overtime. Game-follow defaults, precedence between follows, overlap rules, NFL ties, and duplicate-proof alert ids are defined.
 
 ---
@@ -285,13 +287,13 @@ The app cannot move to Cloudflare Workers, Lambda, or Cloud Run. Those run short
 
 ### 10. ESPN behind an interface, no paid feed
 
-**Chose.** A `SportsDataProvider` interface. The ESPN poller is the current adapter. Poll about every 5 seconds while games are live and about every 60 seconds when nothing is. Send a browser-like User-Agent. Back off and alert on 403s. Snapshots of the last score live in Redis, not in a `HashMap`, so a restart does not re-send "game start" for every game in progress. Play-by-play (`summary?event=<id>`) is polled only for games someone is actually following.
+**Chose.** A `ScoreFeed` interface (named `SportsDataProvider` in earlier drafts; renamed so it is not mistaken for the paid SportsDataIO). The ESPN poller is the current adapter. Poll about every 5 seconds while games are live and about every 60 seconds when nothing is. Send a browser-like User-Agent. Back off and alert on 403s. Snapshots of the last score live in Redis, not in a `HashMap`, so a restart does not re-send "game start" for every game in progress. Play-by-play (`summary?event=<id>`) is polled only for games someone is actually following.
 
 **Gave up.** A licensed push feed (Sportradar, Genius, Stats Perform / Opta). Those are what the real apps pay for. Official feeds are push, not poll, and they are enterprise contracts. Cheap developer APIs are still polling and are not meaningfully faster than ESPN. Even the paid play-by-play feeds trail the television broadcast by roughly 15–20 seconds.
 
 **Why.** Almost all of the delay a user feels is the poll interval plus ESPN, not Kafka. The in-system path is tens of milliseconds. We will measure it (timestamp when the poller saw the play, record the delay at the gateway). The interface is so a push provider is one class later, and so the unofficial API is an adapter you can explain instead of a hidden dependency.
 
-**Provider test in Phase 2.** ESPN stays the v1 source for all four sports, because it covers them in one shape and carries team logos and colors. When Phase 2 builds the provider interface, it also measures the alternatives side by side: MySportsFeeds (free for non-commercial use, all four leagues, play-by-play, an API key), and the leagues' own MLB and NHL feeds (`statsapi.mlb.com`, `api-web.nhle.com`; free, keyless, play-by-play, undocumented). For each: the delay behind live play, which of decision 15's **?** fields it has, and whether it answers requests from a cloud IP. That last one matters for Phase 5: the NBA's own feed is known to block data-center IPs, and ESPN may too. The provider can then differ per sport. The API the UI talks to does not change with that choice.
+**ESPN only, for now.** ESPN stays the source for all four sports, because it covers them in one shape and carries team logos and colors. The provider comparison planned for Phase 2 (MySportsFeeds and the leagues' own MLB and NHL feeds) was dropped on 2026-10-02; a different feed is a later version's decision, and it would be one new `ScoreFeed` class plus the `seq` computation for that feed. Phase 2 instead checks one thing that matters for Phase 5: whether ESPN answers requests from a data-center address, using a GitHub Actions runner. Phase 5 repeats the request from AWS first. The API the UI talks to does not change with the source.
 
 ### 11. Hybrid fan-out, later, only if measurement says so
 
