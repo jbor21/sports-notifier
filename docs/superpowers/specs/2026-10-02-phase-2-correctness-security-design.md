@@ -227,7 +227,7 @@ Descriptions keep today's wording, so history and the smoke test still match: `<
 ### 3.4 Polling speed and blocks
 
 - Each league is scheduled on its own. The next poll is in 5 s if that league had a live game in the last poll, otherwise 60 s. Both are settings: `ESPN_POLL_LIVE_MS` and `ESPN_POLL_IDLE_MS`. `ESPN_POLL_INTERVAL_MS` is removed.
-- Requests send a browser User-Agent.
+- The ESPN host and the User-Agent are settings: `ESPN_HOST` (`site.api.espn.com` or `site.web.api.espn.com`) and `ESPN_USER_AGENT`. As of 2026-10-01, ESPN has been reported to refuse browser-impersonating User-Agents while honest client agents get through, and `site.api` refused a cloud request that `site.web.api` answered. The defaults are set from the section 9 check's results. Until then: `site.web.api.espn.com` and an honest agent, `sports-notifier/<version> (+https://github.com/boboborenstein-collab/sports-notifier)`. `DESIGN.md` decision 10's "browser-like User-Agent" is updated to match whatever the check shows.
 - On `FeedBlockedException` the league's interval doubles, up to 5 minutes, with a warning per block. It resets on the first success.
 
 ### 3.5 Tests
@@ -351,7 +351,7 @@ Every gateway route takes the user id from the session cookie, never from the re
 
 ## 9. ESPN cloud-IP check
 
-`.github/workflows/espn-check.yml`, started by hand (`workflow_dispatch`). From a GitHub-hosted runner, which sits in a data center like AWS does, it requests the NBA, NFL, MLB, and NHL scoreboards with the poller's User-Agent. It prints each HTTP status and the number of games, and fails if any status is not 200.
+`.github/workflows/espn-check.yml`, started by hand (`workflow_dispatch`). From a GitHub-hosted runner, which sits in a data center like AWS does, it requests the NBA, NFL, MLB, and NHL scoreboards for each combination of host (`site.api.espn.com`, `site.web.api.espn.com`) and User-Agent (the honest agent, a browser string). It prints a table of HTTP status and number of games per combination, and fails if no combination returns 200 for every league. The poller's defaults (section 3.4) take the first combination that passes from both the runner and the laptop.
 
 Purpose: learn before Phase 5 whether ESPN refuses data-center addresses. A pass from GitHub is a good sign for AWS, not proof. Phase 5 runs the same request from AWS first.
 
