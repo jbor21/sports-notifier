@@ -6,11 +6,10 @@ metadata:
   labels:
     {{- include "sports-notifier.labels" "espn-poller" | nindent 4 }}
 spec:
-  # Hard-coded: two pollers send every play twice until Phase 2 fixes poller ids.
+  # One is enough. A normal rolling update briefly runs the old and new poller side by side,
+  # which is harmless: event ids and seq come from ESPN's data, so the second poller's events
+  # are duplicates or stale, and the Lua script drops them.
   replicas: 1
-  # Stop the old poller before starting the new one, so two never overlap during an upgrade.
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: espn-poller
@@ -27,10 +26,13 @@ spec:
             - name: SERVICE
               value: espn-poller
             {{- include "sports-notifier.baseEnv" . | nindent 12 }}
+            {{- include "sports-notifier.espnEnv" . | nindent 12 }}
             - name: EPS_URL
               value: http://event-processing:8083
-            - name: ESPN_POLL_INTERVAL_MS
-              value: {{ .Values.espnPoller.pollIntervalMs | quote }}
+            - name: ESPN_POLL_LIVE_MS
+              value: {{ .Values.espnPoller.liveMs | quote }}
+            - name: ESPN_POLL_IDLE_MS
+              value: {{ .Values.espnPoller.idleMs | quote }}
           resources:
             {{- toYaml .Values.javaResources | nindent 12 }}
 {{- end }}

@@ -4,10 +4,13 @@ import model.GameEvent;
 import model.Notification;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.Pipeline;
 import redis.clients.jedis.resps.StreamEntry;
 import redis.clients.jedis.StreamEntryID;
 import redis.clients.jedis.exceptions.JedisDataException;
+import redis.clients.jedis.params.ScanParams;
 import redis.clients.jedis.params.XReadGroupParams;
+import redis.clients.jedis.resps.ScanResult;
 import service.NotificationService;
 import service.PubSubWorker;
 import service.UserPreferenceService;
@@ -25,6 +28,8 @@ public class PubSubWorkerImpl implements PubSubWorker {
     private final String consumerName;
     private static final String STREAM_KEY = RedisKeys.GAME_EVENTS_STREAM;
     private static final String GROUP_NAME = RedisKeys.WORKER_GROUP;
+    private static final int FANOUT_PAGE_SIZE = 1000;
+    private static final long FANOUT_KEY_TTL_SECONDS = 60L;
     private volatile boolean running = true;
 
     public PubSubWorkerImpl(UserPreferenceService userPreferenceService,
@@ -87,55 +92,59 @@ public class PubSubWorkerImpl implements PubSubWorker {
         fanOutNotifications(event);
     }
 
-    private void scanAndAddSubscribers(Jedis jedis, String key, Set<String> subscribers) {
-        String cursor = "0";
-        redis.clients.jedis.params.ScanParams params = new redis.clients.jedis.params.ScanParams().count(100);
-        do {
-            redis.clients.jedis.resps.ScanResult<String> result = jedis.sscan(key, cursor, params);
-            subscribers.addAll(result.getResult());
-            cursor = result.getCursor();
-        } while (!cursor.equals("0"));
-    }
-
+    /**
+     * Builds the audience inside Redis instead of in Java: the union of everyone following either
+     * team, the game, or the league, intersected with everyone who enabled this event type.
+     * That is a handful of Redis calls per event, not one SISMEMBER round trip per subscriber, and
+     * the union de-duplicates a user who follows both teams so they get one notification.
+     * Both teams, not just the tagged one: following a team means following its whole game.
+     */
     @Override
     public void fanOutNotifications(GameEvent event) {
-        Set<String> subscribers = new HashSet<>();
+        if (event.getEventType() == null) return;
+
+        List<String> sources = new ArrayList<>();
+        for (String team : new LinkedHashSet<>(Arrays.asList(
+                event.getHomeTeam(), event.getAwayTeam(), event.getTeam()))) {
+            if (team != null) sources.add(RedisKeys.SUB_TEAM_PREFIX + team);
+        }
+        if (event.getGameId() != null) sources.add(RedisKeys.SUB_GAME_PREFIX + event.getGameId());
+        if (event.getLeague() != null) sources.add(RedisKeys.SUB_LEAGUE_PREFIX + event.getLeague());
+        if (sources.isEmpty()) return;
+
+        String audience = RedisKeys.FANOUT_PREFIX + event.getEventId();
+        Notification notification = new Notification(
+            null,
+            event.getGameId(),
+            event.getDescription(),
+            event.getTimestamp(),
+            event.getLeague(),
+            event.getHomeTeam(),
+            event.getAwayTeam()
+        );
 
         try (Jedis jedis = pool.getResource()) {
-            if (event.getTeam() != null) {
-                scanAndAddSubscribers(jedis, RedisKeys.SUB_TEAM_PREFIX + event.getTeam(), subscribers);
-            }
-            if (event.getGameId() != null) {
-                scanAndAddSubscribers(jedis, RedisKeys.SUB_GAME_PREFIX + event.getGameId(), subscribers);
-            }
-            if (event.getLeague() != null) {
-                scanAndAddSubscribers(jedis, RedisKeys.SUB_LEAGUE_PREFIX + event.getLeague(), subscribers);
-            }
+            try {
+                Pipeline p = jedis.pipelined();
+                p.sunionstore(audience, sources.toArray(new String[0]));
+                p.sinterstore(audience, audience, RedisKeys.SUB_NOTIF_PREFIX + event.getEventType());
+                // Safety net: if this worker dies mid-fan-out, the temporary set still goes away.
+                p.expire(audience, FANOUT_KEY_TTL_SECONDS);
+                p.sync();
 
-            if (subscribers.isEmpty()) return;
-
-            List<String> matchingUsers = new ArrayList<>();
-            if (event.getEventType() != null) {
-                for (String userId : subscribers) {
-                    if (jedis.sismember(RedisKeys.SUB_NOTIF_PREFIX + event.getEventType(), userId)) {
-                        matchingUsers.add(userId);
+                // Page through the result so a huge audience never sits in memory all at once.
+                ScanParams params = new ScanParams().count(FANOUT_PAGE_SIZE);
+                String cursor = ScanParams.SCAN_POINTER_START;
+                do {
+                    ScanResult<String> page = jedis.sscan(audience, cursor, params);
+                    if (!page.getResult().isEmpty()) {
+                        notificationService.sendNotification(page.getResult(), notification);
                     }
-                }
+                    cursor = page.getCursor();
+                } while (!cursor.equals(ScanParams.SCAN_POINTER_START));
+            } finally {
+                jedis.del(audience);
             }
-
-            if (matchingUsers.isEmpty()) return;
-
-            Notification notification = new Notification(
-                null,
-                event.getGameId(),
-                event.getDescription(),
-                event.getTimestamp(),
-                event.getLeague(),
-                event.getHomeTeam(),
-                event.getAwayTeam()
-            );
-
-            notificationService.sendNotification(matchingUsers, notification);
         }
     }
 }

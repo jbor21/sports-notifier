@@ -15,6 +15,7 @@ public final class NotificationServiceMain {
     private static final Gson GSON = new Gson();
 
     public static void main(String[] args) {
+        JedisPoolHolder.awaitRedisOrExit("notification");
         int port = Integer.parseInt(System.getenv().getOrDefault("NOTIFICATION_PORT", "8087"));
         JedisPool pool = JedisPoolHolder.create();
         NotificationServiceImpl svc = new NotificationServiceImpl(pool);

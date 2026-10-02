@@ -4,7 +4,6 @@ import model.GameEvent;
 import util.GameEventParser;
 import util.SimpleHttp;
 
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -83,10 +82,11 @@ public final class EventSimulatorMain {
     private static void runGame(String gameId, String home, String away, String league,
                                 long intervalMs, CountDownLatch latch) {
         try {
+            int n = 1;
             long t = System.currentTimeMillis();
-            post(new GameEvent(gameId, uuid(), "GAME_START", home, t,
+            post(new GameEvent(gameId, eventId(gameId, n), "GAME_START", home, t,
                 home + " vs " + away + " has started",
-                home, away, 0, 0, "IN_PROGRESS", league));
+                home, away, 0, 0, "IN_PROGRESS", league, seq(n)));
 
             int hs = 0, as = 0;
             int events = 15 + ThreadLocalRandom.current().nextInt(11); // 15–25 scoring events
@@ -97,16 +97,18 @@ public final class EventSimulatorMain {
                 if (homeScores) hs += pts; else as += pts;
                 String scorer = homeScores ? home : away;
                 t = System.currentTimeMillis();
-                post(new GameEvent(gameId, uuid(), "SCORE_UPDATE", scorer, t,
+                n++;
+                post(new GameEvent(gameId, eventId(gameId, n), "SCORE_UPDATE", scorer, t,
                     scorer + " scores! " + home + " " + hs + " - " + as + " " + away,
-                    home, away, hs, as, "IN_PROGRESS", league));
+                    home, away, hs, as, "IN_PROGRESS", league, seq(n)));
             }
 
             Thread.sleep(intervalMs);
             t = System.currentTimeMillis();
-            post(new GameEvent(gameId, uuid(), "GAME_END", home, t,
+            n++;
+            post(new GameEvent(gameId, eventId(gameId, n), "GAME_END", home, t,
                 "Final: " + home + " " + hs + " - " + as + " " + away,
-                home, away, hs, as, "FINAL", league));
+                home, away, hs, as, "FINAL", league, seq(n)));
 
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
@@ -123,5 +125,12 @@ public final class EventSimulatorMain {
         System.out.println("[Simulator] " + ev.getEventType() + " " + ev.getGameId() + " :: " + ev.getDescription());
     }
 
-    private static String uuid() { return UUID.randomUUID().toString(); }
+    // One id per run. seq = runId * 1000 + n makes every run newer than the last, so repeated
+    // `make simulate` / `make smoke` on one cluster are never rejected as stale, and when two
+    // runs overlap the later one wins. Fits easily under 2^53, so Lua compares it exactly.
+    private static final long RUN_ID = System.currentTimeMillis();
+
+    private static String eventId(String gameId, int n) { return "sim:" + RUN_ID + ":" + gameId + ":" + n; }
+
+    private static long seq(int n) { return RUN_ID * 1000 + n; }
 }

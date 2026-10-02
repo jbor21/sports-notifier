@@ -11,6 +11,7 @@ import java.util.Collections;
 public final class PubSubWorkerMain {
 
     public static void main(String[] args) {
+        JedisPoolHolder.awaitRedisOrExit("pubsub-worker");
         int port = Integer.parseInt(System.getenv().getOrDefault("PUBSUB_WORKER_PORT", "8084"));
         String consumerName = System.getenv().getOrDefault("PUBSUB_CONSUMER_NAME", "worker-" + port);
 

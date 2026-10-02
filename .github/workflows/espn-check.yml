@@ -1,0 +1,21 @@
+name: ESPN check
+
+# Can the app still read ESPN from a data center? GitHub's runners sit in one, like AWS will
+# (Phase 5). ESPN's filtering has changed month to month, so this runs daily: a failed
+# scheduled run emails the repo owner before a demo finds out. Results are on the run's
+# summary page.
+on:
+  workflow_dispatch:
+  # Also on PRs that change the check: workflow_dispatch only works once the workflow is on main.
+  pull_request:
+    paths: [scripts/espn-check.sh, .github/workflows/espn-check.yml]
+  schedule:
+    - cron: "17 6 * * *"   # daily, 06:17 UTC (off the hour, when GitHub's scheduler is less busy)
+
+jobs:
+  espn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/espn-check.sh

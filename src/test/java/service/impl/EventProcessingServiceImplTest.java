@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
+import service.ProcessResult;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -15,7 +16,6 @@ class EventProcessingServiceImplTest {
 
     private JedisPool pool;
     private Jedis jedis;
-    private GameStateServiceImpl gameStateService;
     private EventProcessingServiceImpl service;
 
     @BeforeEach
@@ -24,8 +24,7 @@ class EventProcessingServiceImplTest {
         jedis = new Jedis("localhost", 6379);
         jedis.select(1);
         jedis.flushDB();
-        gameStateService = new GameStateServiceImpl(pool);
-        service = new EventProcessingServiceImpl(gameStateService, pool);
+        service = new EventProcessingServiceImpl(pool);
     }
 
     @AfterEach
@@ -34,71 +33,105 @@ class EventProcessingServiceImplTest {
         pool.close();
     }
 
+    private static GameEvent ev(String id, long seq, int home, int away, String type) {
+        return new GameEvent("g1", id, type, "LAL", 1000L, "desc",
+            "LAL", "BOS", home, away, "IN_PROGRESS", "NBA", seq);
+    }
+
     @Test
-    void processEvent_publishesToStream() {
-        GameEvent event = new GameEvent("g1", "e1", "GAME_START", "Lakers",
-            1000L, "Start", "Lakers", "Celtics", 0, 0, "IN_PROGRESS", "NBA");
+    void acceptedEventIsPublishedAndSaved() {
+        assertEquals(ProcessResult.ACCEPTED, service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE")));
+        assertEquals(1L, jedis.xlen("game-events"));
+        assertEquals("10", jedis.hget("game:g1", "lastSeq"));
+        assertEquals("LAL", jedis.hget("game:g1", "homeTeam"));
+        assertEquals("2", jedis.hget("game:g1", "homeScore"));
+    }
 
-        service.processEvent(event);
-
+    @Test
+    void sameIdTwiceIsDuplicate() {
+        service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+        assertEquals(ProcessResult.DUPLICATE, service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE")));
         assertEquals(1L, jedis.xlen("game-events"));
     }
 
     @Test
-    void processEvent_updatesGameState() {
-        GameEvent event = new GameEvent("g1", "e1", "GAME_START", "Lakers",
-            1000L, "Start", "Lakers", "Celtics", 0, 0, "IN_PROGRESS", "NBA");
+    void retryOfAcceptedEventIsDuplicateNotStale() {
+        // The id is checked before seq, so a retry is recognised as the same event (decision 5 relies on this).
+        service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+        service.processEvent(ev("e2", 20, 4, 0, "SCORE_UPDATE"));
+        assertEquals(ProcessResult.DUPLICATE, service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE")));
+    }
 
-        service.processEvent(event);
+    @Test
+    void lowerSeqIsStaleAndIdNotClaimed() {
+        service.processEvent(ev("e2", 20, 4, 0, "SCORE_UPDATE"));
+        assertEquals(ProcessResult.STALE, service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE")));
+        assertFalse(jedis.exists("processed:e1"));
+        assertEquals("4", jedis.hget("game:g1", "homeScore"));
+    }
 
-        GameState state = gameStateService.getGameState("g1");
+    @Test
+    void equalSeqNewIdIsStale() {
+        service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+        assertEquals(ProcessResult.STALE, service.processEvent(ev("e3", 10, 3, 0, "SCORE_UPDATE")));
+    }
+
+    @Test
+    void gameStartKeepsCarriedScore() {
+        service.processEvent(ev("e1", 10, 3, 1, "GAME_START"));
+        assertEquals("3", jedis.hget("game:g1", "homeScore"));
+        assertEquals("1", jedis.hget("game:g1", "awayScore"));
+    }
+
+    @Test
+    void gameSyncSavesStateButPublishesNothing() {
+        GameEvent sync = new GameEvent("g1", "e1", "GAME_SYNC", "LAL", 1000L, "LAL vs BOS: HALFTIME",
+            "LAL", "BOS", 50, 48, "HALFTIME", "NBA", 10);
+        assertEquals(ProcessResult.ACCEPTED, service.processEvent(sync));
+        assertEquals(0L, jedis.xlen("game-events"));
+        assertEquals("HALFTIME", jedis.hget("game:g1", "status"));
+    }
+
+    @Test
+    void missingSeqIsInvalid() {
+        assertEquals(ProcessResult.INVALID, service.processEvent(ev("e1", 0, 2, 0, "SCORE_UPDATE")));
+        assertFalse(jedis.exists("game:g1"));
+    }
+
+    @Test
+    void missingStatusIsInvalid() {
+        GameEvent noStatus = new GameEvent("g1", "e1", "SCORE_UPDATE", "LAL", 1000L, "desc",
+            "LAL", "BOS", 2, 0, null, "NBA", 10);
+        assertEquals(ProcessResult.INVALID, service.processEvent(noStatus));
+    }
+
+    @Test
+    void missingGameIdIsInvalid() {
+        GameEvent noGame = new GameEvent(null, "e1", "GAME_START", "LAL", 1000L, "desc",
+            "LAL", "BOS", 0, 0, "IN_PROGRESS", "NBA", 10);
+        assertEquals(ProcessResult.INVALID, service.processEvent(noGame));
+        assertEquals(0L, jedis.xlen("game-events"));
+    }
+
+    @Test
+    void blankEventTypeIsInvalid() {
+        assertEquals(ProcessResult.INVALID, service.processEvent(ev("e1", 10, 0, 0, "")));
+    }
+
+    @Test
+    void malformedJsonIsInvalid() {
+        assertEquals(ProcessResult.INVALID, service.processJson("{not json"));
+        assertEquals(ProcessResult.INVALID, service.processJson("{\"gameId\":\"g1\",\"seq\":\"abc\"}"));
+        assertEquals(ProcessResult.INVALID, service.processJson(""));
+    }
+
+    @Test
+    void savedStateIsReadableThroughGameStateService() {
+        service.processEvent(ev("e1", 10, 2, 1, "SCORE_UPDATE"));
+        GameState state = new GameStateServiceImpl(pool).getGameState("g1");
         assertNotNull(state);
         assertEquals("IN_PROGRESS", state.getStatus());
-    }
-
-    @Test
-    void processEvent_ignoresNullGameId() {
-        GameEvent event = new GameEvent(null, "e1", "GAME_START", "Lakers",
-            1000L, "Start", "Lakers", "Celtics", 0, 0, "IN_PROGRESS", "NBA");
-
-        service.processEvent(event);
-
-        assertEquals(0L, jedis.xlen("game-events"));
-    }
-
-    @Test
-    void processEvent_ignoresBlankEventType() {
-        GameEvent event = new GameEvent("g1", "e1", "", "Lakers",
-            1000L, "Start", "Lakers", "Celtics", 0, 0, "IN_PROGRESS", "NBA");
-
-        service.processEvent(event);
-
-        assertEquals(0L, jedis.xlen("game-events"));
-    }
-
-    @Test
-    void processEvent_ignoresStaleEvent() {
-        GameEvent first = new GameEvent("g1", "e1", "GAME_START", "Lakers",
-            2000L, "Start", "Lakers", "Celtics", 0, 0, "IN_PROGRESS", "NBA");
-        service.processEvent(first);
-
-        GameEvent stale = new GameEvent("g1", "e0", "SCORE_UPDATE", "Lakers",
-            500L, "Old", null, null, 50, 50, null, null);
-        service.processEvent(stale);
-
-        assertEquals(1L, jedis.xlen("game-events"));
-    }
-
-    @Test
-    void processEvent_ignoresDuplicateTimestamp() {
-        GameEvent first = new GameEvent("g1", "e1", "GAME_START", "Lakers",
-            1000L, "Start", "Lakers", "Celtics", 0, 0, "IN_PROGRESS", "NBA");
-        service.processEvent(first);
-
-        GameEvent dup = new GameEvent("g1", "e1", "SCORE_UPDATE", "Lakers",
-            1000L, "Dup", null, null, 50, 50, null, null);
-        service.processEvent(dup);
-
-        assertEquals(1L, jedis.xlen("game-events"));
+        assertEquals(2, state.getHomeScore());
+        assertEquals("BOS", state.getAwayTeam());
     }
 }

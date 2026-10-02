@@ -118,4 +118,71 @@ class PubSubWorkerImplTest {
 
         assertDoesNotThrow(() -> worker.fanOutNotifications(event));
     }
+
+    // --- Both teams in a game (Phase 2 fan-out fix) ---
+
+    private void follow(String userId, String setKey, String... types) {
+        jedis.sadd(setKey, userId);
+        for (String type : types) jedis.sadd("sub:notif:" + type, userId);
+    }
+
+    private List<Notification> historyOf(String userId) {
+        return notificationService.getNotificationHistory(userId, 50);
+    }
+
+    private static GameEvent lalBos(String type, String team) {
+        return new GameEvent("game-LAL-BOS", "e1", type, team,
+            1000L, "LAL scores! LAL 2 - 0 BOS", "LAL", "BOS", 2, 0, "IN_PROGRESS", "NBA");
+    }
+
+    @Test
+    void awayFollowerGetsHomeTeamScore() {
+        follow("bos-fan", "sub:team:BOS", "SCORE_UPDATE");
+        worker.fanOutNotifications(lalBos("SCORE_UPDATE", "LAL"));
+        assertEquals(1, historyOf("bos-fan").size());
+    }
+
+    @Test
+    void awayFollowerGetsGameStartTaggedWithHomeTeam() {
+        follow("bos-fan", "sub:team:BOS", "GAME_START");
+        worker.fanOutNotifications(lalBos("GAME_START", "LAL"));
+        assertEquals(1, historyOf("bos-fan").size());
+    }
+
+    @Test
+    void nflFollowerGetsOpponentTouchdown() {
+        follow("chi-fan", "sub:team:CHI", "SCORE_UPDATE");
+        worker.fanOutNotifications(new GameEvent("game-CHI-LV", "e1", "SCORE_UPDATE", "LV",
+            1000L, "LV scores! CHI 0 - 7 LV", "CHI", "LV", 0, 7, "IN_PROGRESS", "NFL"));
+        assertEquals(1, historyOf("chi-fan").size());
+    }
+
+    @Test
+    void followerOfBothTeamsGetsOneNotification() {
+        follow("both", "sub:team:LAL", "SCORE_UPDATE");
+        follow("both", "sub:team:BOS", "SCORE_UPDATE");
+        worker.fanOutNotifications(lalBos("SCORE_UPDATE", "LAL"));
+        assertEquals(1, historyOf("both").size());
+    }
+
+    @Test
+    void followerWithoutTypeGetsNothing() {
+        follow("bos-fan", "sub:team:BOS", "GAME_START");
+        worker.fanOutNotifications(lalBos("SCORE_UPDATE", "LAL"));
+        assertEquals(0, historyOf("bos-fan").size());
+    }
+
+    @Test
+    void unrelatedTeamFollowerGetsNothing() {
+        follow("mia-fan", "sub:team:MIA", "SCORE_UPDATE");
+        worker.fanOutNotifications(lalBos("SCORE_UPDATE", "LAL"));
+        assertEquals(0, historyOf("mia-fan").size());
+    }
+
+    @Test
+    void noFanoutKeyLeftBehind() {
+        follow("bos-fan", "sub:team:BOS", "SCORE_UPDATE");
+        worker.fanOutNotifications(lalBos("SCORE_UPDATE", "LAL"));
+        assertTrue(jedis.keys("fanout:*").isEmpty());
+    }
 }
