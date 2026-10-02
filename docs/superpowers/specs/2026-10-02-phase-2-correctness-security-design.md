@@ -173,12 +173,13 @@ Today it answers `202` for everything. The poller needs the difference (section 
 
 | Piece | Job |
 |---|---|
-| `model/GameSnapshot` | One game at one moment, independent of the source: game id, league, teams, scores, phase, period, half, clock tenths, outs, stage, normalized status |
+| `model/GameSnapshot` | One game at one moment, independent of the source: game id, league, teams, scores, phase, period, half, clock tenths, outs, stage, normalized status, scheduled start time |
 | `feed/ScoreFeed` | Interface: `List<GameSnapshot> fetch(String league)`. Throws `FeedBlockedException` on 403 or 429 |
 | `feed/EspnScoreFeed` | The ESPN adapter. The parsing moves here from `EspnPollerMain` |
 | `feed/Seq` | Snapshot → `seq` (section 2.1) |
 | `feed/PollDecision` | Pure: (saved game record or none, snapshot) → the one event to send, or nothing |
 | `simulator/EspnPollerMain` | The loop only: fetch, decide, post, schedule. The chart now gives it `REDIS_HOST` and `REDIS_PORT` |
+| `gateway/EspnProxyHandler` | `/api/upcoming` reads through `EspnScoreFeed` instead of its own hard-coded `site.api.espn.com` request, so the gateway and the poller share one host and User-Agent setting. Otherwise the poller would work on AWS while the UI's upcoming list broke |
 
 The interface was called `SportsDataProvider` in `DESIGN.md`. It is renamed `ScoreFeed` so it is not mistaken for the paid SportsDataIO service.
 
@@ -226,8 +227,8 @@ Descriptions keep today's wording, so history and the smoke test still match: `<
 
 ### 3.4 Polling speed and blocks
 
-- Each league is scheduled on its own. The next poll is in 5 s if that league had a live game in the last poll, otherwise 60 s. Both are settings: `ESPN_POLL_LIVE_MS` and `ESPN_POLL_IDLE_MS`. `ESPN_POLL_INTERVAL_MS` is removed.
-- The ESPN host and the User-Agent are settings: `ESPN_HOST` (`site.api.espn.com` or `site.web.api.espn.com`) and `ESPN_USER_AGENT`. As of 2026-10-01, ESPN has been reported to refuse browser-impersonating User-Agents while honest client agents get through, and `site.api` refused a cloud request that `site.web.api` answered. The defaults are set from the section 9 check's results. Until then: `site.web.api.espn.com` and an honest agent, `sports-notifier/<version> (+https://github.com/boboborenstein-collab/sports-notifier)`. `DESIGN.md` decision 10's "browser-like User-Agent" is updated to match whatever the check shows.
+- Each league is scheduled on its own. The next poll is in 5 s if, in the last poll, that league had a live game, or a scheduled game whose start time is within the next 10 minutes or has passed while the game is still not live (late starts). Otherwise 60 s. Without the start-time rule, "has started" could arrive up to a minute late. Both are settings: `ESPN_POLL_LIVE_MS` and `ESPN_POLL_IDLE_MS`. `ESPN_POLL_INTERVAL_MS` is removed.
+- The ESPN host and the User-Agent are settings: `ESPN_HOST` (`site.api.espn.com` or `site.web.api.espn.com`) and `ESPN_USER_AGENT`. As of 2026-10-01, ESPN has been reported to refuse browser-impersonating User-Agents while honest client agents get through, and `site.api` refused a cloud request that `site.web.api` answered. Defaults: `site.web.api.espn.com` and an honest agent, `sports-notifier/<version> (+https://github.com/boboborenstein-collab/sports-notifier)`. The chart sets both for the poller and the gateway. If the section 9 check finds a better combination, only the defaults change. `DESIGN.md` decision 10 says this already.
 - On `FeedBlockedException` the league's interval doubles, up to 5 minutes, with a warning per block. It resets on the first success.
 
 ### 3.5 Tests
@@ -287,15 +288,15 @@ In the gateway, which sees the client address:
 - `login:fail:ip:<ip>`: the same, with a limit of 20.
 - A successful login deletes the username key.
 
-The client address is the first entry of `X-Forwarded-For`, which Traefik sets, with the socket address as fallback. On AWS the load balancer's handling of that header is checked in Phase 5.
+The client address is the one Traefik saw: its `X-Real-Ip` header, else the **last** `X-Forwarded-For` entry (the one Traefik appended), else the socket address. Never the first entry: the client writes that one itself, so an attacker could send a new fake address with every request and never reach the limit. The choice is one small function, `ClientAddress.of(request)`, with its own tests. On AWS, with a load balancer in front of Traefik, the trusted hop changes and is set in Phase 5.
 
 Accepted tradeoff: someone who knows a username can lock it for 15 minutes.
 
-Prefix `LOGIN_FAIL_PREFIX = "login:fail:"` in `RedisKeys`. **Tests:** the 6th attempt on a username is `429` even with the right password. The 21st failure from one address is `429`. A success resets the username count.
+Prefix `LOGIN_FAIL_PREFIX = "login:fail:"` in `RedisKeys`. **Tests:** the 6th attempt on a username is `429` even with the right password. The 21st failure from one address is `429`, **including when every request carries a different made-up first `X-Forwarded-For` entry.** A success resets the username count.
 
 ### 5.4 Session cookie
 
-`SessionAuth` sets `Secure` and `SameSite=Lax` on the `sid` cookie, on create and on logout. Browsers accept `Secure` cookies on `http://localhost`. The implementation confirms that for Chrome and for the smoke test's `curl`. If `curl` does not, the smoke test is changed, not the cookie.
+`SessionAuth` sets `SameSite=Lax` on the `sid` cookie always, and `Secure` when the setting `COOKIE_SECURE` is true, on create and on logout. The default is true. `values-local.yaml` sets it false, because some browsers (Safari) and tools may refuse a `Secure` cookie on plain `http://localhost`. So the laptop and CI do not exercise `Secure`; Phase 5's HTTPS deploy does, with the default.
 
 `Lax` blocks the cookie on requests other sites trigger and keeps it on a normal link click. `Strict` would log the user out on every arrival from a link.
 
@@ -351,7 +352,7 @@ Every gateway route takes the user id from the session cookie, never from the re
 
 ## 9. ESPN cloud-IP check
 
-`.github/workflows/espn-check.yml`, started by hand (`workflow_dispatch`). From a GitHub-hosted runner, which sits in a data center like AWS does, it requests the NBA, NFL, MLB, and NHL scoreboards for each combination of host (`site.api.espn.com`, `site.web.api.espn.com`) and User-Agent (the honest agent, a browser string). It prints a table of HTTP status and number of games per combination, and fails if no combination returns 200 for every league. The poller's defaults (section 3.4) take the first combination that passes from both the runner and the laptop.
+`.github/workflows/espn-check.yml`, started by hand (`workflow_dispatch`) and run **daily** on a schedule. A failed scheduled run emails the repo owner, so a rule change at ESPN shows up before a demo does. A run takes seconds, so daily costs a few free Actions minutes a month. From a GitHub-hosted runner, which sits in a data center like AWS does, it requests the NBA, NFL, MLB, and NHL scoreboards for each combination of host (`site.api.espn.com`, `site.web.api.espn.com`) and User-Agent (the honest agent, Java's default `Java-http-client/17`, a browser string). It writes a table of HTTP status and number of games per combination to the run's summary page. It fails if the configured default combination does not return 200 for every league. The first results are copied by hand into `docs/providers/espn-access.md` in task 9.
 
 Purpose: learn before Phase 5 whether ESPN refuses data-center addresses. A pass from GitHub is a good sign for AWS, not proof. Phase 5 runs the same request from AWS first.
 
@@ -371,4 +372,5 @@ Purpose: learn before Phase 5 whether ESPN refuses data-center addresses. A pass
 - A worker that dies mid-event leaves the entry pending, and a `fanout:` key expires after 60 seconds. Kafka replaces this in Phase 3.
 - Every gateway still reads every notification (`notify:*`). Decision 13, Phase 3.
 - Accounts are still lost on `make down`. Postgres, Phase 3.
-- Login throttling uses the address Traefik reports. On AWS it is checked in Phase 5.
+- Login throttling uses the address Traefik reports. On AWS the trusted hop is set in Phase 5.
+- `SUNIONSTORE` and `SINTERSTORE` run as single Redis commands, and Redis does nothing else while one runs. With friends-scale follower sets that is microseconds; with millions of followers it would pause Redis noticeably. Phase 4's load test measures it.
