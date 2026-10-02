@@ -44,9 +44,10 @@ class PollerTest {
     /** Stands in for POST /events: the real service, mapped to HTTP statuses. */
     final class InProcessSink implements EventSink {
         final List<String> postedIds = new CopyOnWriteArrayList<>();
-        @Override public int post(GameEvent event) {
+        @Override public PostResult post(GameEvent event) {
             postedIds.add(event.getEventId());
-            return eps.processEvent(event) == ProcessResult.INVALID ? 400 : 200;
+            ProcessResult r = eps.processEvent(event);
+            return new PostResult(r == ProcessResult.INVALID ? 400 : 200, r.name().toLowerCase());
         }
     }
 
@@ -54,10 +55,10 @@ class PollerTest {
     final class FailOnceSink implements EventSink {
         final InProcessSink delegate = new InProcessSink();
         final AtomicBoolean failed = new AtomicBoolean();
-        @Override public int post(GameEvent event) {
+        @Override public PostResult post(GameEvent event) {
             if (failed.compareAndSet(false, true)) {
                 delegate.postedIds.add(event.getEventId());
-                return 503;
+                return new PostResult(503, null);
             }
             return delegate.post(event);
         }

@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
 /**
@@ -34,6 +35,8 @@ public final class Poller {
     private final JedisPool pool;
     private final EventSink sink;
     private final LongSupplier clock;
+    /** Log de-duplication only, never correctness state: gameId -> event id last warned as stale. */
+    private final Map<String, String> lastStaleWarning = new ConcurrentHashMap<>();
 
     public Poller(ScoreFeed feed, JedisPool pool, EventSink sink, LongSupplier clock) {
         this.feed = feed;
@@ -68,18 +71,40 @@ public final class Poller {
         return fast;
     }
 
-    private void send(GameEvent event) throws Exception {
-        int status = sink.post(event);
-        String what = event.getEventType() + " " + event.getEventId() + " :: " + event.getDescription();
-        if (status >= 200 && status < 300) {
-            // Duplicate and stale also answer 200; only worth seeing when debugging.
-            if (DEBUG || !PollDecision.GAME_SYNC.equals(event.getEventType())) {
-                System.out.println("[Poller] sent " + what);
+    /** How loudly to log one POST's outcome. */
+    enum LogLevel { DEBUG, INFO, WARN, RETRY, ERROR }
+
+    static LogLevel levelFor(String eventType, EventSink.PostResult r) {
+        boolean sync = PollDecision.GAME_SYNC.equals(eventType);
+        if (r.status() >= 200 && r.status() < 300) {
+            if ("stale".equals(r.result())) {
+                // An alert the script refused as older than the saved state. Usually one ESPN snapshot
+                // got ahead of reality (a clock glitch, an early final) and became the floor: alerts
+                // stop until the game passes it. Make that visible instead of logging "sent".
+                return sync ? LogLevel.DEBUG : LogLevel.WARN;
             }
-        } else if (status >= 400 && status < 500) {
-            System.err.println("[Poller] rejected (" + status + "), not retrying: " + what);
-        } else {
-            System.err.println("[Poller] failed (" + status + "), next poll retries: " + what);
+            if ("duplicate".equals(r.result()) || sync) return LogLevel.DEBUG;
+            return LogLevel.INFO;
+        }
+        if (r.status() >= 400 && r.status() < 500) return LogLevel.ERROR;
+        return LogLevel.RETRY;
+    }
+
+    private void send(GameEvent event) throws Exception {
+        EventSink.PostResult r = sink.post(event);
+        String what = event.getEventType() + " " + event.getEventId() + " :: " + event.getDescription();
+        switch (levelFor(event.getEventType(), r)) {
+            case DEBUG -> { if (DEBUG) System.out.println("[Poller] " + r.result() + " " + what); }
+            case INFO -> System.out.println("[Poller] sent " + what);
+            case WARN -> {
+                // Once per event id: the same stale event is re-posted every poll until the game moves on.
+                if (!event.getEventId().equals(lastStaleWarning.put(event.getGameId(), event.getEventId()))) {
+                    System.err.println("[Poller] STALE alert, not delivered (saved state is further along): " + what);
+                }
+            }
+            case ERROR -> System.err.println("[Poller] rejected as invalid (" + r.status()
+                + "); re-sent each poll until the game changes: " + what);
+            case RETRY -> System.err.println("[Poller] failed (" + r.status() + "), next poll retries: " + what);
         }
     }
 
