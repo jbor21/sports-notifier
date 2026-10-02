@@ -17,6 +17,12 @@ public final class RedisKeys {
     /** SET NX dedup guard per event: {@code processed:<eventId>} */
     public static final String PROCESSED_PREFIX = "processed:";
 
+    /** Account record JSON (id, username, bcrypt hash): {@code user:<userId>} */
+    public static final String USER_PREFIX = "user:";
+
+    /** Username → userId, claimed with SET NX at signup: {@code username:<name>} */
+    public static final String USERNAME_PREFIX = "username:";
+
     /** User preferences JSON blob: {@code prefs:<userId>} */
     public static final String PREFS_PREFIX = "prefs:";
 
