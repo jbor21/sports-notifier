@@ -73,11 +73,11 @@ public final class EspnScoreFeed implements ScoreFeed {
         if (status == null || type == null || competitors == null) return null;
 
         String home = null, away = null;
-        int homeScore = 0, awayScore = 0;
+        Integer homeScore = null, awayScore = null;
         for (JsonElement c : competitors) {
             JsonObject competitor = c.getAsJsonObject();
             String abbr = str(obj(competitor, "team"), "abbreviation");
-            int score = parseScore(str(competitor, "score"));
+            Integer score = parseScore(str(competitor, "score"));
             if ("home".equals(str(competitor, "homeAway"))) { home = abbr; homeScore = score; }
             else                                            { away = abbr; awayScore = score; }
         }
@@ -85,6 +85,16 @@ public final class EspnScoreFeed implements ScoreFeed {
 
         Mapped m = mapStatus(str(type, "name"), str(type, "state"),
             type.has("completed") && type.get("completed").getAsBoolean(), league);
+        // Before the start a missing score is 0-0. During or after the game it is unknown: treating
+        // it as 0 would record 0-0 and make the next good snapshot look like a score (a false alert).
+        if (homeScore == null || awayScore == null) {
+            if (m.phase != Phase.PRE) {
+                System.err.println("[EspnScoreFeed " + league + "] espn-" + id + ": score missing, skipped this poll");
+                return null;
+            }
+            homeScore = homeScore == null ? 0 : homeScore;
+            awayScore = awayScore == null ? 0 : awayScore;
+        }
         int period = status.has("period") ? status.get("period").getAsInt() : 0;
         double clockSeconds = status.has("clock") ? status.get("clock").getAsDouble() : 0.0;
 
@@ -147,9 +157,10 @@ public final class EspnScoreFeed implements ScoreFeed {
         return Half.TOP;
     }
 
-    private static int parseScore(String s) {
-        if (s == null) return 0;
-        try { return (int) Double.parseDouble(s.trim()); } catch (NumberFormatException e) { return 0; }
+    /** null when missing or unreadable. */
+    private static Integer parseScore(String s) {
+        if (s == null) return null;
+        try { return (int) Double.parseDouble(s.trim()); } catch (NumberFormatException e) { return null; }
     }
 
     private static JsonObject obj(JsonObject o, String key) {

@@ -120,6 +120,24 @@ class EspnScoreFeedTest {
     }
 
     @Test
+    void liveGameWithMissingScoreIsSkipped() throws IOException {
+        // Reading a missing score as 0 would record 0-0, and the next good snapshot would look
+        // like a score and send a false alert. Skip the game this poll instead.
+        assertTrue(parse("nfl-live-missing-score.json", "NFL").isEmpty());
+    }
+
+    @Test
+    void scheduledGameWithoutScoreIsZero() {
+        String json = "{\"events\":[{\"id\":\"7\",\"date\":\"2026-10-04T17:00Z\",\"competitions\":[{"
+            + "\"status\":{\"period\":0,\"type\":{\"name\":\"STATUS_SCHEDULED\",\"state\":\"pre\",\"completed\":false}},"
+            + "\"competitors\":[{\"homeAway\":\"home\",\"team\":{\"abbreviation\":\"CHI\"}},"
+            + "{\"homeAway\":\"away\",\"team\":{\"abbreviation\":\"NYJ\"}}]}]}]}";
+        GameSnapshot g = EspnScoreFeed.parse(json, "NFL").get(0);
+        assertEquals(0, g.homeScore());
+        assertEquals(0, g.awayScore());
+    }
+
+    @Test
     void unreadableDateKeepsTheGame() {
         String json = "{\"events\":[{\"id\":\"8\",\"date\":\"soon\",\"competitions\":[{"
             + "\"status\":{\"period\":0,\"type\":{\"name\":\"STATUS_SCHEDULED\",\"state\":\"pre\",\"completed\":false}},"
