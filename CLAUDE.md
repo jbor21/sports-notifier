@@ -146,15 +146,14 @@ or Redis Streams as the log.
   `make down` deletes the cluster and every account with it until Phase 3.
 - **CI:** GitHub Actions runs the tests, then `make cluster up smoke` on a
   throwaway k3d cluster, on every push and pull request.
-- **Phase 2 (Correctness and security) is built** on branch
-  `phase-2-correctness` (worktree `.worktrees/phase-2-correctness`): spec
+- **Phase 2 (Correctness and security) is merged** (PR #2, 2026-10-02): spec
   `docs/superpowers/specs/2026-10-02-phase-2-correctness-security-design.md`,
   plan `docs/superpowers/plans/2026-10-02-phase-2-correctness-security.md`.
-  Waiting on: a live-game check by hand (watch period transitions, an
-  MLB inning, a final), the first GitHub run of `espn-check.yml` (it runs
-  on the PR), and the merge. **Next after merge: Phase 3** (Postgres,
-  Kafka, routing, decision 15 wave 1), starting with its brainstorm, which
-  also reviews the API spec parked on branch `api-spec`.
+  Its live-game check is still open as issue #3; ESPN recordings for it are in
+  `~/sportsnotifier-recordings/` on the laptop (outside the repo).
+- **Next step: Phase 3** (Postgres, Kafka, gateway routing, decision 15 wave 1),
+  starting with its brainstorm, which also reviews the API spec parked on
+  branch `api-spec` (worktree `.worktrees/api-spec`).
 - **New in Phase 2:** events carry `seq` (game progress as one number;
   `feed/Seq.java`); the poller is `feed/Poller.java` behind `feed/ScoreFeed`
   (ESPN adapter `EspnScoreFeed`, HTTP in `EspnClient`); `GAME_SYNC` saves
