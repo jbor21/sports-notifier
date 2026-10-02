@@ -22,6 +22,7 @@ public final class UserPreferenceServiceMain {
     private static final Gson GSON = new Gson();
 
     public static void main(String[] args) {
+        JedisPoolHolder.awaitRedisOrExit("user-pref");
         int port = Integer.parseInt(System.getenv().getOrDefault("USER_PREF_PORT", "8081"));
         JedisPool pool = JedisPoolHolder.create();
         UserPreferenceServiceImpl prefSvc = new UserPreferenceServiceImpl(pool);

@@ -11,6 +11,7 @@ import java.util.Collections;
 public final class EventProcessingServiceMain {
 
     public static void main(String[] args) {
+        JedisPoolHolder.awaitRedisOrExit("event-processing");
         int port = Integer.parseInt(System.getenv().getOrDefault("EVENT_PROCESSING_PORT", "8083"));
         JedisPool pool = JedisPoolHolder.create();
         EventProcessingServiceImpl eps = new EventProcessingServiceImpl(pool);

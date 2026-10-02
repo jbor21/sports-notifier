@@ -11,6 +11,7 @@ import java.util.Collections;
 public final class GameStateServiceMain {
 
     public static void main(String[] args) {
+        JedisPoolHolder.awaitRedisOrExit("game-state");
         int port = Integer.parseInt(System.getenv().getOrDefault("GAME_STATE_PORT", "8082"));
         JedisPool pool = JedisPoolHolder.create();
         GameStateServiceImpl svc = new GameStateServiceImpl(pool);

@@ -33,6 +33,7 @@ public final class EspnPollerMain {
     private static final String[] LEAGUES = {"NBA", "NFL", "MLB", "NHL"};
 
     public static void main(String[] args) throws InterruptedException {
+        JedisPoolHolder.awaitRedisOrExit("espn-poller");
         EspnClient espn = EspnClient.fromEnv();
         JedisPool pool = JedisPoolHolder.create();
         Poller poller = new Poller(new EspnScoreFeed(espn), pool, new HttpEventSink(EPS_URL),

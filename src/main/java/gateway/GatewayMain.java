@@ -30,6 +30,7 @@ public final class GatewayMain {
     private static final String NOTIFICATION_URL = System.getenv().getOrDefault("NOTIFICATION_URL", "http://127.0.0.1:8087");
 
     public static void main(String[] args) {
+        JedisPoolHolder.awaitRedisOrExit("gateway");
         int port = Integer.parseInt(System.getenv().getOrDefault("GATEWAY_PORT", "8080"));
         JedisPool pool = JedisPoolHolder.create();
         GameListingHandler gameListingHandler = new GameListingHandler(pool);
