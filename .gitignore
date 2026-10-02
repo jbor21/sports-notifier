@@ -26,3 +26,6 @@ pids/
 
 # Superpowers worktrees
 .worktrees/
+
+# Superpowers plan workspaces (ledger, briefs)
+.superpowers/

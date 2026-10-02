@@ -32,6 +32,9 @@ public final class RedisKeys {
     /** Inverted index — users who enabled a notification type: {@code sub:notif:<type>} */
     public static final String SUB_NOTIF_PREFIX = "sub:notif:";
 
+    /** Temporary audience set built during one event's fan-out: {@code fanout:<eventId>} */
+    public static final String FANOUT_PREFIX = "fanout:";
+
     /** Per-user notification history list: {@code notifications:<userId>} */
     public static final String NOTIFICATIONS_PREFIX = "notifications:";
 
