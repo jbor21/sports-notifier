@@ -95,7 +95,9 @@ probe_user_pref() {  # $1 = app.kubernetes.io/name label for the probe pod
 }
 probe_user_pref gateway || fail "a pod labelled as the gateway could not reach user-pref:8081"
 if probe_user_pref netpol-probe; then
-  fail "a pod outside the allow lists reached user-pref:8081 (network policies not enforced)"
+  # Seen on 2026-10-02: after a k3d stop/start, k3s sometimes doesn't start its network policy
+  # controller, so policies exist but nothing enforces them. Another restart fixed it.
+  fail "a pod outside the allow lists reached user-pref:8081 (network policies not enforced). If the cluster was just restarted, k3s may not have started its policy controller: check 'docker logs k3d-sports-notifier-server-0 | grep \"network policy controller\"', then 'k3d cluster stop sports-notifier && make cluster'"
 fi
 
 echo "SMOKE PASS"
