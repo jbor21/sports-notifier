@@ -8,7 +8,7 @@ Revised 2026-09-28: hosting moved from one always-on Hetzner VM to Kubernetes, r
 
 Revised 2026-09-29: decision 15, the notification catalog. Four sports, alerts as moments rather than every score, switches per follow, detected from the scoreboard.
 
-Revised 2026-10-02: decision 10 drops the Phase 2 provider comparison. ESPN only for now, plus a check that ESPN answers from a data-center address. The interface is named `ScoreFeed`.
+Revised 2026-10-02: Phase 2 done; the fix list below says what it closed and what Phase 3 still owes. Decision 10 drops the Phase 2 provider comparison. ESPN only for now, plus a check that ESPN answers from a data-center address. The interface is named `ScoreFeed`.
 
 Revised 2026-09-30: decision 15 tightened. League follows get a daily summary instead of a final per game. The final is always its own push. Close-game conditions are explicit and never apply in overtime. Game-follow defaults, precedence between follows, overlap rules, NFL ties, and duplicate-proof alert ids are defined.
 
@@ -562,20 +562,28 @@ In-system speed, once a play exists: produce with no intentional batching delay 
 
 ## Security and correctness still to fix in the current code
 
-These are known bugs in the course code. They get fixed before or as the new pipeline lands. They are not optional polish.
+These were the known bugs in the course code. Phase 2 fixed the ones that survive into the new pipeline; the rest close as Phase 3 lands. Details of each fix are in `docs/superpowers/specs/2026-10-02-phase-2-correctness-security-design.md`.
 
-- The Lua script and the publish are separate steps. A crash between them marks the event processed and never publishes it. The Kafka version closes that window with the two-state claim (decision 5).
-- The ESPN poller uses a random UUID as the event id and its own clock as the timestamp (`EspnPollerMain.java`). The Lua dedup never fires on real data, and two pollers running at once, as happens during a Kubernetes rolling update, both get accepted and send duplicates. Build the id and timestamp from ESPN's data. Then an overlapping poller is harmless and no singleton lock is needed.
-- The poller saves its snapshot before the POST succeeds. A failed POST loses that play for good. Save the snapshot after.
+**Still open (Phase 3):**
+
+- The Lua script and the publish are separate steps. A crash between them marks the event processed and never publishes it. The Kafka version closes that window with the two-state claim (decision 5). Phase 2 prepared for it: the script now checks the event id before `seq`, so a retry is a "duplicate", never "stale".
 - Every gateway subscribes to `notify:*` and reads every notification (`NotificationFanOut.java`). Route to the gateway that holds the socket (decision 13).
-- Fan-out matches only the team that just scored. Following the Lakers misses Celtics baskets in a Lakers game. The same bug hits game start and final, which are tagged with the home team, so away-team followers miss them. This is the first Phase 2 task, test-first: a BOS follower must be notified when LAL scores in LAL–BOS, and must get that game's start.
 - If a worker dies before ack, the entry sits forever. Kafka's session timeout replaces the missing Redis reclaim. Per-user dedup has to exist before retries are turned on, or people get duplicates.
-- Poller memory is a `HashMap`. Restart spams game-start events. Persist snapshots in Redis.
-- Game keys never expire, and the game list scans all of them. TTL finished games. Keep a bounded set of live games.
-- Internal ports have no auth. Only the gateway is reachable from outside. On Kubernetes, network policies limit which pods can reach each internal service. Signup does get-then-set on the username and can create two users. Login is unthrottled. Password minimum is 4 characters. The session cookie is missing `Secure` and `SameSite`.
-- `GameStateService.updateGameState` is only called from tests. The script does the real write. Do not describe the unused method as defense in depth.
+- Accounts are lost when the cluster is deleted, until Postgres.
 
----
+**Fixed in Phase 2:**
+
+- **Fan-out matched only the tagged team.** A follower of either team now gets every event in the game. Redis builds the audience with `SUNIONSTORE` and `SINTERSTORE` instead of one `SISMEMBER` per subscriber; with millions of followers that one command would pause Redis briefly, which Phase 4's load test should measure.
+- **Poller ids and timestamps.** Events are ordered by `seq`, a 14-digit number built from game progress (phase, period, half, clock, outs, stage, score total), and the event id is `<gameId>:<seq>`. An overlapping poller's events are duplicates or stale, so no singleton lock is needed. The 50-event burst test from the course (43 → 48 → 50) now runs on every push.
+- **Poller memory and the snapshot-before-POST bug.** The poller keeps no memory: it compares ESPN with the game record the Lua script saved, which only changes when an event is accepted. A restart re-sends nothing, and a failed POST is retried by the next poll with the same id. `GAME_SYNC` records games seen for the first time without alerting anyone.
+- **Game keys never expired.** A record expires a day after a final, or after 8 idle days. The game list reads a bounded `games:recent` set instead of scanning every key.
+- **Signup race.** The username is claimed with `SET NX`, after the user record is written. Before the fix, 20 of 20 simultaneous signups for one name succeeded; now exactly one does.
+- **Passwords** are 8 to 72 bytes (bcrypt ignores anything past 72).
+- **Login throttling.** 5 failures per username or 20 per client address in 15 minutes give `429`. The address is the one Traefik saw, never the client-written first `X-Forwarded-For` entry.
+- **Session cookie** is `SameSite=Lax`, and `Secure` everywhere except the laptop (`COOKIE_SECURE=false` in `values-local.yaml`).
+- **Internal ports.** Network policies: only Traefik reaches the gateway, only the gateway reaches user-pref, game-state, and notification, only the poller and simulator reach event-processing, only our pods reach Redis. The smoke test proves a stranger pod is refused.
+- **`GameStateService.updateGameState`** was dead code and is deleted. The Lua script is the only writer of game state.
+- **Startup crash loop.** Services wait for Redis instead of crashing when they start first.
 
 ## Build order
 
@@ -583,7 +591,7 @@ We implement in this order. The system runs at the end of each step. Everything 
 
 0. **Lock the plan.** This document. Git init, and commit the course code untouched first, so the original is always there to point back to.
 1. **Foundation.** Flatten `com3810/`. One Dockerfile, `SERVICE` picks the main. A Helm chart running the current services and Redis on k3d. Tests in GitHub Actions. **Done.**
-2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data.
+2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data. **Done** (2026-10-02).
 3. **The new pipeline.** Postgres for accounts, preferences, and history, with Redis subscriber sets rebuilt on startup. Kafka through Strimzi with one broker. The two topics, the script-then-produce path with the two-state claim, consumer groups, per-user dedup. Gateway routing (decision 13). The notification catalog's first wave: per-follow preferences in Postgres resolved into Redis sets, the detector framework, and wave 1 alerts (decision 15).
 3b. **New UI.** A full redesign of the web UI, frontend only: it calls the gateway's API and WebSocket and has no database, auth, or server code of its own. The code lives in `web/` and ships as static files in the same Helm chart. It is built against the API spec in `docs/api/`, written before Phase 3 and implemented by Phase 3, so the UI can start early against a mock server. Built as an installable web app (PWA) so Phase 7's Web Push can reach a phone. Screens can be designed any time; the build lands after Phase 3.
 4. **Proof tools.** Recorded-game replay, the correctness checker, OpenTelemetry traces, Prometheus and Grafana for lag and latency. Alert waves 2 and 3, each detector tested against recorded games.
