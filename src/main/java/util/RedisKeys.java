@@ -23,6 +23,9 @@ public final class RedisKeys {
     /** Username → userId, claimed with SET NX at signup: {@code username:<name>} */
     public static final String USERNAME_PREFIX = "username:";
 
+    /** Failed-login counters: {@code login:fail:user:<name>} and {@code login:fail:ip:<address>} */
+    public static final String LOGIN_FAIL_PREFIX = "login:fail:";
+
     /** User preferences JSON blob: {@code prefs:<userId>} */
     public static final String PREFS_PREFIX = "prefs:";
 

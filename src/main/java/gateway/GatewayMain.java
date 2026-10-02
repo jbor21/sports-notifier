@@ -1,15 +1,17 @@
 package gateway;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import feed.EspnClient;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.javalin.http.staticfiles.Location;
 import io.javalin.websocket.WsContext;
 import redis.clients.jedis.JedisPool;
 import util.GsonJsonMapper;
-import feed.EspnClient;
 import util.JedisPoolHolder;
 import util.SimpleHttp;
 
@@ -31,6 +33,7 @@ public final class GatewayMain {
         int port = Integer.parseInt(System.getenv().getOrDefault("GATEWAY_PORT", "8080"));
         JedisPool pool = JedisPoolHolder.create();
         GameListingHandler gameListingHandler = new GameListingHandler(pool);
+        LoginThrottle loginThrottle = new LoginThrottle(pool);
         EspnProxyHandler espnProxyHandler = new EspnProxyHandler(EspnClient.fromEnv());
         var subscriberJedis = JedisPoolHolder.dedicated();
         NotificationFanOut fanOut = new NotificationFanOut(subscriberJedis);
@@ -59,8 +62,19 @@ public final class GatewayMain {
         });
 
         app.post("/api/login", ctx -> {
+            String username = usernameIn(ctx.body());
+            String ip = ClientAddress.of(ctx.header("X-Real-Ip"), ctx.header("X-Forwarded-For"), ctx.ip());
+            if (loginThrottle.blocked(username, ip)) {
+                ctx.status(429).json(Map.of("error", "too many failed logins, try again later"));
+                return;
+            }
             HttpResponse<String> r = SimpleHttp.postJson(USER_PREF_URL + "/users/login", ctx.body());
-            if (r.statusCode() >= 400) { ctx.status(r.statusCode()).result(r.body()); return; }
+            if (r.statusCode() >= 400) {
+                if (r.statusCode() == 401) loginThrottle.recordFailure(username, ip);
+                ctx.status(r.statusCode()).result(r.body());
+                return;
+            }
+            loginThrottle.recordSuccess(username);
             String userId = JsonParser.parseString(r.body()).getAsJsonObject().get("userId").getAsString();
             SessionAuth.createSession(pool, ctx, userId);
             ctx.json(JsonParser.parseString(r.body()));
@@ -150,6 +164,18 @@ public final class GatewayMain {
             return null;
         }
         return userId;
+    }
+
+    /** The username in a login body, or null if the body isn't a JSON object with one. */
+    private static String usernameIn(String body) {
+        try {
+            JsonElement el = JsonParser.parseString(body);
+            if (!el.isJsonObject()) return null;
+            JsonElement u = el.getAsJsonObject().get("username");
+            return u != null && u.isJsonPrimitive() ? u.getAsString() : null;
+        } catch (JsonParseException e) {
+            return null;
+        }
     }
 
     private static String urlEnc(String s) {
