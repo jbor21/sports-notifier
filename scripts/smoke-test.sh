@@ -55,8 +55,8 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -b "$bob_jar" -X PUT -H 'Content-T
 [[ "$code" == 200 ]] || fail "preferences returned HTTP $code"
 
 # 4. Play one wave of games. Stop any simulator still running first: every run reuses the same
-#    game ids and stamps events with its own pod's clock, so an overlapping run can make the
-#    Lua script reject our GAME_START as stale (it is older than the other run's latest event).
+#    game ids, and the later run's seq always wins, so an older run still going would only add
+#    noise to Bob's history.
 k delete jobs -l app.kubernetes.io/name=simulator --cascade=foreground --wait=true --ignore-not-found >/dev/null
 job=$("$repo_root/scripts/simulate.sh" SIM_WAVES=1)
 echo "simulator job: $job"

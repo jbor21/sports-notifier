@@ -12,11 +12,11 @@ public class GameEvent {
     private String gameId;
     /** Unique identifier for this specific event; used as the dedup key. */
     private String eventId;
-    /** Type of event: {@code GAME_START}, {@code SCORE_UPDATE}, or {@code GAME_END}. */
+    /** Type of event: {@code GAME_START}, {@code SCORE_UPDATE}, {@code GAME_END}, or {@code GAME_SYNC} (state only, no notification). */
     private String eventType;
     /** Abbreviated name of the team that triggered the event (e.g. {@code LAL}). */
     private String team;
-    /** Unix epoch milliseconds when the event occurred; used for staleness ordering. */
+    /** Unix epoch milliseconds when the event was observed; for display only (ordering uses {@code seq}). */
     private long timestamp;
     /** Human-readable description shown in notification messages. */
     private String description;
@@ -32,6 +32,8 @@ public class GameEvent {
     private String gameStatus;
     /** League identifier, e.g. {@code NBA}, {@code NFL}. */
     private String league;
+    /** Position in the game; bigger is later. Orders events for the Lua script. See {@code feed.Seq}. */
+    private long seq;
 
     public GameEvent() {}
 
@@ -40,6 +42,15 @@ public class GameEvent {
                      String homeTeam, String awayTeam,
                      int homeScore, int awayScore,
                      String gameStatus, String league) {
+        this(gameId, eventId, eventType, team, timestamp, description,
+             homeTeam, awayTeam, homeScore, awayScore, gameStatus, league, 0L);
+    }
+
+    public GameEvent(String gameId, String eventId, String eventType, String team,
+                     long timestamp, String description,
+                     String homeTeam, String awayTeam,
+                     int homeScore, int awayScore,
+                     String gameStatus, String league, long seq) {
         this.gameId = gameId;
         this.eventId = eventId;
         this.eventType = eventType;
@@ -52,6 +63,7 @@ public class GameEvent {
         this.awayScore = awayScore;
         this.gameStatus = gameStatus;
         this.league = league;
+        this.seq = seq;
     }
 
     public String getGameId() { return gameId; }
@@ -66,4 +78,5 @@ public class GameEvent {
     public int getAwayScore() { return awayScore; }
     public String getGameStatus() { return gameStatus; }
     public String getLeague() { return league; }
+    public long getSeq() { return seq; }
 }
