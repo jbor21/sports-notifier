@@ -23,7 +23,7 @@ up:
 	@k3d cluster get $(CLUSTER) >/dev/null 2>&1 || { echo "Cluster $(CLUSTER) not found. Run: make cluster"; exit 1; }
 	docker build -t sports-notifier:$(TAG) .
 	k3d image import sports-notifier:$(TAG) -c $(CLUSTER)
-	helm upgrade --install --kube-context $(KUBE_CONTEXT) $(RELEASE) $(CHART) -f $(CHART)/values-local.yaml --set image.tag=$(TAG) --wait --timeout 5m
+	helm upgrade --install --kube-context $(KUBE_CONTEXT) $(RELEASE) $(CHART) -f $(CHART)/values-local.yaml --set image.tag=$(TAG) $(HELM_ARGS) --wait --timeout 5m
 
 simulate:
 	@scripts/simulate.sh

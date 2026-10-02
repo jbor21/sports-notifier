@@ -46,10 +46,12 @@ redis:
   image: redis:7.4
   storage: 1Gi
 
-# At most one pod: two pollers send every play twice until Phase 2 fixes poller ids.
+# The ESPN poller. Polls a league every liveMs while it has a live game or one starting within
+# 10 minutes, otherwise every idleMs.
 espnPoller:
   enabled: false
-  pollIntervalMs: 30000
+  liveMs: 5000
+  idleMs: 60000
 
 simulator:
   intervalMs: 2000
