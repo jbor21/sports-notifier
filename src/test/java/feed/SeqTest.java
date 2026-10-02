@@ -100,6 +100,14 @@ class SeqTest {
     }
 
     @Test
+    void neverZero() {
+        // Event Processing rejects seq <= 0, so a zero here would lose the game's record and its start alert.
+        GameSnapshot mlbPreNoInning = new GameSnapshot("espn-2", "MLB", "CHC", "STL", 0, 0,
+            PRE, 0, Half.TOP, 0, 0, IN_PLAY, "SCHEDULED", 0L);
+        assertTrue(Seq.of(mlbPreNoInning) > 0);
+    }
+
+    @Test
     void fitsInLuaNumber() {
         long max = Seq.of(new GameSnapshot("espn-3", "NBA", "A", "B", 999, 999,
             FINAL, 99, Half.END, 0, 3, HALFTIME, "FINAL", 0L));

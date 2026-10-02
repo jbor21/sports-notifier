@@ -109,7 +109,8 @@ public final class Poller {
     }
 
     private static boolean wantsFastPolling(GameSnapshot snap, long now) {
-        if (snap.phase() == GameSnapshot.Phase.LIVE) return true;
+        // A suspended game resumes another day: keep the league slow so it doesn't poll every 5 s all day.
+        if (snap.phase() == GameSnapshot.Phase.LIVE) return !"SUSPENDED".equals(snap.status());
         return snap.phase() == GameSnapshot.Phase.PRE
             && "SCHEDULED".equals(snap.status())
             && snap.startTimeMillis() > 0

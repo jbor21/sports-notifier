@@ -224,6 +224,14 @@ class PollerTest {
     }
 
     @Test
+    void suspendedGameIsSlow() throws Exception {
+        // A suspended MLB game can sit on the scoreboard all day; it must not keep MLB on 5 s polling.
+        feed.games = List.of(new GameSnapshot("espn-1", "MLB", "CHC", "STL", 2, 2, LIVE, 5, Half.TOP, 0, 1,
+            Stage.DELAYED, "SUSPENDED", NOW - 3 * 3600_000L));
+        assertFalse(poller(new InProcessSink()).pollLeague("MLB"));
+    }
+
+    @Test
     void emptyScoreboardIsSlow() throws Exception {
         feed.games = List.of();
         assertFalse(poller(new InProcessSink()).pollLeague("NBA"));

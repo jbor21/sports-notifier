@@ -35,13 +35,15 @@ public final class Seq {
         long clock = "MLB".equals(s.league())
             ? 0
             : MAX_CLOCK_TENTHS - clamp(s.clockTenths(), 0, MAX_CLOCK_TENTHS);
-        return s.phase().ordinal()                 * 10_000_000_000_000L
+        // Never 0: Event Processing rejects seq <= 0. Only an MLB game before the first inning with
+        // no score can compute 0, and 1 is still below every other position.
+        return Math.max(1, s.phase().ordinal()     * 10_000_000_000_000L
              + clamp(s.period(), 0, 99)            *    100_000_000_000L
              + s.half().ordinal()                  *     10_000_000_000L
              + clock                               *            100_000L
              + clamp(s.outs(), 0, 3)               *             10_000L
              + s.stage().ordinal()                 *              1_000L
-             + Math.min(s.homeScore() + s.awayScore(), 999);
+             + Math.min(s.homeScore() + s.awayScore(), 999));
     }
 
     private static long clamp(int v, int lo, int hi) {
