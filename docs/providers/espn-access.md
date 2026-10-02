@@ -42,7 +42,7 @@ Every host and User-Agent pair returned 200 for every league.
 
 ## From a GitHub runner (data center)
 
-Not run yet: it needs the branch pushed. Run it with `gh workflow run espn-check.yml --ref <branch>` and copy the table from the run's summary page here.
+Not run yet. It runs on the Phase 2 pull request (the workflow also triggers on PRs that change the check), then daily once merged; `gh workflow run espn-check.yml` works after merge. Copy the table from the run's summary page here.
 
 ## If the cloud gets refused
 

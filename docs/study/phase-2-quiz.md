@@ -16,6 +16,7 @@ To take it: ask Claude, "quiz me on Phase 2." Questions marked **Review** come f
 | 8 | What a network policy does, and how the first check fooled us | **Not yet taken** |
 | 9 | Why the simulator's `seq` is `runId × 1000 + n` | **Not yet taken** |
 | 10 | What can still go wrong before Phase 3 | **Not yet taken** |
+| 11 | The login-throttle bug the final review found | **Not yet taken** |
 
 ---
 
@@ -191,5 +192,24 @@ Game records outlive a run. A second `make simulate` counting from 1 would be "o
 - Also: accounts vanish with `make down` until Postgres, and EKS ignores the network policies unless a policy engine is enabled (Phase 5).
 
 **Model answer:** "The script-to-publish window, stuck pending entries, and broadcast to all gateways. Kafka with the two-state claim, consumer-group rebalances, and per-gateway routing close them in Phase 3."
+
+</details>
+
+---
+
+## 11. The login-throttle bug the final review found
+
+> The first throttle checked "is this user over 5 failures?", then checked the password, then counted the failure. All its tests passed. What was wrong, and how was it fixed?
+
+<details>
+<summary>Model answer</summary>
+
+It was check-then-act, the same bug class as the course's score race. The password check is bcrypt, which takes tens of milliseconds. Fifty guesses sent at the same instant all read "4 or fewer failures", all reached bcrypt, and only then incremented. A test that fires 50 concurrent bad logins measured it: **50 of 50 got through**. The original tests recorded failures one at a time, so they couldn't see it.
+
+The fix counts every attempt *before* the password check: `INCR` on the username and address counters (with `EXPIRE NX`, in one MULTI/EXEC, so a counter never exists without its window). If either is over its limit, answer 429 without checking. A success deletes the username counter and gives back the address's attempt. The same test now lets exactly 5 through.
+
+A related lesson from the same review is that `seq` only moves forward, so one bad ESPN snapshot (a clock glitch showing 0:00, an early "final") becomes a floor, and later alerts are stale until the game passes it. The poller used to log those as "sent". Now it logs them as a warning.
+
+**Model answer:** "Read-then-write under concurrency again. A limit has to be enforced by an atomic increment at the point of admission, not checked and recorded around a slow operation. I found it with a concurrent test after a fresh-eyes review, which is why the review step exists."
 
 </details>

@@ -150,8 +150,9 @@ or Redis Streams as the log.
   `phase-2-correctness` (worktree `.worktrees/phase-2-correctness`): spec
   `docs/superpowers/specs/2026-10-02-phase-2-correctness-security-design.md`,
   plan `docs/superpowers/plans/2026-10-02-phase-2-correctness-security.md`.
-  Waiting on: a live-game check by hand, the first GitHub run of
-  `espn-check.yml`, and the PR. **Next after merge: Phase 3** (Postgres,
+  Waiting on: a live-game check by hand (watch period transitions, an
+  MLB inning, a final), the first GitHub run of `espn-check.yml` (it runs
+  on the PR), and the merge. **Next after merge: Phase 3** (Postgres,
   Kafka, routing, decision 15 wave 1), starting with its brainstorm, which
   also reviews the API spec parked on branch `api-spec`.
 - **New in Phase 2:** events carry `seq` (game progress as one number;

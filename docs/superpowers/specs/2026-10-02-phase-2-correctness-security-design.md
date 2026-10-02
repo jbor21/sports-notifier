@@ -164,6 +164,7 @@ Today it answers `202` for everything. The poller needs the difference (section 
 - A score correction at the same position (same clock, lower total) is rejected as stale. Phase 3's detectors handle corrections.
 - If play resumes at exactly the same position after a delay, that snapshot is not newer. The status stays delayed until the clock, an out, or a score moves.
 - A clock put back by an official (for example +0.4 s after a review) makes a few snapshots look older. It heals on the next snapshot with less time left, which carries the full score.
+- A snapshot that runs *ahead* of reality does not heal on its own. A clock glitch showing 0:00 mid-period, a period number that increments before the clock resets, or an early `completed: true` gets a large `seq`, and every later snapshot is stale until the game passes that point. Alerts in that stretch are lost (an early final means the real final sends no `GAME_END`). The poller logs every stale alert as a warning, once per event id, so it is visible. Found in the final review; the live-game check watches period transitions and finals for it.
 
 ---
 
@@ -284,9 +285,9 @@ A crash between 1 and 2 leaves an unreachable `user:` record, which is harmless.
 
 In the gateway, which sees the client address:
 
-- `login:fail:user:<username>`: `INCR` on each failure, `EXPIRE 900` on the first. At 5 or more, `/api/login` answers `429` with a "try again later" message until the key expires, without checking the password.
-- `login:fail:ip:<ip>`: the same, with a limit of 20.
-- A successful login deletes the username key.
+- `login:fail:user:<username>` and `login:fail:ip:<ip>`: every attempt `INCR`s both (with `EXPIRE 900 NX`, in one MULTI/EXEC) **before** the password is checked. Over 5 for the username or 20 for the address, `/api/login` answers `429` with a "try again later" message without checking the password.
+- A successful login deletes the username key and gives back the address's attempt (`DECR`, deleted at zero).
+- Counting first matters: the first version checked, ran bcrypt, then counted the failure, and 50 simultaneous guesses all got through.
 
 The client address is the one Traefik saw: its `X-Real-Ip` header, else the **last** `X-Forwarded-For` entry (the one Traefik appended), else the socket address. Never the first entry: the client writes that one itself, so an attacker could send a new fake address with every request and never reach the limit. The choice is one small function, `ClientAddress.of(request)`, with its own tests. On AWS, with a load balancer in front of Traefik, the trusted hop changes and is set in Phase 5.
 
