@@ -84,4 +84,18 @@ if [[ "$code" == 200 ]] && jq -e '(.followedTeams // []) | index("BOS")' "$jar" 
   fail "Alice could read Bob's preferences with ?userId="
 fi
 
+# 7. Network policies. A throwaway pod labelled like the gateway must reach user-pref (proves
+#    the check itself works); one with any other label must be refused. Each waits 5 s first:
+#    k3s adds a new pod to the firewall's allow lists a moment after it starts, so an
+#    immediate call is refused for the wrong reason.
+probe_user_pref() {  # $1 = app.kubernetes.io/name label for the probe pod
+  k run "netpol-$1-$RANDOM" --rm -i --restart=Never --quiet --image=curlimages/curl:8.10.1 \
+    --labels="app.kubernetes.io/name=$1" --command -- \
+    sh -c 'sleep 5; curl -sS -m 5 -o /dev/null http://user-pref:8081/health' >/dev/null 2>&1
+}
+probe_user_pref gateway || fail "a pod labelled as the gateway could not reach user-pref:8081"
+if probe_user_pref netpol-probe; then
+  fail "a pod outside the allow lists reached user-pref:8081 (network policies not enforced)"
+fi
+
 echo "SMOKE PASS"

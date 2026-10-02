@@ -1,0 +1,85 @@
+{{- /*
+Network policies: firewall rules between pods.
+- A NetworkPolicy selects pods by label and lists who may open connections to them (ingress).
+- Once any policy selects a pod, everything not listed is refused.
+- The first policy below selects every pod in the namespace with an empty list, so the default is
+  "no one gets in"; the rest open exactly the paths the app uses.
+k3s (our k3d cluster) enforces these out of the box. On EKS a policy engine must be turned on
+(Phase 5), or these are silently ignored. Outgoing traffic is not restricted: the poller and the
+gateway's /api/upcoming must reach ESPN.
+*/}}
+{{- $ns := .Release.Namespace }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  labels:
+    app.kubernetes.io/part-of: sports-notifier
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# The only door from outside: Traefik (k3d's ingress controller, in kube-system) to the gateway.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-from-ingress
+  labels:
+    app.kubernetes.io/part-of: sports-notifier
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: gateway }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: traefik }
+      ports:
+        - port: {{ .Values.services.gateway.port }}
+{{- /* Internal HTTP services and the only workloads allowed to call each one. */}}
+{{- $callers := dict
+      "user-pref"        (list "gateway")
+      "game-state"       (list "gateway")
+      "notification"     (list "gateway")
+      "event-processing" (list "espn-poller" "simulator") }}
+{{- range $name, $from := $callers }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-from-callers
+  labels:
+    app.kubernetes.io/part-of: sports-notifier
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: {{ $name }} }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range $from }}
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: {{ . }} }
+        {{- end }}
+      ports:
+        - port: {{ (index $.Values.services $name).port }}
+{{- end }}
+---
+# Redis: any of our own workloads, nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-from-app
+  labels:
+    app.kubernetes.io/part-of: sports-notifier
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: redis }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/part-of: sports-notifier }
+      ports:
+        - port: 6379
