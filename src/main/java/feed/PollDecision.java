@@ -39,6 +39,10 @@ public final class PollDecision {
         int away = intOf(record.get("awayScore"));
         boolean live = snap.phase() == GameSnapshot.Phase.LIVE;
 
+        // Only the NFL can end tied. Elsewhere a tied final is ESPN mid-correction (seen: an OT
+        // winner briefly removed from the final score), so wait for the next poll.
+        boolean tiedFinal = "FINAL".equals(snap.status()) && snap.homeScore() == snap.awayScore();
+        if (tiedFinal && !"NFL".equals(snap.league())) return Optional.empty();
         if (!"FINAL".equals(status) && "FINAL".equals(snap.status())) {
             return Optional.of(event(GAME_END, snap.homeTeam(),
                 "Final: " + scoreLine(snap), snap, now));

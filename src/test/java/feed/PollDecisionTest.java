@@ -68,6 +68,27 @@ class PollDecisionTest {
     }
 
     @Test
+    void tiedFinalWaitsWhereTiesAreImpossible() throws java.io.IOException {
+        // SJ-LA, 2026-10-04: ESPN showed SJ 5-4 at the end of OT, then "Final" at 4-4 for about a
+        // minute, then 5-4. Sending the first final told people a hockey game ended in a tie.
+        GameSnapshot tied;
+        try (var in = PollDecisionTest.class.getResourceAsStream("/espn/nhl-final-tied.json")) {
+            tied = EspnScoreFeed.parse(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8), "NHL").get(0);
+        }
+        assertEquals("FINAL", tied.status());
+        assertEquals(tied.homeScore(), tied.awayScore());
+        assertTrue(PollDecision.decide(record("IN_PROGRESS", 5, 4, LIVE_SEQ), tied, NOW).isEmpty());
+    }
+
+    @Test
+    void nflTieIsAFinal() {
+        GameSnapshot tie = new GameSnapshot("espn-3", "NFL", "CHI", "LV", 20, 20,
+            FINAL, 5, Half.TOP, 0, 0, Stage.IN_PLAY, "FINAL", NOW);
+        Optional<GameEvent> e = PollDecision.decide(record("IN_PROGRESS", 20, 20, LIVE_SEQ), tie, NOW);
+        assertEquals("GAME_END", e.orElseThrow().getEventType());
+    }
+
+    @Test
     void canceledIsSyncNotEnd() {
         assertEquals("GAME_SYNC", decide(record("SCHEDULED", 0, 0, PRE_SEQ), snap(FINAL, "CANCELED", 0, 0)).getEventType());
     }
