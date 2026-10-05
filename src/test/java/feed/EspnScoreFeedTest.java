@@ -32,12 +32,12 @@ class EspnScoreFeedTest {
     @Test
     void nflLiveParsesPositionAndScore() throws IOException {
         GameSnapshot g = only("nfl-live.json", "NFL");
-        assertEquals("espn-401872964", g.gameId());
+        assertEquals("espn-401872965", g.gameId());
         assertEquals("NFL", g.league());
-        assertEquals("CLE", g.homeTeam());
-        assertEquals("PIT", g.awayTeam());
-        assertEquals(24, g.homeScore());
-        assertEquals(21, g.awayScore());
+        assertEquals("WSH", g.homeTeam());
+        assertEquals("IND", g.awayTeam());
+        assertEquals(13, g.homeScore());
+        assertEquals(30, g.awayScore());
         assertEquals(Phase.LIVE, g.phase());
         assertEquals(4, g.period());
         assertEquals(1200, g.clockTenths());

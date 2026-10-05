@@ -11,19 +11,19 @@
       "displayClock": "0:00",
       "period": 4,
       "type": {
-       "id": "1",
+       "id": "2",
        "name": "STATUS_IN_PROGRESS",
        "state": "in",
        "completed": false,
-       "description": "Scheduled",
-       "detail": "Bot 4th",
+       "description": "In Progress",
+       "detail": "Bottom 4th",
        "shortDetail": "Bot 4th"
       }
      },
      "competitors": [
       {
        "homeAway": "home",
-       "score": "2",
+       "score": "0",
        "team": {
         "abbreviation": "CLE",
         "displayName": "Cleveland Guardians",
@@ -32,7 +32,7 @@
       },
       {
        "homeAway": "away",
-       "score": "1",
+       "score": "2",
        "team": {
         "abbreviation": "CHW",
         "displayName": "Chicago White Sox",
@@ -42,12 +42,13 @@
      ],
      "situation": {
       "outs": 2,
-      "balls": 1,
-      "strikes": 2
+      "lastPlay": {
+       "text": "Jordan Hicks pitches to Nathaniel Lowe"
+      }
      }
     }
    ]
   }
  ],
- "_note": "derived 2026-10-02 from a captured file by editing status fields; replace with a live capture"
+ "_note": "captured live: recording mlb/20261003T182127Z.json.gz, trimmed to one game by scripts/trim-espn-fixture.py"
 }

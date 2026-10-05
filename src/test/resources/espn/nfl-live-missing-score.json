@@ -45,5 +45,5 @@
    ]
   }
  ],
- "_note": "derived: nfl-live.json with the home score null and the away score unreadable (review: missing score in a live game)"
+ "_note": "derived: the 2026-10-02 nfl-live.json capture with the home score null and the away score unreadable (review: missing score in a live game)"
 }
