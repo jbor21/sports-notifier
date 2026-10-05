@@ -21,13 +21,16 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Reads ESPN's scoreboard into {@link GameSnapshot}s.
  *
- * What ESPN's JSON looked like on 2026-10-02 (site.web.api.espn.com):
- * - status.type.name: STATUS_SCHEDULED, STATUS_FINAL seen live; STATUS_IN_PROGRESS,
- *   STATUS_HALFTIME, STATUS_END_PERIOD, STATUS_RAIN_DELAY, STATUS_DELAYED, STATUS_POSTPONED,
- *   STATUS_SUSPENDED, STATUS_CANCELED are ESPN's other names, not yet seen in a capture.
+ * What ESPN's JSON looked like in 60 hours of recordings, 2026-10-02 to 10-05 (site.web.api.espn.com,
+ * 49 games across all four leagues):
+ * - status.type.name: STATUS_SCHEDULED, STATUS_IN_PROGRESS, STATUS_HALFTIME, STATUS_END_PERIOD,
+ *   STATUS_DELAYED, STATUS_FINAL seen live. STATUS_RAIN_DELAY, STATUS_POSTPONED, STATUS_SUSPENDED,
+ *   and STATUS_CANCELED are ESPN's other names, not yet seen.
+ * - A delay before the start arrives with state "in" and period 0.
  * - status.clock is seconds left in the period, status.period the quarter/period/inning.
- * - MLB half-inning is assumed from status.type.shortDetail ("Top 4th", "Mid 4th", "Bot 4th",
- *   "End 4th") and outs from competitions[0].situation.outs. Confirm against a live capture.
+ * - MLB half-inning is in status.type.shortDetail ("Top 4th", "Mid 4th", "Bot 4th", "End 4th")
+ *   and outs in competitions[0].situation.outs. At the third out ESPN shows "Top 1st" with 0 outs
+ *   for one poll before "Mid 1st"; that snapshot is rejected as stale and the next one heals it.
  */
 public final class EspnScoreFeed implements ScoreFeed {
 

@@ -570,7 +570,7 @@ These were the known bugs in the course code. Phase 2 fixed the ones that surviv
 - Every gateway subscribes to `notify:*` and reads every notification (`NotificationFanOut.java`). Route to the gateway that holds the socket (decision 13).
 - If a worker dies before ack, the entry sits forever. Kafka's session timeout replaces the missing Redis reclaim. Per-user dedup has to exist before retries are turned on, or people get duplicates.
 - Accounts are lost when the cluster is deleted, until Postgres.
-- **One ESPN snapshot that runs ahead of reality becomes the floor.** A clock glitch showing 0:00 mid-period, or an early `completed`, gets a large `seq`; every later snapshot is stale until the game passes it, so those alerts are lost. The poller logs each such stale alert as a warning. Watch for it in the live-game check; fixing it needs detector logic (Phase 3).
+- **One ESPN snapshot that runs ahead of reality becomes the floor.** A clock glitch showing 0:00 mid-period, or an early `completed`, gets a large `seq`; every later snapshot is stale until the game passes it, so those alerts are lost. The poller logs each such stale alert as a warning. Seen for real in the 60-hour recording (2026-10-02 to 10-05): 2 of 23 NHL games showed a clock ahead of reality (4:01 left, then 11:45; 0:00 mid-period). Nothing was lost only because nobody scored in those minutes. Fixing it is a Phase 3.1 design item.
 
 **Fixed in Phase 2:**
 
