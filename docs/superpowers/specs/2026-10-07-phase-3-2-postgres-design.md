@@ -136,12 +136,14 @@ One Redis set per follow target and alert type, holding user ids: `sub:league:NF
 
 ### 5.3 Saving a follow (create, patch, delete)
 
-1. Take the save lock: `pg_advisory_lock_shared(SUB_LOCK)` on the connection. Many saves hold it at once; only a rebuild excludes them.
-2. Write Postgres in a transaction and commit.
-3. Update that follow's sets in Redis: `SADD` for switches now on, `SREM` for switches now off (all of them on delete), as one checked pipeline.
+1. Take two locks on the connection, always in this order: the rebuild lock shared, `pg_advisory_lock_shared(SUB_LOCK)` (many saves hold it at once; only a rebuild excludes them), then the user's lock, `pg_advisory_lock(USER_LOCK_NS, hashtext(userId))` (one save per user at a time). Same order everywhere, so two saves cannot deadlock. The two-number form keeps user locks apart from `SUB_LOCK`; two users whose ids hash alike just wait for each other.
+2. Write Postgres in a transaction and commit. `PATCH` merges in SQL, `UPDATE follows SET alerts = alerts || $patch WHERE id = $id AND user_id = $user RETURNING …`: each alert in the body replaces that alert's setting and the rest stay, with no read-modify-write in Java.
+3. Write the follow's whole new state to Redis, not a diff: `SADD` to the set of every switch now on, `SREM` from the set of every switch now off (all of them on delete), as one checked pipeline. Applying it twice gives the same result.
 4. If step 3 fails: delete the marker `sub:built`. If that also fails (Redis unreachable), set an in-memory "rebuild owed" flag; the 30-second check retries the delete.
-5. Release the lock (in `finally`; a dead pod's connection closes and Postgres releases it).
+5. Release both locks, user lock first (in `finally`; a dead pod's connection closes and Postgres releases them).
 6. Answer from the committed Postgres state. A Redis failure is logged, not returned to the user: the follow is saved, and the sets catch up at the next rebuild.
+
+**Why the user lock.** Two tabs save the same follow. Without it, tab A commits, tab B commits, B's Redis update lands, then A's: Redis matches A while Postgres matches B, and nothing notices until the next rebuild. Holding the user's lock from before the transaction until the Redis update finishes makes each user's saves happen one at a time, in commit order.
 
 **Why Postgres first, then Redis.** Postgres is the truth and Redis is a copy. If Redis were written first and the commit then failed, Redis would hold a follow that does not exist, and undoing a Redis write after a failed commit can fail too. With Postgres first, the only bad case is "Postgres has it, Redis does not," and deleting the marker turns that into a rebuild.
 
@@ -181,6 +183,15 @@ Audience = union over the play's targets (`sub:team:<home>`, `sub:team:<away>`, 
 - A play carries only the score after it, so Stage 1 cannot tell a touchdown from a field goal. An NFL score reaches anyone with any scoring switch on, and its headline type is `SCORE`, which the UI ignores as unknown and shows by its text.
 - NBA follows get only start and final. That matches the catalog (no alert per basket).
 - No "most specific follow wins": a user who turned `GAME_START` off on a game follow but on for the team still gets it through the team. 3.3 adds the set math.
+
+**Stage 1 waits for the sets.** If `sub:built` is missing, the sets may be empty or partial (Redis came back empty, or a rebuild is owed), and an audience built from them would silently lose alerts. So before handling a batch, Stage 1 checks `sub:built` (one `EXISTS` per batch, not per play). If it is missing:
+
+1. Rewind to the batch's start (`Offsets.rewindTo`) and pause every assigned lane (`consumer.pause(assignment)`). Nothing is committed.
+2. Keep looping: `health.beat()` and `poll()` as usual. A paused consumer's `poll()` returns no records but keeps it in the group, so a long rebuild neither fails `/health` (60 s) nor exceeds `max.poll.interval.ms` and causes a rebalance. Paused, not stopped.
+3. Each loop, check the marker again. While it is missing, pause the current assignment again (a rebalance can add lanes), and rewind any records a newly assigned lane returned. Log a warning every 30 seconds.
+4. When the marker is back, resume the lanes and carry on from the rewound position.
+
+The marker is set only at the end of a rebuild, so Stage 1 waits for the whole rebuild, not for the first sets to appear. A save whose Redis update failed also deletes the marker, so it pauses all alerts for up to about 30 seconds plus a rebuild; accepted, because it only happens when Redis just failed. If user-pref is down, Stage 1 waits until it is back; plays stay in `game-events` (7 days), so alerts are delayed, not lost.
 
 Stage 1 writes the API's `Notification` shape (headline, game with both teams' ids and scores, period label, clock, `detectedAt`) into the message, so the history writer stores it as is. Stage 2 pushes the same message.
 
@@ -228,11 +239,14 @@ Unit and integration tests run against real Redis (as today) and a real Postgres
 **Sets and rebuild.**
 
 - A save puts the user in exactly the sets of its enabled switches; patch and delete move them out.
+- Two concurrent `PATCH`es of one follow with different alert types (two tabs): both changes are in Postgres, and Redis matches Postgres exactly afterwards. Run many times with a barrier so the two really overlap.
 - Redis fails during a save (stop Redis between commit and update): the follow is in Postgres, `sub:built` is gone (or the owed flag is set when Redis is unreachable), and the next check rebuilds the sets to match Postgres.
 - Unfollow during a rebuild (rebuild paused after reading, unfollow started, rebuild resumed): the unfollow waits, and the user is not in the set afterwards.
 - Two replicas notice the missing marker together: one rebuilds, the other skips.
 - A rebuild deletes the 3.1 sets and sets for unfollowed targets, and Stage 1 reading during a rebuild never sees an empty set for a target that has followers.
 - Expired game follows leave their sets and are deleted.
+
+**Stage 1 waits for the marker.** Delete `sub:built`, send a play for a followed game: no notification is produced and the offset is not committed. Keep the marker missing for longer than the health window and longer than a shortened `max.poll.interval.ms` (set low in the test): `/health` stays OK, the worker's loop keeps beating, and no rebalance happens (the consumer keeps its assignment, checked with a rebalance listener). Rebuild: the follower gets the play exactly once.
 
 **Stage 1.** The mapping table, per league, including "NBA score reaches no one" and "a field-goal-only NFL follower gets a score"; a user following both teams gets one message; `sub:team:BOS` no longer collides (an `nba-bos` follower gets nothing from an `mlb-bos` game).
 
@@ -267,5 +281,7 @@ Each task keeps CI green, keeping the old path until its replacement lands, as i
 - **Interim alert mapping** (section 6): NFL scores are not told apart, no most-specific-follow rule. 3.3.
 - **A Postgres outage longer than the `notifications` topic's retention (1 day)** loses the history older than that.
 - **A missed Redis update can last up to a day** if Redis is unreachable during a save and user-pref then dies before the marker delete succeeds. The daily rebuild bounds it.
+- **Redis flushed in the middle of a Stage 1 batch**, after the marker check, can still lose that batch's alerts. The check is per batch, not per play.
+- **Any marker loss pauses all alerts** until the rebuild finishes, including a single save's failed Redis update (section 6).
 - **Saves wait during a rebuild** (seconds at this scale). At millions of follows the rebuild would need to run per target instead of under one lock.
 - **No account deletion endpoint.** Not in the API.
