@@ -87,4 +87,12 @@ public final class KafkaTestSupport {
         bootstrap();
         DockerClientFactory.instance().client().unpauseContainerCmd(broker.getContainerId()).exec();
     }
+
+    /** Safety net for test cleanup: unpause only if a failed test left the broker paused. */
+    public static void unpauseIfPaused() {
+        bootstrap();
+        Boolean paused = DockerClientFactory.instance().client()
+                .inspectContainerCmd(broker.getContainerId()).exec().getState().getPaused();
+        if (Boolean.TRUE.equals(paused)) unpause();
+    }
 }
