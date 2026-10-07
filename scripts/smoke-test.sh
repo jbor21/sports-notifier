@@ -136,4 +136,22 @@ if probe_kafka netpol-probe; then
   fail "a pod outside the allow lists reached sports-notifier-kafka-bootstrap:9092 (network policies not enforced). If the cluster was just restarted, k3s may not have started its policy controller: check 'docker logs k3d-sports-notifier-server-0 | grep \"network policy controller\"', then 'k3d cluster stop sports-notifier && make cluster'"
 fi
 
+# 10. Plays sent while the stage workers are down still arrive once they are back: they wait in
+#     Kafka. On CI's fresh cluster the groups are new before step 4, so step 5 already covered
+#     auto.offset.reset=earliest; this covers a group coming back to its own bookmark.
+starts_before=$(curl -fsS -b "$bob_jar" "$BASE_URL/api/history?limit=200" | jq '[.[] | select(.gameId == "game-LAL-BOS" and (.message | contains("has started")))] | length')
+k scale deploy/stage1-worker deploy/stage2-worker --replicas=0 >/dev/null
+k wait pod -l 'app.kubernetes.io/name in (stage1-worker,stage2-worker)' --for=delete --timeout=120s >/dev/null 2>&1 || true
+k delete jobs -l app.kubernetes.io/name=simulator --cascade=foreground --wait=true --ignore-not-found >/dev/null
+job=$("$repo_root/scripts/simulate.sh" SIM_WAVES=1)
+k wait "job/$job" --for=condition=complete --timeout=180s >/dev/null || fail "simulator job $job did not finish while the workers were down"
+k scale deploy/stage1-worker deploy/stage2-worker --replicas=1 >/dev/null
+got=0
+for _ in $(seq 1 90); do
+  now=$(curl -fsS -b "$bob_jar" "$BASE_URL/api/history?limit=200" | jq '[.[] | select(.gameId == "game-LAL-BOS" and (.message | contains("has started")))] | length')
+  if (( now > starts_before )); then got=1; break; fi
+  sleep 1
+done
+[[ "$got" == 1 ]] || fail "a game start sent while the stage workers were down never reached Bob after they came back"
+
 echo "SMOKE PASS"

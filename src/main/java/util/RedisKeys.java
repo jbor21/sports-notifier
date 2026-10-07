@@ -68,12 +68,4 @@ public final class RedisKeys {
     /** Per-user notification history list: {@code notifications:<userId>} */
     public static final String NOTIFICATIONS_PREFIX = "notifications:";
 
-    /** Per-user Redis Pub/Sub channel for real-time push: {@code notify:<userId>} */
-    public static final String NOTIFY_CHANNEL_PREFIX = "notify:";
-
-    /** Redis Stream key for game events shared by all PubSub Workers. */
-    public static final String GAME_EVENTS_STREAM = "game-events";
-
-    /** Redis Streams consumer group name for PubSub Workers. */
-    public static final String WORKER_GROUP = "workers";
 }

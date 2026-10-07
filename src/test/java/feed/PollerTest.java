@@ -11,12 +11,9 @@ import org.junit.jupiter.api.Test;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
-import redis.clients.jedis.StreamEntryID;
-import redis.clients.jedis.resps.StreamEntry;
 import service.ProcessResult;
 import service.impl.EventProcessingServiceImpl;
-import service.impl.RedisStreamPublisher;
-import util.GameEventParser;
+import testsupport.TestPublisher;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +31,7 @@ class PollerTest {
     private JedisPool pool;
     private Jedis jedis;
     private EventProcessingServiceImpl eps;
+    private TestPublisher sent;
     private final FakeFeed feed = new FakeFeed();
 
     /** Returns whatever the test last set. */
@@ -71,7 +69,8 @@ class PollerTest {
         jedis = new Jedis("localhost", 6379);
         jedis.select(1);
         jedis.flushDB();
-        eps = new EventProcessingServiceImpl(pool, new RedisStreamPublisher(pool), System::currentTimeMillis);
+        sent = new TestPublisher(true);
+        eps = new EventProcessingServiceImpl(pool, sent, System::currentTimeMillis);
     }
 
     @AfterEach
@@ -99,12 +98,9 @@ class PollerTest {
         return new Poller(feed, pool, sink, () -> NOW);
     }
 
+    /** Alert types sent, leaving out GAME_SYNC, which is sent too but notifies nobody. */
     private List<String> streamTypes() {
-        List<String> types = new ArrayList<>();
-        for (StreamEntry e : jedis.xrange("game-events", (StreamEntryID) null, (StreamEntryID) null)) {
-            types.add(GameEventParser.parse(e.getFields().get("data")).getEventType());
-        }
-        return types;
+        return sent.types().stream().filter(t -> !"GAME_SYNC".equals(t)).toList();
     }
 
     @Test
@@ -113,7 +109,7 @@ class PollerTest {
         poller(new InProcessSink()).pollLeague("NBA");
         assertTrue(jedis.exists("game:espn-1"));
         assertTrue(jedis.exists("game:espn-2"));
-        assertEquals(0L, jedis.xlen("game-events"));
+        assertEquals(List.of(), streamTypes(), "first sight records quietly: GAME_SYNC only, no alert");
     }
 
     @Test
@@ -167,7 +163,7 @@ class PollerTest {
         Poller p = poller(sink);
         feed.games = List.of(live(7200, 0, 0));
         p.pollLeague("NBA");
-        assertEquals(0L, jedis.xlen("game-events"));
+        assertEquals(List.of(), streamTypes());
         assertEquals("SCHEDULED", jedis.hget("game:espn-1", "status"));
 
         p.pollLeague("NBA");

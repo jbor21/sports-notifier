@@ -8,11 +8,10 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 import service.PlayPublisher;
+import testsupport.TestPublisher;
 import service.ProcessResult;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,20 +21,6 @@ class OutboxTest {
     private JedisPool pool;
     private Jedis jedis;
     private Outbox outbox;
-
-    /** Records what it was asked to publish; completes each future only when told to. */
-    static final class HoldingPublisher implements PlayPublisher {
-        final List<GameEvent> plays = new ArrayList<>();
-        final List<CompletableFuture<Void>> pending = new ArrayList<>();
-        final boolean autoComplete;
-        HoldingPublisher(boolean autoComplete) { this.autoComplete = autoComplete; }
-        @Override public synchronized CompletableFuture<Void> publish(GameEvent play) {
-            plays.add(play);
-            CompletableFuture<Void> f = autoComplete ? CompletableFuture.completedFuture(null) : new CompletableFuture<>();
-            pending.add(f);
-            return f;
-        }
-    }
 
     @BeforeEach
     void setUp() {
@@ -63,7 +48,7 @@ class OutboxTest {
 
     @Test
     void newerPlayIsPendingWhileOlderIsUnsent() {
-        EventProcessingServiceImpl eps = service(new HoldingPublisher(false));
+        EventProcessingServiceImpl eps = service(new TestPublisher(false));
         assertEquals(ProcessResult.ACCEPTED, eps.processEvent(play("e10", 10, 2)));
         assertEquals(ProcessResult.PENDING, eps.processEvent(play("e11", 11, 4)));
         assertEquals("2", jedis.hget("game:g1", "homeScore"));
@@ -73,7 +58,7 @@ class OutboxTest {
 
     @Test
     void acceptWritesPlayWithVersionToOutbox() {
-        service(new HoldingPublisher(false)).processEvent(play("e10", 10, 2));
+        service(new TestPublisher(false)).processEvent(play("e10", 10, 2));
         GameEvent waiting = outbox.play("g1").orElseThrow();
         assertEquals(1L, waiting.getVersion());
         assertEquals("e10", waiting.getEventId());
@@ -83,7 +68,7 @@ class OutboxTest {
 
     @Test
     void confirmedPublishClearsOutbox() {
-        HoldingPublisher pub = new HoldingPublisher(true);
+        TestPublisher pub = new TestPublisher(true);
         service(pub).processEvent(play("e10", 10, 2));
         assertEquals(1L, pub.plays.get(0).getVersion());
         assertFalse(jedis.exists("outbox:g1"));
@@ -92,7 +77,7 @@ class OutboxTest {
 
     @Test
     void clearWithStaleVersionLeavesNewerEntry() {
-        HoldingPublisher pub = new HoldingPublisher(false);
+        TestPublisher pub = new TestPublisher(false);
         EventProcessingServiceImpl eps = service(pub);
         eps.processEvent(play("e10", 10, 2));
         assertTrue(outbox.clear("g1", 1));
@@ -107,16 +92,16 @@ class OutboxTest {
     @Test
     void sixteenDigitSeqSurvivesTheOutbox() {
         // Simulator seqs are 16 digits; the outbox must not round them (cjson would print 1.79e+15).
-        service(new HoldingPublisher(false)).processEvent(play("sim", 1_790_000_000_000_005L, 5));
+        service(new TestPublisher(false)).processEvent(play("sim", 1_790_000_000_000_005L, 5));
         assertEquals(1_790_000_000_000_005L, outbox.play("g1").orElseThrow().getSeq());
     }
 
     @Test
     void gamesWaitingSinceReturnsOnlyOldEnoughEntries() {
-        new EventProcessingServiceImpl(pool, new HoldingPublisher(false), () -> 1_000L).processEvent(play("a", 10, 1));
+        new EventProcessingServiceImpl(pool, new TestPublisher(false), () -> 1_000L).processEvent(play("a", 10, 1));
         GameEvent other = new GameEvent("g2", "b", "SCORE_UPDATE", "LAL", 1000L, "desc",
             "LAL", "BOS", 1, 0, "IN_PROGRESS", "NBA", 10);
-        new EventProcessingServiceImpl(pool, new HoldingPublisher(false), () -> 9_000L).processEvent(other);
+        new EventProcessingServiceImpl(pool, new TestPublisher(false), () -> 9_000L).processEvent(other);
         assertEquals(List.of("g1"), outbox.gamesWaitingSince(4_000L));
     }
 }

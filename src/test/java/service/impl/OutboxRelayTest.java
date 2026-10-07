@@ -11,6 +11,7 @@ import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 import service.PlayPublisher;
 import service.ProcessResult;
+import testsupport.TestPublisher;
 import testsupport.KafkaTestSupport;
 import util.GameEventParser;
 import util.KafkaSettings;
@@ -76,7 +77,7 @@ class OutboxRelayTest {
     @Test
     void crashAfterAcceptThenRelayKeepsOrder() throws Exception {
         // Pod A accepts seq 10 and "crashes": its send never completes, so the play stays in the outbox.
-        new EventProcessingServiceImpl(pool, new OutboxTest.HoldingPublisher(false), now::get).processEvent(play("g1", 10, 1));
+        new EventProcessingServiceImpl(pool, new TestPublisher(false), now::get).processEvent(play("g1", 10, 1));
         // Pod B is up. A newer play waits behind the stuck one instead of overtaking it.
         EventProcessingServiceImpl b = new EventProcessingServiceImpl(pool, kafka, now::get);
         assertEquals(ProcessResult.PENDING, b.processEvent(play("g1", 11, 2)));
@@ -87,7 +88,7 @@ class OutboxRelayTest {
 
     @Test
     void relaySendsLeftoverAndClears() throws Exception {
-        new EventProcessingServiceImpl(pool, new OutboxTest.HoldingPublisher(false), now::get).processEvent(play("g1", 10, 1));
+        new EventProcessingServiceImpl(pool, new TestPublisher(false), now::get).processEvent(play("g1", 10, 1));
         relay(kafka, 0).runOnce().get(10, TimeUnit.SECONDS);
         assertFalse(jedis.exists("outbox:g1"));
         assertNull(jedis.zscore("outbox:pending", "g1"));
@@ -96,8 +97,8 @@ class OutboxRelayTest {
 
     @Test
     void relayIgnoresFreshEntries() throws Exception {
-        new EventProcessingServiceImpl(pool, new OutboxTest.HoldingPublisher(false), now::get).processEvent(play("g1", 10, 1));
-        OutboxTest.HoldingPublisher recorder = new OutboxTest.HoldingPublisher(true);
+        new EventProcessingServiceImpl(pool, new TestPublisher(false), now::get).processEvent(play("g1", 10, 1));
+        TestPublisher recorder = new TestPublisher(true);
         now.addAndGet(4_999);
         relay(recorder, 5_000).runOnce().get(10, TimeUnit.SECONDS);
         assertTrue(recorder.plays.isEmpty(), "a play accepted under 5 s ago is probably still being sent normally");
@@ -109,7 +110,7 @@ class OutboxRelayTest {
     @Test
     void twoRelaysNeverReorder() throws Exception {
         EventProcessingServiceImpl eps = new EventProcessingServiceImpl(pool, kafka, now::get);
-        new EventProcessingServiceImpl(pool, new OutboxTest.HoldingPublisher(false), now::get).processEvent(play("g1", 10, 1));
+        new EventProcessingServiceImpl(pool, new TestPublisher(false), now::get).processEvent(play("g1", 10, 1));
         CompletableFuture<Void> first = relay(kafka, 0).runOnce();
         CompletableFuture<Void> second = relay(kafka, 0).runOnce();
         CompletableFuture.allOf(first, second).get(10, TimeUnit.SECONDS);

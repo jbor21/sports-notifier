@@ -1,6 +1,5 @@
 package service.impl;
 
-import com.google.gson.Gson;
 import io.javalin.Javalin;
 import model.Notification;
 import redis.clients.jedis.JedisPool;
@@ -12,7 +11,6 @@ import java.util.List;
 
 public final class NotificationServiceMain {
 
-    private static final Gson GSON = new Gson();
 
     public static void main(String[] args) {
         JedisPoolHolder.awaitRedisOrExit("notification");
@@ -28,12 +26,6 @@ public final class NotificationServiceMain {
             int limit = Integer.parseInt(ctx.queryParamAsClass("limit", String.class).getOrDefault("50"));
             List<Notification> hist = svc.getNotificationHistory(ctx.pathParam("userId"), limit);
             ctx.json(hist);
-        });
-
-        app.post("/notify/{userId}", ctx -> {
-            Notification n = GSON.fromJson(ctx.body(), Notification.class);
-            svc.sendNotification(ctx.pathParam("userId"), n);
-            ctx.status(202);
         });
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

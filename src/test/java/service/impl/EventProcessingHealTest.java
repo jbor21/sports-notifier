@@ -13,6 +13,7 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 import service.ProcessResult;
+import testsupport.TestPublisher;
 
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -36,7 +37,7 @@ class EventProcessingHealTest {
         jedis = new Jedis("localhost", 6379);
         jedis.select(1);
         jedis.flushDB();
-        service = new EventProcessingServiceImpl(pool, new OutboxTest.HoldingPublisher(true), now::get);
+        service = new EventProcessingServiceImpl(pool, new TestPublisher(true), now::get);
     }
 
     @AfterEach
@@ -105,7 +106,7 @@ class EventProcessingHealTest {
 
     @Test
     void versionCountsAcceptsOnly() {
-        OutboxTest.HoldingPublisher held = new OutboxTest.HoldingPublisher(false);
+        TestPublisher held = new TestPublisher(false);
         EventProcessingServiceImpl eps = new EventProcessingServiceImpl(pool, held, now::get);
         GameEvent glitch = nhl(2, GLITCH, 0, 4);
         assertEquals(ProcessResult.ACCEPTED, eps.processEvent(glitch));

@@ -4,6 +4,7 @@ import model.GameEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import testsupport.TestPublisher;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
@@ -24,7 +25,7 @@ class GameExpiryTest {
         jedis = new Jedis("localhost", 6379);
         jedis.select(1);
         jedis.flushDB();
-        service = new EventProcessingServiceImpl(pool, new RedisStreamPublisher(pool), System::currentTimeMillis);
+        service = new EventProcessingServiceImpl(pool, new TestPublisher(true), System::currentTimeMillis);
     }
 
     @AfterEach

@@ -7,10 +7,8 @@ import org.junit.jupiter.api.Test;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
-import redis.clients.jedis.StreamEntryID;
-import redis.clients.jedis.resps.StreamEntry;
 import service.ProcessResult;
-import util.GameEventParser;
+import testsupport.TestPublisher;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +33,7 @@ class EventProcessingBurstTest {
     private JedisPool pool;
     private Jedis jedis;
     private EventProcessingServiceImpl service;
+    private TestPublisher sent;
 
     @BeforeEach
     void setUp() {
@@ -44,7 +43,8 @@ class EventProcessingBurstTest {
         jedis = new Jedis("localhost", 6379);
         jedis.select(1);
         jedis.flushDB();
-        service = new EventProcessingServiceImpl(pool, new RedisStreamPublisher(pool), System::currentTimeMillis);
+        sent = new TestPublisher(true);
+        service = new EventProcessingServiceImpl(pool, sent, System::currentTimeMillis);
     }
 
     @AfterEach
@@ -84,9 +84,8 @@ class EventProcessingBurstTest {
 
                 // Published in version order 1..N, and seq rises with it: no heal fired, nothing reordered.
                 List<GameEvent> published = new ArrayList<>();
-                for (StreamEntry entry : jedis.xrange("game-events", (StreamEntryID) null, (StreamEntryID) null)) {
-                    GameEvent p = GameEventParser.parse(entry.getFields().get("data"));
-                    if (gameId.equals(p.getGameId())) published.add(p);
+                synchronized (sent) {
+                    for (GameEvent p : sent.plays) if (gameId.equals(p.getGameId())) published.add(p);
                 }
                 assertEquals(accepted.get(), published.size(), "run " + run);
                 for (int k = 0; k < published.size(); k++) {

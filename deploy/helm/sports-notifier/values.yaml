@@ -30,13 +30,6 @@ services:
   game-state:       { replicas: 1, port: 8082, portEnv: GAME_STATE_PORT,       clusterService: true }
   event-processing: { replicas: 1, port: 8083, portEnv: EVENT_PROCESSING_PORT, clusterService: true, kafka: true }
   notification:     { replicas: 1, port: 8087, portEnv: NOTIFICATION_PORT,     clusterService: true }
-  # The course workers on the Redis Stream: off since the Phase 3.1 switch-over, deleted in Task 8.
-  pubsub-worker:
-    replicas: 0
-    port: 8084
-    portEnv: PUBSUB_WORKER_PORT
-    clusterService: false
-    podNameEnv: PUBSUB_CONSUMER_NAME   # unique consumer name per pod in the Redis consumer group
   # Stage 1: reads game-events, writes one notifications message per user.
   stage1-worker:
     replicas: 1
