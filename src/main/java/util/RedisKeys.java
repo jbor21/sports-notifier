@@ -23,6 +23,9 @@ public final class RedisKeys {
     /** Games with a play in the outbox, scored by accept time in millis; the retry loop reads it. */
     public static final String OUTBOX_PENDING = "outbox:pending";
 
+    /** The last play version Stage 1 finished for a game: {@code s1:last:<gameId>} */
+    public static final String STAGE1_LAST_PREFIX = "s1:last:";
+
     /** Account record JSON (id, username, bcrypt hash): {@code user:<userId>} */
     public static final String USER_PREFIX = "user:";
 

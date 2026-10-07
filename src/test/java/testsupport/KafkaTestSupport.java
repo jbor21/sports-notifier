@@ -63,12 +63,17 @@ public final class KafkaTestSupport {
         List<ConsumerRecord<String, String>> out = new ArrayList<>();
         try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(p)) {
             // assign, not subscribe: no consumer group, so reading here never moves anyone's offsets.
-            List<TopicPartition> partitions = consumer.partitionsFor(topic).stream()
-                    .map(info -> new TopicPartition(topic, info.partition()))
-                    .toList();
+            // A topic that was just created and never written can report no partitions for a moment.
+            long deadline = System.nanoTime() + wait.toNanos();
+            List<TopicPartition> partitions = List.of();
+            while (partitions.isEmpty() && System.nanoTime() < deadline) {
+                partitions = consumer.partitionsFor(topic).stream()
+                        .map(info -> new TopicPartition(topic, info.partition()))
+                        .toList();
+            }
+            if (partitions.isEmpty()) throw new IllegalStateException("topic " + topic + " has no partitions");
             consumer.assign(partitions);
             consumer.seekToBeginning(partitions);
-            long deadline = System.nanoTime() + wait.toNanos();
             while (System.nanoTime() < deadline) {
                 long leftMs = Math.max(1, (deadline - System.nanoTime()) / 1_000_000);
                 consumer.poll(Duration.ofMillis(Math.min(200, leftMs))).forEach(out::add);

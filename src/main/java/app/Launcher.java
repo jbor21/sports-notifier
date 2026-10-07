@@ -5,6 +5,7 @@ import service.impl.EventProcessingServiceMain;
 import service.impl.GameStateServiceMain;
 import service.impl.NotificationServiceMain;
 import service.impl.PubSubWorkerMain;
+import service.impl.Stage1WorkerMain;
 import service.impl.UserPreferenceServiceMain;
 import simulator.EspnPollerMain;
 import simulator.EventSimulatorMain;
@@ -29,6 +30,7 @@ public final class Launcher {
         m.put("game-state", GameStateServiceMain::main);
         m.put("event-processing", EventProcessingServiceMain::main);
         m.put("pubsub-worker", PubSubWorkerMain::main);
+        m.put("stage1-worker", Stage1WorkerMain::main);
         m.put("notification", NotificationServiceMain::main);
         m.put("simulator", EventSimulatorMain::main);
         m.put("espn-poller", EspnPollerMain::main);
