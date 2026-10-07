@@ -149,8 +149,8 @@ void gameIdNamesTheLeagueNotTheProvider() throws IOException {
 @Test void versionCountsAcceptsOnly()
 // accept (v1), duplicate, stale, pending (outbox held), heal -> versions 1,1,1,1,2 in the record
 @Test void healsIgnoreSimulatorSeqs()
-// accept simulator-style seq 1790000000000000005 (score 5-0); a play from an older run,
-// seq 1789999999000000009 (score 9-0) -> STALE, lastSeq unchanged (spec test 14)
+// accept simulator-style seq 1790000000000005 (score 5-0); a play from an older run,
+// seq 1789999999000009 (score 9-0) -> STALE, lastSeq unchanged (spec test 14)
 ```
 
 - [ ] **Step 2: Write `OutboxTest`**:
