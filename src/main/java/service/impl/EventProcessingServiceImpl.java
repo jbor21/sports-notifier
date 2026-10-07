@@ -36,8 +36,10 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      *    "claimed but not yet produced, so produce again" path (DESIGN.md decision 5) could never run.
      * 2. Then seq: game state never goes back in game time. A stale event returns before the
      *    claim, so it never burns an id (the course's original TOCTOU fix).
-     * 3. Only then claim the id and write the full state. Every event carries the whole state,
-     *    so the script does not branch on event type.
+     * 3. Only then claim the id, add 1 to the game's version, and write the full state. Every
+     *    event carries the whole state, so the script does not branch on event type. version
+     *    changes in the same step as the score, so it counts accepted plays in exactly the order
+     *    the score changed; everything after the script orders and dedups by it.
      * 4. Expire the record (a day after a final, 8 days idle otherwise) and note the game in
      *    games:recent, so the game list reads a bounded set instead of scanning every key.
      *
@@ -50,13 +52,14 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      * ARGV[6] = homeScore  ARGV[7] = awayScore  ARGV[8] = status   ARGV[9] = timestamp
      * ARGV[10] = gameId    ARGV[11] = finished TTL seconds   ARGV[12] = idle TTL / recent window seconds
      *
-     * Returns: 0 duplicate | -1 stale | 1 accepted
+     * Returns: 0 duplicate | -1 stale | the game's new version (1, 2, ...) when accepted
      */
     private static final String PROCESS_EVENT_SCRIPT =
         "if redis.call('EXISTS', KEYS[2]) == 1 then return 0 end\n" +
         "local lastSeq = tonumber(redis.call('HGET', KEYS[1], 'lastSeq')) or 0\n" +
         "if tonumber(ARGV[1]) <= lastSeq then return -1 end\n" +
         "redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])\n" +
+        "local version = redis.call('HINCRBY', KEYS[1], 'version', 1)\n" +
         "redis.call('HSET', KEYS[1],\n" +
         "  'homeTeam', ARGV[3], 'awayTeam', ARGV[4], 'league', ARGV[5],\n" +
         "  'homeScore', ARGV[6], 'awayScore', ARGV[7], 'status', ARGV[8],\n" +
@@ -69,7 +72,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         "local now = tonumber(redis.call('TIME')[1])\n" +
         "redis.call('ZADD', KEYS[3], now, ARGV[10])\n" +
         "redis.call('ZREMRANGEBYSCORE', KEYS[3], '-inf', now - tonumber(ARGV[12]))\n" +
-        "return 1\n";
+        "return version\n";
 
     public EventProcessingServiceImpl(JedisPool pool) {
         this.pool = pool;
@@ -124,7 +127,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                 + event.getEventId() + " for game " + event.getGameId());
             return ProcessResult.STALE;
         }
-        if (!GAME_SYNC.equals(event.getEventType())) publishEvent(event);
+        if (!GAME_SYNC.equals(event.getEventType())) publishEvent(event.withVersion(result));
         return ProcessResult.ACCEPTED;
     }
 

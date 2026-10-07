@@ -48,6 +48,26 @@ class EventProcessingServiceImplTest {
     }
 
     @Test
+    void versionRisesOnlyOnAccept() {
+        // version orders accepted plays for everything after the script; seq can't, because a heal can lower it.
+        service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+        assertEquals("1", jedis.hget("game:g1", "version"));
+        service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));   // duplicate
+        service.processEvent(ev("e0", 5, 1, 0, "SCORE_UPDATE"));    // stale
+        assertEquals("1", jedis.hget("game:g1", "version"));
+        service.processEvent(ev("e2", 20, 4, 0, "SCORE_UPDATE"));
+        assertEquals("2", jedis.hget("game:g1", "version"));
+    }
+
+    @Test
+    void publishedPlayCarriesItsVersion() {
+        service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+        service.processEvent(ev("e2", 20, 4, 0, "SCORE_UPDATE"));
+        String latest = jedis.xrevrange("game-events", "+", "-", 1).get(0).getFields().get("data");
+        assertEquals(2L, util.GameEventParser.parse(latest).getVersion());
+    }
+
+    @Test
     void sameIdTwiceIsDuplicate() {
         service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
         assertEquals(ProcessResult.DUPLICATE, service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE")));
