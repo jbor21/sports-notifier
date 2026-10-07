@@ -12,4 +12,6 @@ public final class Topics {
 
     public static final String STAGE1_GROUP = "stage1";
     public static final String STAGE2_GROUP = "stage2";
+    /** The history writers: a second group on notifications, so a slow Postgres never delays a push. */
+    public static final String HISTORY_GROUP = "history";
 }

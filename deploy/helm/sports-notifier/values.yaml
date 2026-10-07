@@ -45,6 +45,14 @@ services:
     portEnv: STAGE2_WORKER_PORT
     clusterService: false
     kafka: true
+  # History writers: a second consumer group on notifications, saving each one to Postgres in batches.
+  history:
+    replicas: 1
+    port: 8088
+    portEnv: HISTORY_PORT
+    clusterService: false
+    kafka: true
+    postgres: true
 
 # ESPN request settings, shared by the gateway's upcoming-games proxy and the poller. ESPN's
 # filtering changes over time; the daily espn-check workflow says when these stop working.

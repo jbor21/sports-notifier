@@ -14,12 +14,23 @@ public final class Db {
     private Db() {}
 
     public static HikariDataSource create(String url, String user, String password, int poolSize) {
+        return create(url, user, password, poolSize,
+                Integer.parseInt(System.getenv().getOrDefault("PG_SOCKET_TIMEOUT_SECONDS", "30")));
+    }
+
+    /**
+     * {@code socketTimeoutSeconds}: a query that gets no answer for this long fails. Without it, a
+     * frozen Postgres (connection open, nothing answering) would hang the caller forever; a worker
+     * loop would stop instead of failing the batch and retrying.
+     */
+    public static HikariDataSource create(String url, String user, String password, int poolSize, int socketTimeoutSeconds) {
         HikariConfig cfg = new HikariConfig();
         cfg.setJdbcUrl(url);
         cfg.setUsername(user);
         cfg.setPassword(password);
         cfg.setMaximumPoolSize(poolSize);
         cfg.setConnectionTimeout(5000);
+        cfg.addDataSourceProperty("socketTimeout", socketTimeoutSeconds);
         return new HikariDataSource(cfg);
     }
 
