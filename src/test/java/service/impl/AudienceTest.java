@@ -97,6 +97,25 @@ class AudienceTest {
     }
 
     @Test
+    void overlappingWorkersDoNotCutEachOtherShort() {
+        // Review finding M3: a stalled Stage 1 worker can overlap the lane's new owner on the same
+        // play. With a shared temporary set, one worker's cleanup deleted the set the other was still
+        // paging through, and that worker recorded the play after reaching only part of the audience.
+        for (int i = 0; i < 2000; i++) follow("u" + i, "sub:team:BOS", "SCORE_UPDATE");
+        GameEvent play = lalBos("SCORE_UPDATE", "LAL");
+        List<String> first = new ArrayList<>();
+        boolean[] overlapped = {false};
+        audience.forEachPage(play, page -> {
+            first.addAll(page);
+            if (!overlapped[0]) {
+                overlapped[0] = true;
+                assertEquals(2000, usersFor(play).size());   // the other worker runs start to finish
+            }
+        });
+        assertEquals(2000, first.size());
+    }
+
+    @Test
     void redisErrorWhileBuildingFailsInsteadOfWideningTheAudience() {
         // If the union succeeded and the type filter failed silently, every team follower would get
         // the play whether or not they asked for that event type.
@@ -114,7 +133,8 @@ class AudienceTest {
         follow("bos-fan", "sub:team:BOS", "SCORE_UPDATE");
         List<String> seenKeys = new ArrayList<>();
         audience.forEachPage(lalBos("SCORE_UPDATE", "LAL"), page -> seenKeys.addAll(jedis.keys("fanout:*")));
-        assertEquals(List.of("fanout:game-LAL-BOS:v3"), seenKeys);
+        assertEquals(1, seenKeys.size());
+        assertTrue(seenKeys.get(0).startsWith("fanout:game-LAL-BOS:v3:"), seenKeys.get(0));
         assertTrue(jedis.keys("fanout:*").isEmpty());
     }
 }

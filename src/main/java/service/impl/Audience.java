@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
@@ -45,7 +46,9 @@ public final class Audience {
         if (play.getLeague() != null) sources.add(RedisKeys.SUB_LEAGUE_PREFIX + play.getLeague());
         if (sources.isEmpty()) return;
 
-        String audience = RedisKeys.FANOUT_PREFIX + play.getGameId() + ":v" + play.getVersion();
+        // Unique per call: a stalled worker can overlap the lane's new owner on the same play, and with
+        // a shared name one worker's cleanup would delete the set the other is still paging through.
+        String audience = RedisKeys.FANOUT_PREFIX + play.getGameId() + ":v" + play.getVersion() + ":" + UUID.randomUUID();
         try (Jedis jedis = pool.getResource()) {
             try {
                 Pipeline p = jedis.pipelined();
