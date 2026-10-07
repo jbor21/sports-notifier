@@ -94,7 +94,7 @@ A second script, **clear**, runs after Kafka confirms: delete `outbox:<gameId>` 
 
 ### 1.7 The retry loop
 
-Every second, each Event Processing pod reads games in `outbox:pending` whose entry is older than 5 seconds, produces each play, and runs **clear** on confirmation. Two pods can re-send the same play; Stage 1 sees the same `version` twice and drops the second. They cannot send one game's plays out of order, because the outbox never holds two plays for one game.
+Every second, each Event Processing pod reads games in `outbox:pending` whose entry is older than 5 seconds, produces each play, and runs **clear** on confirmation. A loop skips a play while its own earlier send of it is still in flight, so a slow or down Kafka gets one copy per pod rather than a new copy every second (found in the final review). Different pods, and the original send, can still each send the same play; Stage 1 sees the same `version` more than once and drops the extras. They cannot send one game's plays out of order, because the outbox never holds two plays for one game.
 
 ### 1.8 Failure behavior
 

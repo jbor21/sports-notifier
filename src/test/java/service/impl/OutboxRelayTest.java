@@ -108,6 +108,22 @@ class OutboxRelayTest {
     }
 
     @Test
+    void relayDoesNotResendWhileItsSendIsInFlight() throws Exception {
+        // Review finding I3: during a slow or down Kafka the loop re-sent every waiting play every
+        // second, queueing about one copy per second per game. One send at a time per play instead.
+        new EventProcessingServiceImpl(pool, new TestPublisher(false), now::get).processEvent(play("g1", 10, 1));
+        TestPublisher stuck = new TestPublisher(false);
+        OutboxRelay relay = relay(stuck, 0);
+        relay.runOnce();
+        relay.runOnce();
+        relay.runOnce();
+        assertEquals(1, stuck.plays.size(), "still in flight: not sent again");
+        stuck.pending.get(0).completeExceptionally(new RuntimeException("delivery timeout"));
+        relay.runOnce();
+        assertEquals(2, stuck.plays.size(), "the send failed, so the next run tries again");
+    }
+
+    @Test
     void twoRelaysNeverReorder() throws Exception {
         EventProcessingServiceImpl eps = new EventProcessingServiceImpl(pool, kafka, now::get);
         new EventProcessingServiceImpl(pool, new TestPublisher(false), now::get).processEvent(play("g1", 10, 1));
