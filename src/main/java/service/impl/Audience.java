@@ -1,5 +1,7 @@
 package service.impl;
 
+import catalog.FollowKind;
+import feed.TeamIds;
 import model.GameEvent;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
@@ -17,11 +19,11 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
- * Who hears about a play. Builds the audience inside Redis instead of in Java: the union of everyone
- * following either team, the game, or the league, intersected with everyone who enabled this event
- * type. That is a handful of Redis calls per play, not one SISMEMBER round trip per subscriber, and
- * the union de-duplicates a user who follows both teams so they get one notification. Both teams,
- * not just the tagged one: following a team means following its whole game.
+ * Who hears about a play: the union of the play's targets (both teams, the game, the league), each
+ * crossed with the play's switches, so {@code sub:team:nhl-bos:GOAL} and the rest (spec section 6).
+ * Built inside Redis, not in Java: a handful of Redis calls per play, not one round trip per
+ * subscriber, and the union de-duplicates a user reached through several follows. Both teams, not
+ * just the tagged one: following a team means following its whole game.
  */
 public final class Audience {
 
@@ -34,16 +36,24 @@ public final class Audience {
         this.pool = pool;
     }
 
-    /** Calls {@code page} with the audience a page at a time, so a huge audience never sits in memory at once. */
-    public void forEachPage(GameEvent play, Consumer<List<String>> page) {
-        if (play.getEventType() == null) return;
+    /**
+     * Calls {@code page} with the audience a page at a time, so a huge audience never sits in memory
+     * at once. No switches, no audience.
+     */
+    public void forEachPage(GameEvent play, List<String> switches, Consumer<List<String>> page) {
+        if (switches.isEmpty()) return;
 
-        List<String> sources = new ArrayList<>();
-        for (String team : new LinkedHashSet<>(Arrays.asList(play.getHomeTeam(), play.getAwayTeam(), play.getTeam()))) {
-            if (team != null) sources.add(RedisKeys.SUB_TEAM_PREFIX + team);
+        List<String> targets = new ArrayList<>();
+        for (String team : new LinkedHashSet<>(Arrays.asList(
+                TeamIds.of(play.getLeague(), play.getHomeTeam()), TeamIds.of(play.getLeague(), play.getAwayTeam())))) {
+            if (team != null) targets.add(FollowSets.prefix(FollowKind.TEAM) + team);
         }
-        if (play.getGameId() != null) sources.add(RedisKeys.SUB_GAME_PREFIX + play.getGameId());
-        if (play.getLeague() != null) sources.add(RedisKeys.SUB_LEAGUE_PREFIX + play.getLeague());
+        if (play.getGameId() != null) targets.add(FollowSets.prefix(FollowKind.GAME) + play.getGameId());
+        if (play.getLeague() != null) targets.add(FollowSets.prefix(FollowKind.LEAGUE) + play.getLeague());
+        List<String> sources = new ArrayList<>();
+        for (String target : targets) {
+            for (String s : switches) sources.add(target + ":" + s);
+        }
         if (sources.isEmpty()) return;
 
         // Unique per call: a stalled worker can overlap the lane's new owner on the same play, and with
@@ -53,11 +63,8 @@ public final class Audience {
             try {
                 Pipeline p = jedis.pipelined();
                 p.sunionstore(audience, sources.toArray(new String[0]));
-                p.sinterstore(audience, audience, RedisKeys.SUB_NOTIF_PREFIX + play.getEventType());
                 // Safety net: if this worker dies mid-fan-out, the temporary set still goes away.
                 p.expire(audience, TEMP_KEY_TTL_SECONDS);
-                // Checked: if the union worked and the type filter failed, the audience would be
-                // every follower, not just those who asked for this event type.
                 RedisPipelines.syncChecked(p);
 
                 ScanParams params = new ScanParams().count(PAGE_SIZE);

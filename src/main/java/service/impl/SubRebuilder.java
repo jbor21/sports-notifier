@@ -161,20 +161,20 @@ public final class SubRebuilder {
 
     /**
      * Deletes sets this build did not produce (targets nobody follows any more, switches nobody has
-     * on) and temporary sets a crashed build left behind. Only sub:<kind>:<target>:<ALERT> keys are
-     * touched: the 3.1 sets have one part fewer and are left alone.
+     * on), temporary sets a crashed build left behind, and the 3.1 sets ({@code sub:team:<team>},
+     * {@code sub:notif:<type>}), which nothing reads any more.
      */
     private static int cleanup(Jedis jedis, Set<String> produced) {
         int removed = 0;
         for (String pattern : List.of(RedisKeys.SUB_LEAGUE_PREFIX + "*", RedisKeys.SUB_TEAM_PREFIX + "*",
-                RedisKeys.SUB_GAME_PREFIX + "*", RedisKeys.SUB_TMP_PREFIX + "*")) {
-            boolean tmp = pattern.startsWith(RedisKeys.SUB_TMP_PREFIX);
+                RedisKeys.SUB_GAME_PREFIX + "*", RedisKeys.SUB_TMP_PREFIX + "*", RedisKeys.SUB_NOTIF_PREFIX + "*")) {
+            boolean always = pattern.startsWith(RedisKeys.SUB_TMP_PREFIX) || pattern.startsWith(RedisKeys.SUB_NOTIF_PREFIX);
             ScanParams params = new ScanParams().match(pattern).count(BATCH);
             String cursor = ScanParams.SCAN_POINTER_START;
             do {
                 ScanResult<String> page = jedis.scan(cursor, params);
                 for (String key : page.getResult()) {
-                    if (tmp || (key.split(":", -1).length == 4 && !produced.contains(key))) {
+                    if (always || !produced.contains(key)) {
                         jedis.del(key);
                         removed++;
                     }

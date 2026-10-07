@@ -89,13 +89,16 @@ class SubRebuilderTest {
     void rebuildDeletesStaleSetsAndLeftoverTemps() {
         jedis.sadd("sub:team:nba-lal:GAME_START", "someone-who-unfollowed");
         jedis.sadd(RedisKeys.SUB_TMP_PREFIX + "deadbuild:sub:team:x:FINAL", "u");
-        jedis.sadd("sub:team:LAL", "a-3.1-member");          // 3.1 shape: left alone until Task 6
+        jedis.sadd("sub:team:LAL", "a-3.1-member");          // 3.1 shapes: nothing reads them any more
+        jedis.sadd(RedisKeys.SUB_NOTIF_PREFIX + "GAME_START", "a-3.1-member");
         follows.create(bob, "team", "mlb-chw");
         jedis.del(RedisKeys.SUB_BUILT);
 
         assertTrue(rebuilder().checkOnce());
         assertFalse(jedis.exists("sub:team:nba-lal:GAME_START"));
         assertTrue(jedis.keys(RedisKeys.SUB_TMP_PREFIX + "*").isEmpty());
+        assertFalse(jedis.exists("sub:team:LAL"));
+        assertFalse(jedis.exists(RedisKeys.SUB_NOTIF_PREFIX + "GAME_START"));
         assertTrue(jedis.sismember("sub:team:mlb-chw:GAME_START", bob));
     }
 

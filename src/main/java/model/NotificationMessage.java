@@ -1,5 +1,7 @@
 package model;
 
+import com.google.gson.JsonObject;
+
 /**
  * One user's notification about one play, as Stage 1 writes it to the {@code notifications} topic
  * (keyed by {@code userId}) and Stage 2 delivers it.
@@ -31,10 +33,18 @@ public class NotificationMessage {
     private String status;
     /** When the poller saw the play (epoch millis), for measuring delay end to end. */
     private long detectedAt;
+    /** The API's {@code Notification} (see {@link NotificationBody}): what history stores and the new UI reads. */
+    private JsonObject notification;
 
     public NotificationMessage() {}
 
     /** The message for {@code userId} about an accepted {@code play}. */
+    public static NotificationMessage of(GameEvent play, String userId, JsonObject notification) {
+        NotificationMessage m = of(play, userId);
+        m.notification = notification;
+        return m;
+    }
+
     public static NotificationMessage of(GameEvent play, String userId) {
         NotificationMessage m = new NotificationMessage();
         m.messageId = play.getGameId() + ":v" + play.getVersion();
@@ -64,4 +74,5 @@ public class NotificationMessage {
     public int getAwayScore() { return awayScore; }
     public String getStatus() { return status; }
     public long getDetectedAt() { return detectedAt; }
+    public JsonObject getNotification() { return notification; }
 }

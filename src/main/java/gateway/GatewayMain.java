@@ -72,21 +72,6 @@ public final class GatewayMain {
 
         ApiV1Routes.register(app, pool, loginThrottle, USER_PREF_URL, NOTIFICATION_URL);
 
-        // --- Preferences ---
-        app.get("/api/preferences", ctx -> {
-            String userId = requireAuth(pool, ctx);
-            if (userId == null) return;
-            HttpResponse<String> r = SimpleHttp.get(USER_PREF_URL + "/prefs/" + urlEnc(userId));
-            ctx.status(r.statusCode()).result(r.body());
-        });
-
-        app.put("/api/preferences", ctx -> {
-            String userId = requireAuth(pool, ctx);
-            if (userId == null) return;
-            HttpResponse<String> r = SimpleHttp.putJson(USER_PREF_URL + "/prefs/" + urlEnc(userId), ctx.body());
-            ctx.status(r.statusCode()).result(r.body());
-        });
-
         // --- Game state ---
         app.get("/api/games", gameListingHandler::handleList);
 

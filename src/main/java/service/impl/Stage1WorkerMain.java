@@ -3,11 +3,13 @@ package service.impl;
 import io.javalin.Javalin;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import util.GsonJsonMapper;
 import util.JedisPoolHolder;
 import util.KafkaSettings;
 import util.LoopHealth;
+import util.RedisKeys;
 import util.Topics;
 
 import java.util.Collections;
@@ -27,7 +29,11 @@ public final class Stage1WorkerMain {
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(KafkaSettings.consumer(KafkaSettings.bootstrap(), Topics.STAGE1_GROUP));
         consumer.subscribe(List.of(Topics.GAME_EVENTS));
         KafkaProducer<String, String> producer = new KafkaProducer<>(KafkaSettings.fanoutProducer(KafkaSettings.bootstrap()));
-        Stage1Worker worker = new Stage1Worker(pool, new Stage1Progress(pool), consumer, producer, Topics.NOTIFICATIONS);
+        Stage1Worker worker = new Stage1Worker(pool, new Stage1Progress(pool), consumer, producer, Topics.NOTIFICATIONS, () -> {
+            try (Jedis jedis = pool.getResource()) {
+                return jedis.exists(RedisKeys.SUB_BUILT);
+            }
+        });
 
         // The consumer is not thread-safe, so the loop owns it: shutdown asks the loop to stop, and the
         // loop's own thread closes the consumer (leaving the group, so its lanes move at once).

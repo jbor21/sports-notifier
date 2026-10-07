@@ -10,7 +10,6 @@ import catalog.AlertCatalog;
 import catalog.Teams;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
-import model.UserPreferences;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import com.zaxxer.hikari.HikariDataSource;
@@ -39,7 +38,6 @@ public final class UserPreferenceServiceMain {
         JedisPool pool = JedisPoolHolder.create();
         HikariDataSource db = Db.fromEnv("user-pref");
         Db.migrate(db);
-        UserPreferenceServiceImpl prefSvc = new UserPreferenceServiceImpl(pool);
         AccountService accounts = new AccountService(db);
         FollowService follows = new FollowService(db, pool, AlertCatalog.load(), Teams.load(), gameId -> {
             try (Jedis jedis = pool.getResource()) {
@@ -104,26 +102,6 @@ public final class UserPreferenceServiceMain {
         });
         app.delete("/users/{userId}/follows/{id}", ctx ->
                 ApiJson.write(ctx, follows.delete(ctx.pathParam("userId"), ctx.pathParam("id"))));
-
-        app.get("/prefs/{userId}", ctx -> {
-            UserPreferences prefs = prefSvc.getPreferences(ctx.pathParam("userId"));
-            if (prefs == null) { ctx.status(404).result("{}"); return; }
-            ctx.json(prefs);
-        });
-
-        app.put("/prefs/{userId}", ctx -> {
-            String userId = ctx.pathParam("userId");
-            UserPreferences incoming = GSON.fromJson(ctx.body(), UserPreferences.class);
-            UserPreferences toSave = new UserPreferences(
-                userId,
-                incoming.getFollowedTeams(),
-                incoming.getFollowedGames(),
-                incoming.getFollowedLeagues(),
-                incoming.getNotificationTypes()
-            );
-            prefSvc.savePreferences(userId, toSave);
-            ctx.json(toSave);
-        });
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             jobs.shutdownNow();
