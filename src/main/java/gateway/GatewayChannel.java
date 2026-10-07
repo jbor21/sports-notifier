@@ -9,6 +9,7 @@ import util.RedisKeys;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * This gateway's sockets, by user, and its own channel {@code gw:<gatewayId>}. Stage 2 publishes
@@ -18,7 +19,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class GatewayChannel {
 
-    private final Jedis blocking;
+    private final Supplier<Jedis> connect;
+    private volatile Jedis blocking;
     private final String gatewayId;
     private final ConcurrentHashMap<String, Set<ClientSocket>> socketsByUser = new ConcurrentHashMap<>();
     private final JedisPubSub subscriber = new JedisPubSub() {
@@ -30,8 +32,13 @@ public final class GatewayChannel {
     private Thread subscriberThread;
     private volatile boolean running = true;
 
-    public GatewayChannel(Jedis blocking, String gatewayId) {
-        this.blocking = blocking;
+    /**
+     * @param connect opens a dedicated connection for SUBSCRIBE. A fresh one per attempt: after Redis
+     *                restarts, the old connection is broken and Jedis keeps trying to reuse it, so the
+     *                gateway would go on renewing its users' routing entries while hearing nothing.
+     */
+    public GatewayChannel(Supplier<Jedis> connect, String gatewayId) {
+        this.connect = connect;
         this.gatewayId = gatewayId;
     }
 
@@ -89,8 +96,9 @@ public final class GatewayChannel {
     public void start() {
         subscriberThread = new Thread(() -> {
             while (running) {
-                try {
-                    blocking.subscribe(subscriber, RedisKeys.GATEWAY_CHANNEL_PREFIX + gatewayId);
+                try (Jedis conn = connect.get()) {
+                    blocking = conn;
+                    conn.subscribe(subscriber, RedisKeys.GATEWAY_CHANNEL_PREFIX + gatewayId);
                 } catch (RuntimeException e) {
                     if (!running) return;
                     System.err.println("[GatewayChannel] subscribe error: " + e.getMessage());
@@ -114,7 +122,8 @@ public final class GatewayChannel {
     public void stop() {
         running = false;
         try { subscriber.unsubscribe(); } catch (RuntimeException ignored) {}
-        try { blocking.close(); } catch (RuntimeException ignored) {}
+        Jedis conn = blocking;
+        if (conn != null) try { conn.close(); } catch (RuntimeException ignored) {}
         if (subscriberThread != null) subscriberThread.interrupt();
     }
 }

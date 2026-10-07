@@ -48,7 +48,7 @@ public final class GatewayMain {
         // Routing (DESIGN.md decision 13): this gateway listens only on its own channel, gw:<id>, and
         // records in conn:<userId> which users it holds, so Stage 2 publishes only to the right gateways.
         String gatewayId = System.getenv().getOrDefault("GATEWAY_ID", hostname());
-        GatewayChannel channel = new GatewayChannel(JedisPoolHolder.dedicated(), gatewayId);
+        GatewayChannel channel = new GatewayChannel(JedisPoolHolder::dedicated, gatewayId);
         channel.start();
         ConnectionRegistry registry = new ConnectionRegistry(pool, gatewayId, CONN_ENTRY_TTL_SECONDS);
         ScheduledExecutorService renewals = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "conn-renewals"));

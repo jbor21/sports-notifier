@@ -51,8 +51,7 @@ class GatewayChannelTest {
 
     /** A started gateway channel with a unique id (pub/sub channels are shared across tests). */
     private GatewayChannel gateway() throws InterruptedException {
-        Jedis blocking = new Jedis("localhost", 6379);
-        GatewayChannel c = new GatewayChannel(blocking, "gw-" + UUID.randomUUID());
+        GatewayChannel c = new GatewayChannel(() -> new Jedis("localhost", 6379), "gw-" + UUID.randomUUID());
         c.start();
         channels.add(c);
         Thread.sleep(200);   // let SUBSCRIBE land before anything is published
@@ -121,6 +120,24 @@ class GatewayChannelTest {
         a.closeAll(4000, "server shutting down");
         assertEquals(4000, s1.closedWith);
         assertEquals(4000, s2.closedWith);
+    }
+
+    @Test
+    void channelResubscribesAfterRedisDropsItsConnection() throws Exception {
+        // Review finding M8: after a Redis restart the subscriber kept retrying on its dead
+        // connection, so the gateway renewed its users' routing entries while hearing nothing.
+        GatewayChannel a = gateway();
+        FakeSocket onA = new FakeSocket();
+        a.register("u1", onA);
+        registry(a).add("u1");
+        jedis.clientKill(new redis.clients.jedis.params.ClientKillParams().type(redis.clients.jedis.args.ClientType.PUBSUB));
+        long deadline = System.currentTimeMillis() + 10_000;
+        long v = 1;
+        while (onA.sent.isEmpty() && System.currentTimeMillis() < deadline) {
+            delivery.deliver(msg("u1", v++));
+            Thread.sleep(500);
+        }
+        assertFalse(onA.sent.isEmpty(), "the gateway hears its channel again after Redis drops the connection");
     }
 
     @Test
