@@ -4,6 +4,9 @@ TEST_REDIS := sports-notifier-test-redis
 CLUSTER    := sports-notifier
 RELEASE    := sports-notifier
 CHART      := deploy/helm/sports-notifier
+# Strimzi 1.2.0 runs Kafka 4.2.0 to 4.3.1; values.yaml asks for 4.3.1, the same as kafka-clients in pom.xml.
+STRIMZI_CHART   := oci://quay.io/strimzi-helm/strimzi-kafka-operator
+STRIMZI_VERSION := 1.2.0
 # Always talk to the k3d cluster, whatever kubectl's current context is (e.g. after switching to EKS).
 KUBE_CONTEXT ?= k3d-$(CLUSTER)
 export KUBE_CONTEXT
@@ -15,6 +18,9 @@ TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status 
 # Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
 # until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
 # answers "unable to handle the request", and the image import in `make up` then fails (seen in CI).
+# Then install the Strimzi operator: a program in the cluster that turns resources like "a Kafka with one
+# broker" into pods and volumes. It lives outside our chart because it adds the Kafka resource types our
+# chart uses, and those must exist before our chart is installed. Re-running the install is safe.
 cluster:
 	@if k3d cluster get $(CLUSTER) >/dev/null 2>&1; then \
 		echo "Cluster $(CLUSTER) already exists"; \
@@ -28,13 +34,17 @@ cluster:
 	done
 	@kubectl --context $(KUBE_CONTEXT) get --raw /readyz >/dev/null || { echo "Kubernetes API not ready after 2 minutes"; exit 1; }
 	@kubectl --context $(KUBE_CONTEXT) wait --for=condition=Ready node --all --timeout=120s >/dev/null
+	helm upgrade --install strimzi $(STRIMZI_CHART) --version $(STRIMZI_VERSION) --kube-context $(KUBE_CONTEXT) \
+		-n strimzi --create-namespace --set watchNamespaces='{default}' --wait --timeout 5m
 	@echo "Cluster $(CLUSTER) is ready"
 
+# Helm's --wait covers our pods; Strimzi reports the broker ready in the Kafka resource's status.
 up:
 	@k3d cluster get $(CLUSTER) >/dev/null 2>&1 || { echo "Cluster $(CLUSTER) not found. Run: make cluster"; exit 1; }
 	docker build -t sports-notifier:$(TAG) .
 	k3d image import sports-notifier:$(TAG) -c $(CLUSTER)
 	helm upgrade --install --kube-context $(KUBE_CONTEXT) $(RELEASE) $(CHART) -f $(CHART)/values-local.yaml --set image.tag=$(TAG) $(HELM_ARGS) --wait --timeout 5m
+	kubectl --context $(KUBE_CONTEXT) wait kafka/$(RELEASE) --for=condition=Ready --timeout=5m
 
 simulate:
 	@scripts/simulate.sh
@@ -44,6 +54,7 @@ smoke:
 
 logs:
 	-kubectl --context $(KUBE_CONTEXT) get pods -o wide
+	-kubectl --context $(KUBE_CONTEXT) get kafka,kafkanodepool,kafkatopic
 	-kubectl --context $(KUBE_CONTEXT) logs -l app.kubernetes.io/part-of=sports-notifier --all-containers --prefix --tail=50 --max-log-requests=20
 	-kubectl --context $(KUBE_CONTEXT) get events --sort-by=.lastTimestamp | tail -30
 

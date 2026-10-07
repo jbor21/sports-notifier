@@ -1,0 +1,56 @@
+# The Kafka cluster. These are Strimzi resources, not pods: the Strimzi operator (installed by
+# `make cluster`) reads them and creates the broker pods, their disks, and the bootstrap Service.
+{{- $k := .Values.kafka }}
+# The machines: each node is both a KRaft controller (keeps the cluster's metadata, the job ZooKeeper
+# used to do) and a broker (stores partitions, serves clients).
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: dual-role
+  labels:
+    strimzi.io/cluster: {{ .Release.Name }}
+spec:
+  replicas: {{ $k.replicas }}
+  roles: [controller, broker]
+  # A real disk (k3d's local-path provisioner on the laptop), so a broker restart keeps confirmed plays.
+  storage:
+    type: persistent-claim
+    size: {{ $k.storage }}
+    deleteClaim: false
+  jvmOptions:
+    -Xms: {{ $k.heap }}
+    -Xmx: {{ $k.heap }}
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  kafka:
+    version: {{ $k.version }}
+    listeners:
+      # The only client port. No TLS or auth inside the cluster yet (Phase 5); instead Strimzi writes
+      # a NetworkPolicy from networkPolicyPeers so only these workloads (and Strimzi's own pods,
+      # which use other ports) can open a connection.
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+        networkPolicyPeers:
+          - podSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values: [event-processing, stage1-worker, stage2-worker]
+    config:
+      # A misspelled topic name fails instead of quietly creating a new topic.
+      auto.create.topics.enable: false
+      default.replication.factor: {{ $k.replicationFactor }}
+      min.insync.replicas: {{ $k.minInsyncReplicas }}
+      # Kafka's own topics (consumer offsets, producer state) cannot have more copies than brokers.
+      offsets.topic.replication.factor: {{ $k.replicationFactor }}
+      transaction.state.log.replication.factor: {{ $k.replicationFactor }}
+      transaction.state.log.min.isr: {{ $k.minInsyncReplicas }}
+  entityOperator:
+    # Turns our KafkaTopic resources (kafka-topics.yaml) into real topics.
+    topicOperator: {}

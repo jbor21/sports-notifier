@@ -13,3 +13,11 @@ espnPoller:
 javaResources:
   requests: { cpu: 50m, memory: 256Mi }
   limits: { memory: 512Mi }
+
+# One Kafka node on the laptop, so every topic has one copy.
+kafka:
+  replicas: 1
+  storage: 2Gi
+  heap: 512m
+  replicationFactor: 1
+  minInsyncReplicas: 1

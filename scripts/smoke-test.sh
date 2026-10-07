@@ -100,4 +100,30 @@ if probe_user_pref netpol-probe; then
   fail "a pod outside the allow lists reached user-pref:8081 (network policies not enforced). If the cluster was just restarted, k3s may not have started its policy controller: check 'docker logs k3d-sports-notifier-server-0 | grep \"network policy controller\"', then 'k3d cluster stop sports-notifier && make cluster'"
 fi
 
+# 8. Kafka. Both topics exist in Kafka with the partition counts the chart asks for. The KafkaTopic
+#    status has no partition count, but Strimzi marks it Ready only once the real topic matches the
+#    spec it last read (observedGeneration), so Ready for the current spec is the answer.
+k wait kafka/sports-notifier --for=condition=Ready --timeout=300s >/dev/null \
+  || fail "Kafka cluster sports-notifier is not Ready"
+for topic_partitions in game-events:12 notifications:48; do
+  topic=${topic_partitions%%:*}; want=${topic_partitions##*:}
+  k wait "kafkatopic/$topic" --for=condition=Ready --timeout=120s >/dev/null \
+    || fail "KafkaTopic $topic is not Ready: $(k get kafkatopic "$topic" -o jsonpath='{.status.conditions}')"
+  fields=$(k get kafkatopic "$topic" -o jsonpath='{.spec.partitions} {.metadata.generation} {.status.observedGeneration}')
+  read -r got gen seen <<<"$fields"
+  [[ "$gen" == "$seen" ]] || fail "KafkaTopic $topic is Ready for an older spec (generation $gen, observed $seen)"
+  [[ "$got" == "$want" ]] || fail "topic $topic has $got partitions, expected $want"
+done
+
+# 9. Only the Kafka clients reach the broker's client port. Same probe and 5 s wait as step 7.
+probe_kafka() {  # $1 = app.kubernetes.io/name label for the probe pod
+  k run "netpol-kafka-$1-$RANDOM" --rm -i --restart=Never --quiet --image=curlimages/curl:8.10.1 \
+    --labels="app.kubernetes.io/name=$1" --command -- \
+    sh -c 'sleep 5; nc -z -w 5 sports-notifier-kafka-bootstrap 9092' >/dev/null 2>&1
+}
+probe_kafka event-processing || fail "a pod labelled as event-processing could not reach sports-notifier-kafka-bootstrap:9092"
+if probe_kafka netpol-probe; then
+  fail "a pod outside the allow lists reached sports-notifier-kafka-bootstrap:9092 (network policies not enforced). If the cluster was just restarted, k3s may not have started its policy controller: check 'docker logs k3d-sports-notifier-server-0 | grep \"network policy controller\"', then 'k3d cluster stop sports-notifier && make cluster'"
+fi
+
 echo "SMOKE PASS"

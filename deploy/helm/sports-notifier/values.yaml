@@ -13,6 +13,7 @@ probes:
   liveness:  { periodSeconds: 20, failureThreshold: 3 }
 
 # One Deployment per entry, named after the key. clusterService: false means no Service object.
+# kafka: true gives the service KAFKA_BOOTSTRAP, the broker's address.
 services:
   gateway:
     replicas: 1
@@ -45,6 +46,20 @@ espn:
 redis:
   image: redis:7.4
   storage: 1Gi
+
+# Kafka, run by the Strimzi operator that `make cluster` installs. The broker is named after the Helm
+# release; services reach it at <release>-kafka-bootstrap:9092. These are the laptop's sizes; Phase 5's
+# values-aws.yaml sets 3 brokers, replication 3, min.insync.replicas 2.
+kafka:
+  version: 4.3.1            # same as kafka-clients in pom.xml; on Strimzi 1.2.0's supported list
+  replicas: 1               # nodes, each both controller and broker
+  storage: 2Gi
+  heap: 512m
+  replicationFactor: 1
+  minInsyncReplicas: 1
+  topics:
+    game-events:   { partitions: 12, retentionMs: 604800000 }   # 7 days; key = game id
+    notifications: { partitions: 48, retentionMs: 86400000 }    # 1 day; key = user id
 
 # The ESPN poller. Polls a league every liveMs while it has a live game or one starting within
 # 10 minutes, otherwise every idleMs.
