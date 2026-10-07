@@ -31,7 +31,8 @@ spec:
     listeners:
       # The only client port. No TLS or auth inside the cluster yet (Phase 5); instead Strimzi writes
       # a NetworkPolicy from networkPolicyPeers so only these workloads (and Strimzi's own pods,
-      # which use other ports) can open a connection.
+      # which use other ports) can open a connection. The list is every service with kafka: true in
+      # values.yaml, so a new Kafka client can't be left off it.
       - name: plain
         port: 9092
         type: internal
@@ -41,7 +42,12 @@ spec:
               matchExpressions:
                 - key: app.kubernetes.io/name
                   operator: In
-                  values: [event-processing, stage1-worker, stage2-worker]
+                  values:
+                    {{- range $name, $svc := .Values.services }}
+                    {{- if $svc.kafka }}
+                    - {{ $name }}
+                    {{- end }}
+                    {{- end }}
     config:
       # A misspelled topic name fails instead of quietly creating a new topic.
       auto.create.topics.enable: false
