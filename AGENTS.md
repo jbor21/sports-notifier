@@ -149,15 +149,18 @@ Phase 2 and Phase 3.1 fixed most of the review's list (see `DESIGN.md`,
 - **CI:** GitHub Actions runs the tests, then `make cluster up smoke` on a
   throwaway k3d cluster, on every push and pull request.
 - **Phase 2 (Correctness and security) is merged** (PR #2, 2026-10-02). Fixes
-  from 60 hours of recorded ESPN data are in PR #4. The by-hand live-game
-  check is still issue #3.
+  from 60 hours of recorded ESPN data are in PR #4. Issue #3 (live-game
+  check) closed 2026-10-07 as covered by the recordings and the smoke test's
+  WebSocket check; the full live check happens with the new UI (3b).
 - **Phase 3 is split into 3.1–3.4** (`DESIGN.md` build order). **3.1 Kafka
   pipeline is merged** (PR #6, 2026-10-07): spec
   `docs/superpowers/specs/2026-10-06-phase-3-1-kafka-pipeline-design.md`, plan
   `docs/superpowers/plans/2026-10-06-phase-3-1-kafka-pipeline.md`. The API spec
   for the new UI is final and on main (`docs/api/`, PR #5).
-- **Next step: Phase 3.2 (Postgres)**, starting with its brainstorm. The course
-  UI is allowed to break there (no adapter endpoints); the new UI is 3b.
+- **Phase 3.2 (Postgres) is in progress** on branch `phase-3-2-postgres`: spec
+  `docs/superpowers/specs/2026-10-07-phase-3-2-postgres-design.md`, plan
+  `docs/superpowers/plans/2026-10-07-phase-3-2-postgres.md`. The course UI
+  breaks here (no adapter endpoints); the new UI is 3b.
 - **New in Phase 3.1:** Strimzi is installed by `make cluster`; the broker and
   topics are resources in the chart (`templates/kafka*.yaml`). The accept
   script answers `pending` while a game has an unsent play in `outbox:<gameId>`.
