@@ -127,10 +127,11 @@ ESPN
   → Stage 2 workers                (deliver)
        → Redis pub/sub on the channel of the gateway holding that user's socket
             → that gateway → WebSocket
+  → history writers                (a second consumer group on notifications)
        → Postgres history              (batched inserts)
 ```
 
-Postgres is written by the user service and by the history path. On startup the user service rebuilds `sub:*` from Postgres.
+Postgres is written by the user service and by the history writers. The user service rebuilds `sub:*` from Postgres whenever its "built" marker is missing (decision 8).
 
 ### Where it runs
 
@@ -167,7 +168,8 @@ Packers–Falcons, game id `401872948`. A touchdown is newer than the saved time
 2. The Lua script accepts it and the live score moves forward.
 3. Event Processing produces to `game-events`. The message key is the game id. Kafka hashes the key: `hash("401872948") % 12`. That lane is the only lane this game's events will ever use. Every later play from this game hashes to the same lane.
 4. The Stage 1 worker that owns the lane reads it, in order with the other plays from that game. It asks Redis who follows the Packers, the Falcons, this game, and the NFL, then who asked for touchdowns. For each matching user it writes one message to `notifications`, keyed by that user's id.
-5. Those messages spread across 48 lanes. Stage 2 workers deliver in parallel: look up which gateway holds that user's socket, publish on that gateway's Redis channel so an open tab updates, and insert the history row in Postgres. A user's messages stay in one lane, so that user still sees them in order.
+5. Those messages spread across 48 lanes. Stage 2 workers deliver in parallel: look up which gateway holds that user's socket and publish on that gateway's Redis channel so an open tab updates. A user's messages stay in one lane, so that user still sees them in order.
+6. History writers read the same 48 lanes as a separate consumer group and insert the history rows in Postgres in batches. A slow or stopped Postgres delays history, not the push.
 
 A normal game's history is the full sequence. The poller sends 2–2, then 3–2, then 4–2. Each is newer than the last, so each is accepted. The timeline matches the game. A play is dropped only when an older event arrives after a newer one was already saved. The live score must not go backwards. That late play can be logged. It is not delivered as if it were the new score.
 
@@ -202,7 +204,7 @@ Three brokers in the cloud is the change from the first draft. On one VM, three 
 **Chose.** Two topics and two consumer groups.
 
 - `game-events`, key = `gameId`. Stage 1 only decides who to notify and writes one message per user.
-- `notifications`, key = `userId`. Stage 2 delivers.
+- `notifications`, key = `userId`. Stage 2 delivers. History writers, a second consumer group on the same topic, save it to Postgres (since Phase 3.2), so a Postgres outage delays history but never the push.
 
 **Gave up.** A single worker that reads "Packers scored" and notifies everyone itself. That is simpler, has one less hop, and is enough for a few hundred users. We also accept write amplification: one event with two million subscribers becomes two million messages on `notifications`. A crash between stages can emit duplicates; the per-user dedup key absorbs them.
 
@@ -268,6 +270,8 @@ A dead worker is the failure this design absorbs by itself. Kill Stage 1 mid-gam
 
 **Gave up.** One store. We now run Postgres, and a preference write can land in Postgres before Redis has the new set membership. That window is short and rebuildable.
 
+**How a save stays in step (Phase 3.2).** A follow save commits to Postgres first, then updates the Redis sets. If the Redis update fails, the user service deletes the `sub:*` "built" marker, and its 30-second check rebuilds every set from Postgres. Undoing the Postgres write instead would not cover a Redis update that succeeds followed by a commit that fails. A rebuild holds a Postgres lock that saves wait on, so it cannot re-add someone who unfollowed while it ran. A full rebuild also runs daily, which bounds how long a missed update can last.
+
 **Why this direction.** Redis can be rebuilt from Postgres. Postgres cannot be rebuilt from Redis. A cache is not the only copy of a person's account.
 
 The live score in Redis is rebuilt from the accepted log if we need it (replay `game-events`). It is not a Postgres table.
@@ -322,7 +326,7 @@ The app cannot move to Cloudflare Workers, Lambda, or Cloud Run. Those run short
 **The costs of scaling, handled on purpose:**
 
 - **Rebalances.** Every worker added or removed makes Kafka reassign lanes. Use the cooperative-sticky assignor so only the moved lanes pause, and a scale-in cooldown so a spike does not cause flapping.
-- **The bottleneck moves.** Twenty Stage 2 workers doing one-row inserts will swamp Postgres. History inserts are batched, and each worker's connection pool is sized so that max workers × pool size stays under Postgres's connection limit.
+- **The bottleneck moves.** Twenty history writers doing one-row inserts will swamp Postgres. History inserts are batched, and each writer's connection pool is sized so that max writers × pool size stays under Postgres's connection limit.
 - **Gateways drain.** A gateway being removed tells its clients to reconnect, the load balancer stops sending it new connections first, and clients reconnect with random jitter so they do not all arrive at once.
 
 **Why it is not the headline.** Friends-scale traffic never triggers it. The load test does. Autoscaling is about twenty lines of config on Kubernetes. The interesting part is the three bullets above.
@@ -607,7 +611,7 @@ We implement in this order. The system runs at the end of each step. Everything 
 2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data. **Done** (PR #2, 2026-10-02). Fixes from 60 hours of recorded ESPN data followed in PR #4; the by-hand live-game check is issue #3.
 3. **The new pipeline**, split into four sub-phases, each with its own spec, plan, and PR:
    - **3.1 Kafka pipeline.** Kafka through Strimzi with one broker, the two topics, script-then-produce with the outbox, Stage 1 and Stage 2 consumer groups, per-user dedup, gateway routing (decision 13). **Built** 2026-10-07 (spec and plan `2026-10-06-phase-3-1-kafka-pipeline`).
-   - **3.2 Postgres.** Accounts, follows shaped for decision 15, notification history, Redis subscriber sets rebuilt on startup, the `/auth`, `/me`, `/follows`, `/notifications` endpoints of `docs/api/`. The course UI stops working here; the new UI arrives in 3b.
+   - **3.2 Postgres.** Accounts, follows shaped for decision 15, notification history, Redis subscriber sets rebuilt on startup, the `/auth`, `/me`, `/follows`, `/notifications` endpoints of `docs/api/`. The course UI stops working here; the new UI arrives in 3b. Spec `2026-10-07-phase-3-2-postgres` (history writers as their own consumer group; follow saves commit to Postgres before Redis).
    - **3.3 Alerts, wave 1.** The detector framework and wave 1 detectors in Stage 1, most-specific-follow set math, combining, deterministic alert ids (decision 15).
    - **3.4 Live API.** `/games`, `/leagues`, the alert catalog, and live `game_update` over the WebSocket through a per-game channel.
 3b. **New UI.** A full redesign of the web UI, frontend only: it calls the gateway's API and WebSocket and has no database, auth, or server code of its own. The code lives in `web/` and ships as static files in the same Helm chart. It is built against the API spec in `docs/api/`, written before Phase 3 and implemented by Phase 3, so the UI can start early against a mock server. Built as an installable web app (PWA) so Phase 7's Web Push can reach a phone. Screens can be designed any time; the build lands after Phase 3.
