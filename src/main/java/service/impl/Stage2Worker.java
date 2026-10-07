@@ -35,7 +35,7 @@ public final class Stage2Worker implements AutoCloseable {
      * Delivers one batch and commits it.
      *
      * @return records handled, including unreadable ones that were skipped
-     * @throws RuntimeException if delivery failed; the consumer is rewound to the last commit first
+     * @throws RuntimeException if delivery failed; the consumer is rewound to the batch's start first
      */
     public int pollOnce(Duration timeout) {
         ConsumerRecords<String, String> records = consumer.poll(timeout);
@@ -52,7 +52,7 @@ public final class Stage2Worker implements AutoCloseable {
         try {
             delivery.deliverAll(batch);
         } catch (RuntimeException e) {
-            Offsets.rewindToCommitted(consumer);
+            Offsets.rewindTo(consumer, records);
             throw e;
         }
         if (!records.isEmpty()) consumer.commitSync();

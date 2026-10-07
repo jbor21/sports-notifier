@@ -57,8 +57,8 @@ public final class Stage1Worker implements AutoCloseable {
      * Handles one batch and commits it.
      *
      * @return records handled, including skipped duplicates and unreadable records
-     * @throws RuntimeException if a play could not be handled; the consumer is rewound to the last
-     *         commit first, so the next poll reads the batch again
+     * @throws RuntimeException if a play could not be handled; the consumer is rewound to the start
+     *         of the batch first, so the next poll reads it again
      */
     public int pollOnce(Duration timeout) {
         ConsumerRecords<String, String> records = consumer.poll(timeout);
@@ -69,7 +69,7 @@ public final class Stage1Worker implements AutoCloseable {
                 handled++;
             }
         } catch (RuntimeException e) {
-            Offsets.rewindToCommitted(consumer);
+            Offsets.rewindTo(consumer, records);
             throw e;
         }
         if (!records.isEmpty()) consumer.commitSync();
