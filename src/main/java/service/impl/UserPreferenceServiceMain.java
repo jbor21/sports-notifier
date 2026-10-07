@@ -26,6 +26,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 public final class UserPreferenceServiceMain {
 
@@ -45,6 +47,13 @@ public final class UserPreferenceServiceMain {
                 return record.isEmpty() ? Optional.empty() : Optional.of(record);
             }
         });
+
+        // Keeps the sub:* sets rebuildable from Postgres: whenever the marker is missing, and daily.
+        ScheduledExecutorService jobs = Executors.newScheduledThreadPool(1, r -> new Thread(r, "follow-jobs"));
+        new SubRebuilder(db, pool, follows::rebuildOwed, follows::clearRebuildOwed).start(jobs,
+                Long.parseLong(System.getenv().getOrDefault("SUB_CHECK_MS", "30000")),
+                Long.parseLong(System.getenv().getOrDefault("SUB_FULL_REBUILD_HOURS", "24")));
+        new GameFollowExpiry(db, pool, follows).start(jobs);
 
         Javalin app = Javalin.create(cfg -> cfg.jsonMapper(new GsonJsonMapper())).start(port);
 
@@ -117,6 +126,7 @@ public final class UserPreferenceServiceMain {
         });
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            jobs.shutdownNow();
             app.stop();
             pool.close();
             db.close();
