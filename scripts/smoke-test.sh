@@ -137,8 +137,9 @@ if probe_kafka netpol-probe; then
 fi
 
 # 10. Plays sent while the stage workers are down still arrive once they are back: they wait in
-#     Kafka. On CI's fresh cluster the groups are new before step 4, so step 5 already covered
-#     auto.offset.reset=earliest; this covers a group coming back to its own bookmark.
+#     Kafka, and a group coming back reads from its own bookmark. (auto.offset.reset=earliest, for a
+#     group with no bookmark yet, is tested in Stage1WorkerTest.newGroupReadsEarlierPlays: here the
+#     workers join their groups before any play is sent, so "latest" would pass too.)
 starts_before=$(curl -fsS -b "$bob_jar" "$BASE_URL/api/history?limit=200" | jq '[.[] | select(.gameId == "game-LAL-BOS" and (.message | contains("has started")))] | length')
 k scale deploy/stage1-worker deploy/stage2-worker --replicas=0 >/dev/null
 k wait pod -l 'app.kubernetes.io/name in (stage1-worker,stage2-worker)' --for=delete --timeout=120s >/dev/null 2>&1 || true

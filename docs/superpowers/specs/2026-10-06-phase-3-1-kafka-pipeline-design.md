@@ -51,7 +51,7 @@ A per-game Redis lock was considered and rejected. A lock with a timeout can be 
 
 ### 1.3 The per-game counter (`version`)
 
-On every accepted play the script increments `version` in the game record. It changes in the same atomic step as the score.
+On every accepted play the script increments `version:<gameId>`, its own key, kept 9 days from the last accept, and copies it into the game record. It changes in the same atomic step as the score. It is not a field of the game record alone because that record expires a day after a final while Stage 1 remembers versions for 8 days: a reused game id would restart at 1 and be dropped (found in the final review).
 
 - Stage 1 drops a play whose `version` is at or below the last one it handled for that game.
 - After the script, every id is built from it: `<gameId>:v<version>`.
@@ -64,7 +64,7 @@ On every accepted play the script increments `version` in the game record. It ch
 
 **Goal heal.** A play is also newer if it has the same phase, period, and MLB half as the saved state (the first four digits of `seq`) and a higher score total. On accept, `lastSeq` is set to this play's `seq`, which may lower it. An older snapshot never has more points, so a slower overlapping poller cannot use this path to move the score backwards. Cost: if a goal is taken back at the same moment a slower poller sends the pre-reversal snapshot, that snapshot is accepted and one false "scores!" alert goes out, corrected on the next poll. That needs two pollers at once (seconds, during a rolling update) and a reversal inside those seconds.
 
-**No-score heal.** If plays keep arriving "older" with the same phase, period, half, home score, and away score as the saved state for 30 seconds, the script accepts the next one and resets `lastSeq` to it. The script records `staleSince` in the game record on the first such rejection; any accepted play clears it. The current time is an argument from Event Processing (an injectable clock), not Redis's clock, so tests can move time. Normal clock corrections (an official adding 1–15 seconds) heal on their own within a few polls, well under 30 seconds. An overlapping poller still running after 30 seconds can get a slightly older snapshot accepted; scores cannot change on this path, so no alert fires, and the next fresh poll moves the clock forward again.
+**No-score heal.** If plays keep arriving "older" with the same phase, period, half, home score, and away score as the saved state for 30 seconds, the script accepts the next one and resets `lastSeq` to it. The script records `staleSince` in the game record on the first such rejection; any accepted play clears it. The current time is an argument from Event Processing (an injectable clock), not Redis's clock, so tests can move time. Normal clock corrections (an official adding 1–15 seconds) heal on their own within a few polls, well under 30 seconds. An overlapping poller still running after 30 seconds can get a slightly older snapshot accepted; scores cannot change on this path, so no alert fires, and the next fresh poll moves the clock forward again. The poller sends nothing when only the clock differs from the saved record, so this heal matters for what it does send while the bar is wrong: a status change at the same score, such as the end of a period or a delay.
 
 **Only for game positions.** Both heals apply only when the play's `seq` and `lastSeq` are both game positions, below 10¹⁴. The simulator's `seq` (`runStartMillis × 1000 + n`, Phase 2 section 2.4) is above 10¹⁵ and orders runs, not positions in a game: its leading digits mean nothing as a period, and they stay the same for about three hours. Without this guard an older simulator run still going could have a higher-scoring play accepted as a "heal", breaking Phase 2's rule that the later run wins. For those values only `seq > lastSeq` counts.
 
@@ -77,7 +77,7 @@ On every accepted play the script increments `version` in the game record. It ch
 1. **Duplicate.** `processed:<eventId>` exists → `duplicate`.
 2. **Pending.** `outbox:<gameId>` exists → `pending`.
 3. **Newer.** Accept if `seq > lastSeq`; or the goal heal holds; or the no-score heal's 30 seconds have passed. If the play matches the no-score condition and `staleSince` is unset, set it. Otherwise → `stale`.
-4. **Accept.** `SET processed:<eventId> EX 3600`; `HINCRBY version`; write the full state and `lastSeq`; `HDEL staleSince`; set the record's TTL and `games:recent` as in Phase 2; `SET outbox:<gameId>` to the play as JSON, including `version`; `ZADD outbox:pending <now> <gameId>` (the index the retry loop reads). Return `accepted` with `version`.
+4. **Accept.** `SET processed:<eventId> EX 3600`; `INCR version:<gameId>` (and refresh its 9-day TTL, copy it into the record); write the full state and `lastSeq`; `HDEL staleSince`; set the record's TTL and `games:recent` as in Phase 2; `HSET outbox:<gameId> version <v> play <json>` (a hash, so the script never re-encodes the JSON: Redis's cjson rounds 16-digit simulator seqs); `ZADD outbox:pending <now> <gameId>` (the index the retry loop reads). Return `accepted` with `version`.
 
 A second script, **clear**, runs after Kafka confirms: delete `outbox:<gameId>` and remove it from `outbox:pending` only if the stored play's `version` equals the confirmed one.
 
@@ -157,11 +157,12 @@ Group `stage2`, topic `notifications`.
 
 **Fix.** One Lua script per message does everything in Redis at once:
 
-1. `SET notif:<messageId>:<userId> NX EX 172800`; if it already exists, stop.
+1. If `notif:<messageId>:<userId>` exists, stop.
 2. Add the notification to the user's history list (`notifications:<userId>`, as today).
 3. Remove expired entries from `conn:<userId>` (section 3) and `PUBLISH gw:<gatewayId>` for each one left, with the user id in the message.
+4. `SET notif:<messageId>:<userId> 1 EX 172800`.
 
-Redis runs the script as one step, so marked, in history, and sent happen together or not at all. A retry finds the key and does nothing. That is the exactly-once the Phase 4 checker tests: Kafka is at least once, and the script makes it exactly once in effect.
+Redis runs the script as one step, so nothing lands between the check and the claim. The claim is last because Redis does not roll back a script that fails halfway: claimed first, a failed history write would leave a claim and the retry would skip a notification nobody got. Pipelined script errors fail the batch (Jedis's `sync()` would otherwise swallow them), so Stage 2 rewinds instead of committing. Both found in the final review. A retry finds the key and does nothing. That is the exactly-once the Phase 4 checker tests: Kafka is at least once, and the script makes it exactly once in effect.
 
 **Limits.** Redis pub/sub to the gateway is fire-and-forget: if the gateway dies in that instant the live push is lost and history has it (`DESIGN.md` accepts this). In 3.2 history moves to Postgres, which cannot be inside a Redis script: the 3.2 spec makes the history insert idempotent (insert unless that notification already exists), runs it first, then runs this script for the rest.
 
@@ -259,7 +260,7 @@ API spec item 2: one game id everywhere, `<league>-<espnId>` (`nfl-401872948`), 
 - Both topics exist with 12 and 48 partitions.
 - A stranger pod cannot connect to the Kafka port.
 - A simulated play reaches a follower's history through Kafka (the course smoke test's history check, now on the new path), and an open WebSocket receives it too (`scripts/ws-listen.py`). The course smoke test only checked history; the socket check is what proves gateway routing end to end.
-- Stop both stage workers (scale to 0), simulate a play, start them: the play arrives. On CI's fresh cluster this tests `earliest`; on a reused laptop cluster it tests that a play waits in Kafka while workers are down.
+- Stop both stage workers (scale to 0), simulate a play, start them: the play arrives. This tests that a play waits in Kafka while workers are down and a group resumes from its bookmark. `earliest` itself is covered by `Stage1WorkerTest.newGroupReadsEarlierPlays`: in the smoke test the workers join before any play is sent, so `latest` would pass too (corrected after the final review).
 
 ---
 

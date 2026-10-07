@@ -75,7 +75,7 @@ Browser ◄── WebSocket ◄── Gateway (8080) ◄── SUBSCRIBE gw:<its
 
 **Stack:** Java 17 · Maven · Javalin 6.1.6 · Jedis 4.4.7 · Gson · jbcrypt ·
 kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · Testcontainers 2.0.5
-**Size:** ~4,000 lines Java · one 1,851-line `index.html` (vanilla JS, no framework, no build step) · 194 tests
+**Size:** ~4,000 lines Java · one 1,851-line `index.html` (vanilla JS, no framework, no build step) · 202 tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
