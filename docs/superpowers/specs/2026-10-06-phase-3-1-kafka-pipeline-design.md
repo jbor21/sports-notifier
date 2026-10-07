@@ -29,7 +29,7 @@ Replace the Redis Stream with Kafka, close the two crash holes the stream left o
 
 ### Branch
 
-`phase-3-1-kafka`, worktree `.worktrees/phase-3-1-kafka`. It is rebased onto main after PR #4 (issue #3's fixes) merges, before any code is written.
+`phase-3-1-kafka`, worktree `.worktrees/phase-3-1-kafka`. Main (with PR #4, issue #3's fixes, and PR #5, the API spec) is merged into it before any code is written. Merged, not rebased: the branch is already pushed, and a rebase would need a force-push.
 
 ---
 
@@ -65,6 +65,8 @@ On every accepted play the script increments `version` in the game record. It ch
 **Goal heal.** A play is also newer if it has the same phase, period, and MLB half as the saved state (the first four digits of `seq`) and a higher score total. On accept, `lastSeq` is set to this play's `seq`, which may lower it. An older snapshot never has more points, so a slower overlapping poller cannot use this path to move the score backwards. Cost: if a goal is taken back at the same moment a slower poller sends the pre-reversal snapshot, that snapshot is accepted and one false "scores!" alert goes out, corrected on the next poll. That needs two pollers at once (seconds, during a rolling update) and a reversal inside those seconds.
 
 **No-score heal.** If plays keep arriving "older" with the same phase, period, half, home score, and away score as the saved state for 30 seconds, the script accepts the next one and resets `lastSeq` to it. The script records `staleSince` in the game record on the first such rejection; any accepted play clears it. The current time is an argument from Event Processing (an injectable clock), not Redis's clock, so tests can move time. Normal clock corrections (an official adding 1–15 seconds) heal on their own within a few polls, well under 30 seconds. An overlapping poller still running after 30 seconds can get a slightly older snapshot accepted; scores cannot change on this path, so no alert fires, and the next fresh poll moves the clock forward again.
+
+**Only for game positions.** Both heals apply only when the play's `seq` and `lastSeq` are both game positions, below 10¹⁴. The simulator's `seq` (`runStartMillis × 1000 + n`, Phase 2 section 2.4) is above 10¹⁵ and orders runs, not positions in a game: its leading digits mean nothing as a period, and they stay the same for about three hours. Without this guard an older simulator run still going could have a higher-scoring play accepted as a "heal", breaking Phase 2's rule that the later run wins. For those values only `seq > lastSeq` counts.
 
 **Not healed:** an early "final" from ESPN (never observed). Clock-based alerts that fire early during a glitch (close game late at 5:00) are 3.3's detector problem.
 
@@ -116,7 +118,8 @@ Every second, each Event Processing pod reads games in `outbox:pending` whose en
 10. **clear** with a stale `version` leaves a newer outbox entry alone.
 11. Kafka outage: pause the Kafka container; a game goes `pending`; unpause; the outbox play arrives first, then the game's next play is accepted.
 12. `GAME_SYNC` is produced to `game-events`.
-13. The 50-thread burst test from Phase 2 still ends at 50, and Kafka has 50 plays for the game in `version` order.
+13. The 50-thread burst test from Phase 2, with each thread retrying on `pending` the way the poller does: the final score is 50; `version` equals the number of `accepted` answers (stale plays are not counted); the accepted plays' `seq` values rise strictly in `version` order (no heal fires); the published plays are in `version` order.
+14. The heals ignore simulator values: after an accepted play from a newer simulator run, a higher-scoring play from an older run is `stale`.
 
 ---
 

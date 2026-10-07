@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Branch `phase-3-1-kafka`, worktree `.worktrees/phase-3-1-kafka`. Before Task 1: `git fetch && git rebase origin/main` (PR #4 must be merged; the spec and this plan are the only commits on the branch).
+- Branch `phase-3-1-kafka`, worktree `.worktrees/phase-3-1-kafka`. Main is merged into it, never rebased (the branch is pushed; no force-pushes). Done before Task 1: PR #4 and PR #5 are in.
 - CI green after every task (`make test`, then `make cluster up smoke` in GitHub Actions). The old path keeps working until its replacement lands (spec section 7).
 - Core distributed code (Tasks 1, 2, 4, 5, 6, 7, 8) is built inline in small steps the user reads, test first. Task 3 may go to a subagent and is then walked through with the user.
 - Every Jedis handle in try-with-resources; `JedisPoolHolder.create()` for pools, `JedisPoolHolder.dedicated()` only for blocking subscribe. Redis key names only from `util/RedisKeys.java`. Config from env vars with defaults.
@@ -148,6 +148,9 @@ void gameIdNamesTheLeagueNotTheProvider() throws IOException {
 // start the heal timer, then accept a genuinely newer play -> hget staleSince == null
 @Test void versionCountsAcceptsOnly()
 // accept (v1), duplicate, stale, pending (outbox held), heal -> versions 1,1,1,1,2 in the record
+@Test void healsIgnoreSimulatorSeqs()
+// accept simulator-style seq 1790000000000000005 (score 5-0); a play from an older run,
+// seq 1789999999000000009 (score 9-0) -> STALE, lastSeq unchanged (spec test 14)
 ```
 
 - [ ] **Step 2: Write `OutboxTest`**:
@@ -163,12 +166,12 @@ void gameIdNamesTheLeagueNotTheProvider() throws IOException {
 // completing publisher -> after processEvent, outbox:<gameId> absent
 ```
 
-- [ ] **Step 3: Update existing tests:** `EventProcessingServiceImplTest` constructs the service with a completing fake publisher; `EventProcessingBurstTest` also asserts the record's `version` is `"50"`; `PollLoggingTest` adds `pendingIsDebug` for `SCORE_UPDATE` and `GAME_SYNC`.
+- [ ] **Step 3: Update existing tests:** `EventProcessingServiceImplTest` constructs the service with a completing fake publisher; `EventProcessingBurstTest`: each thread retries on `PENDING` (1 ms pause between tries), like the poller; assert final `homeScore` 50, `lastSeq` 50, record `version` equals the count of `ACCEPTED` answers, and the published plays (the fake publisher's list) have `version` 1..N in order with strictly rising `seq` (spec test 13); `PollLoggingTest` adds `pendingIsDebug` for `SCORE_UPDATE` and `GAME_SYNC`.
 - [ ] **Step 4: Run** `make test`. Expected: the new tests fail (no `PENDING`, no heals, no `version`); the rest compile after the constructor change.
-- [ ] **Step 5: Rewrite `PROCESS_EVENT_SCRIPT`** in the spec's order (section 1.5): duplicate, pending, newer (3 ways), accept. The heals compare `math.floor(seq / 1e10)` (phase, period, half) between the play and `lastSeq`, and the play's `home + away` with the saved scores. Keep the javadoc's step list and KEYS/ARGV table current, and say *why* the pending check comes before the newer check (it must not set `staleSince` for a play it will not consider).
+- [ ] **Step 5: Rewrite `PROCESS_EVENT_SCRIPT`** in the spec's order (section 1.5): duplicate, pending, newer (3 ways), accept. The heals compare `math.floor(seq / 1e10)` (phase, period, half) between the play and `lastSeq`, and the play's `home + away` with the saved scores, and apply only when both `seq` values are below `1e14` (game positions; simulator values are above and use `seq > lastSeq` only). Keep the javadoc's step list and KEYS/ARGV table current, and say *why* the pending check comes before the newer check (it must not set `staleSince` for a play it will not consider).
 - [ ] **Step 6: Implement `Outbox`** with a small `CLEAR_SCRIPT` (read `outbox:<gameId>`, `cjson.decode`, compare `version`, `DEL` and `ZREM` only on a match).
 - [ ] **Step 7: Implement `RedisStreamPublisher`** with the existing `XADD … MAXLEN ~1000` and a completed future. `EventProcessingServiceMain` wires it with `System::currentTimeMillis`. This is the bridge: the stream publish runs **clear** until Task 4.
-- [ ] **Step 8: Run** `make test`. Expected: all pass, including the 50-thread burst (final `homeScore` 50, `lastSeq` 50, `version` 50).
+- [ ] **Step 8: Run** `make test`. Expected: all pass, including the 50-thread burst (final `homeScore` 50, `lastSeq` 50, `version` = number of accepted answers).
 - [ ] **Step 9: Commit** in at least three commits the user can read: (a) `PENDING`, outbox, clear; (b) `version`; (c) the two heals.
 
 ---
@@ -220,7 +223,8 @@ void gameIdNamesTheLeagueNotTheProvider() throws IOException {
 ```java
 // KafkaPlayPublisherTest
 @Test void gameSyncIsProduced()                  // spec test 12
-@Test void burstLandsInVersionOrder()            // spec test 13: 50 threads, Kafka has 50 plays for the game, versions 1..50 in order
+@Test void burstLandsInVersionOrder()            // spec test 13 on Kafka: 50 threads retrying on PENDING; Kafka's plays for the game have
+                                                 // versions 1..N in order (N = accepted answers), seq strictly rising, final score 50
 // OutboxRelayTest
 @Test void crashAfterAcceptThenRelayKeepsOrder() // spec test 7: accept 10 with a never-completing publisher (the "crash");
                                                  // new service + relay with KafkaPlayPublisher; relay.runOnce(); accept 11;
