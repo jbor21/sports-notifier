@@ -21,6 +21,7 @@ services:
     portEnv: GATEWAY_PORT
     clusterService: true
     espn: true          # gets ESPN_HOST / ESPN_USER_AGENT for /api/upcoming
+    podNameEnv: GATEWAY_ID   # this gateway's id: its channel is gw:<id>, and conn:<userId> names it
     env:
       USER_PREF_URL: http://user-pref:8081
       GAME_STATE_URL: http://game-state:8082

@@ -40,7 +40,6 @@ public class Delivery {
      * KEYS[1] = notif:<messageId>:<userId>   KEYS[2] = notifications:<userId>   KEYS[3] = conn:<userId>
      * ARGV[1] = history entry JSON   ARGV[2] = dedup TTL seconds   ARGV[3] = last history index
      * ARGV[4] = gateway message JSON ({"userId", "payload"})   ARGV[5] = gateway channel prefix
-     * ARGV[6] = the course gateway's channel, notify:<userId> (bridge until gateway routing, Task 7)
      *
      * conn:<userId> scores are expiry times in seconds from Redis's TIME; past ones are removed here.
      * Returns 1 delivered, 0 already delivered.
@@ -54,7 +53,6 @@ public class Delivery {
         "for _, gw in ipairs(redis.call('ZRANGE', KEYS[3], 0, -1)) do\n" +
         "  redis.call('PUBLISH', ARGV[5] .. gw, ARGV[4])\n" +
         "end\n" +
-        "redis.call('PUBLISH', ARGV[6], ARGV[1])\n" +
         "return 1\n";
 
     private final JedisPool pool;
@@ -93,6 +91,6 @@ public class Delivery {
             m.getDetectedAt(), m.getLeague(), m.getHomeTeam(), m.getAwayTeam()));
         String toGateway = "{\"userId\":" + GSON.toJson(m.getUserId()) + ",\"payload\":" + entry + "}";
         return List.of(entry, String.valueOf(DEDUP_TTL_SECONDS), String.valueOf(MAX_HISTORY_INDEX),
-            toGateway, RedisKeys.GATEWAY_CHANNEL_PREFIX, RedisKeys.NOTIFY_CHANNEL_PREFIX + m.getUserId());
+            toGateway, RedisKeys.GATEWAY_CHANNEL_PREFIX);
     }
 }

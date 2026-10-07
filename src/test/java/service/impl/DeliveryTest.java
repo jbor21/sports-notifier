@@ -75,7 +75,7 @@ class DeliveryTest {
         assertFalse(delivery.deliver(msg("u1", 1)), "Kafka redelivered it; the script must make that a no-op");
         assertEquals(1, jedis.llen("notifications:u1"));
         assertEquals(1, receivedOn("gw:A").size());
-        assertEquals(1, receivedOn("notify:u1").size());   // the course gateway's channel, until Task 7
+        assertTrue(receivedOn("notify:u1").isEmpty(), "no broadcast channel any more: only the user's gateways");
     }
 
     @Test

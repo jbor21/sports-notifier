@@ -258,7 +258,7 @@ API spec item 2: one game id everywhere, `<league>-<espnId>` (`nfl-401872948`), 
 
 - Both topics exist with 12 and 48 partitions.
 - A stranger pod cannot connect to the Kafka port.
-- A simulated play reaches a browser socket through Kafka (the existing end-to-end check, now on the new path).
+- A simulated play reaches a follower's history through Kafka (the course smoke test's history check, now on the new path), and an open WebSocket receives it too (`scripts/ws-listen.py`). The course smoke test only checked history; the socket check is what proves gateway routing end to end.
 - Stop both stage workers (scale to 0), simulate a play, start them: the play arrives. On CI's fresh cluster this tests `earliest`; on a reused laptop cluster it tests that a play waits in Kafka while workers are down.
 
 ---

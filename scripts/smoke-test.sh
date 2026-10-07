@@ -54,6 +54,15 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -b "$bob_jar" -X PUT -H 'Content-T
   "$BASE_URL/api/preferences")
 [[ "$code" == 200 ]] || fail "preferences returned HTTP $code"
 
+# 3b. Bob opens the app's live socket, like a browser tab. The notification must arrive on it, not
+#     only in history: that proves Stage 2 found Bob's gateway in conn:<userId> and published on
+#     that gateway's own channel (gateway routing, DESIGN.md decision 13).
+ws_out=$(mktemp)
+python3 "$repo_root/scripts/ws-listen.py" "${BASE_URL/http/ws}/ws" "$bob_jar" "has started" 120 >"$ws_out" 2>&1 &
+ws_pid=$!
+for _ in $(seq 1 50); do grep -q '^open' "$ws_out" && break; sleep 0.2; done
+grep -q '^open' "$ws_out" || fail "Bob's WebSocket did not open: $(cat "$ws_out")"
+
 # 4. Play one wave of games. Stop any simulator still running first: every run reuses the same
 #    game ids, and the later run's seq always wins, so an older run still going would only add
 #    noise to Bob's history.
@@ -72,6 +81,7 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 [[ "$got" == 1 ]] || fail "Bob (BOS follower) did not get both a start and a score for game-LAL-BOS within 60s"
+wait "$ws_pid" || fail "Bob's open WebSocket did not receive the game start: $(cat "$ws_out")"
 
 # 6. Alice sees none of it, and naming Bob's id in the query changes nothing: the gateway
 #    takes the user from the session cookie, never from the request.
