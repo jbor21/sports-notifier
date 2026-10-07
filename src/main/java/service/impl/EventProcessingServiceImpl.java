@@ -27,6 +27,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     private static final long FINISHED_GAME_TTL_SECONDS = 86_400L;
     /** Any other game's record, and its place in games:recent, lasts 8 days without an update. */
     private static final long IDLE_GAME_TTL_SECONDS = 8 * 86_400L;
+    /** How long the same period and score must keep looking "older" before the no-score heal accepts it. */
+    private static final long NO_SCORE_HEAL_MILLIS = 30_000L;
 
     /**
      * Single atomic Lua script: duplicate check, pending check, ordering check, then claim, state
@@ -45,7 +47,17 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      *    than with a lock: a pod that stalls past a lock's timeout could still send an older play
      *    after a newer one, while Redis running one script at a time cannot be interleaved.
      * 3. Then seq: game state never goes back in game time. A stale event returns before the
-     *    claim, so it never burns an id (the course's original TOCTOU fix).
+     *    claim, so it never burns an id (the course's original TOCTOU fix). Two heals let an
+     *    older-looking play through when ESPN's clock ran ahead of reality (seen: 4:01 left, then
+     *    11:45), because the bad snapshot's seq would otherwise block the game for minutes:
+     *    - goal heal: same phase, period, and half (seq's first four digits) and more points.
+     *      An older snapshot never has more points, so a slower overlapping poller can't use this.
+     *    - no-score heal: same phase, period, half, and score, still "older" after 30 seconds.
+     *      staleSince records when that started; any accepted play clears it.
+     *    Either heal lowers lastSeq to the play's seq. Both apply only to game positions (below
+     *    10^14): the simulator's seq orders runs, so its leading digits mean nothing as a period.
+     *    This check comes after "pending", so a play that will not be considered never starts
+     *    the 30-second timer.
      * 4. Only then claim the id, add 1 to the game's version, and write the full state. Every
      *    event carries the whole state, so the script does not branch on event type. version
      *    changes in the same step as the score, so it counts accepted plays in exactly the order
@@ -69,16 +81,37 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      * ARGV[6] = homeScore  ARGV[7] = awayScore  ARGV[8] = status   ARGV[9] = timestamp
      * ARGV[10] = gameId    ARGV[11] = finished TTL seconds   ARGV[12] = idle TTL / recent window seconds
      * ARGV[13] = now millis (from Java, so tests can move time)   ARGV[14] = the play as JSON
+     * ARGV[15] = no-score heal window millis
      *
      * Returns: 0 duplicate | -1 stale | -2 pending | the game's new version (1, 2, ...) when accepted
      */
     private static final String PROCESS_EVENT_SCRIPT =
         "if redis.call('EXISTS', KEYS[2]) == 1 then return 0 end\n" +
         "if redis.call('EXISTS', KEYS[4]) == 1 then return -2 end\n" +
+        "local seq = tonumber(ARGV[1])\n" +
         "local lastSeq = tonumber(redis.call('HGET', KEYS[1], 'lastSeq')) or 0\n" +
-        "if tonumber(ARGV[1]) <= lastSeq then return -1 end\n" +
+        "if seq <= lastSeq then\n" +
+        "  local heal = false\n" +
+        "  if seq < lastSeq and lastSeq < 1e14 and math.floor(seq / 1e10) == math.floor(lastSeq / 1e10) then\n" +
+        "    local home, away = tonumber(ARGV[6]), tonumber(ARGV[7])\n" +
+        "    local savedHome = tonumber(redis.call('HGET', KEYS[1], 'homeScore')) or 0\n" +
+        "    local savedAway = tonumber(redis.call('HGET', KEYS[1], 'awayScore')) or 0\n" +
+        "    if home + away > savedHome + savedAway then\n" +
+        "      heal = true\n" +
+        "    elseif home == savedHome and away == savedAway then\n" +
+        "      local since = tonumber(redis.call('HGET', KEYS[1], 'staleSince'))\n" +
+        "      if not since then\n" +
+        "        redis.call('HSET', KEYS[1], 'staleSince', ARGV[13])\n" +
+        "      elseif tonumber(ARGV[13]) - since >= tonumber(ARGV[15]) then\n" +
+        "        heal = true\n" +
+        "      end\n" +
+        "    end\n" +
+        "  end\n" +
+        "  if not heal then return -1 end\n" +
+        "end\n" +
         "redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])\n" +
         "local version = redis.call('HINCRBY', KEYS[1], 'version', 1)\n" +
+        "redis.call('HDEL', KEYS[1], 'staleSince')\n" +
         "redis.call('HSET', KEYS[1],\n" +
         "  'homeTeam', ARGV[3], 'awayTeam', ARGV[4], 'league', ARGV[5],\n" +
         "  'homeScore', ARGV[6], 'awayScore', ARGV[7], 'status', ARGV[8],\n" +
@@ -144,7 +177,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                 String.valueOf(FINISHED_GAME_TTL_SECONDS),
                 String.valueOf(IDLE_GAME_TTL_SECONDS),
                 String.valueOf(nowMillis.getAsLong()),
-                GameEventParser.toJson(event)
+                GameEventParser.toJson(event),
+                String.valueOf(NO_SCORE_HEAL_MILLIS)
             );
             result = (Long) jedis.eval(PROCESS_EVENT_SCRIPT, keys, args);
         }
