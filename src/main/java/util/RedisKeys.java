@@ -20,6 +20,9 @@ public final class RedisKeys {
     /** One game's accepted play waiting for the log to confirm it (hash: version, play): {@code outbox:<gameId>} */
     public static final String OUTBOX_PREFIX = "outbox:";
 
+    /** A game's accept counter, kept apart from the game record so it outlives it: {@code version:<gameId>} */
+    public static final String VERSION_PREFIX = "version:";
+
     /** Games with a play in the outbox, scored by accept time in millis; the retry loop reads it. */
     public static final String OUTBOX_PENDING = "outbox:pending";
 

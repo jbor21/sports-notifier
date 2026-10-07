@@ -29,6 +29,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     private static final long IDLE_GAME_TTL_SECONDS = 8 * 86_400L;
     /** How long the same period and score must keep looking "older" before the no-score heal accepts it. */
     private static final long NO_SCORE_HEAL_MILLIS = 30_000L;
+    /** Longer than Stage 1's 8-day memory of versions (Stage1Progress), refreshed on every accept. */
+    private static final long VERSION_TTL_SECONDS = 9 * 86_400L;
 
     /**
      * Single atomic Lua script: duplicate check, pending check, ordering check, then claim, state
@@ -75,13 +77,16 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      * KEYS[3] = games:recent
      * KEYS[4] = outbox slot    (e.g. "outbox:g1")
      * KEYS[5] = outbox:pending
+     * KEYS[6] = version:<gameId>, the accept counter. Its own key, not a field of the game record:
+     *           the record expires a day after a final, and a counter that restarted at 1 for a
+     *           reused game id would be dropped by Stage 1, which remembers versions for 8 days.
      *
      * ARGV[1] = seq        ARGV[2] = dedup TTL seconds
      * ARGV[3] = homeTeam   ARGV[4] = awayTeam   ARGV[5] = league
      * ARGV[6] = homeScore  ARGV[7] = awayScore  ARGV[8] = status   ARGV[9] = timestamp
      * ARGV[10] = gameId    ARGV[11] = finished TTL seconds   ARGV[12] = idle TTL / recent window seconds
      * ARGV[13] = now millis (from Java, so tests can move time)   ARGV[14] = the play as JSON
-     * ARGV[15] = no-score heal window millis
+     * ARGV[15] = no-score heal window millis   ARGV[16] = version key TTL seconds
      *
      * Returns: 0 duplicate | -1 stale | -2 pending | the game's new version (1, 2, ...) when accepted
      */
@@ -110,7 +115,9 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         "  if not heal then return -1 end\n" +
         "end\n" +
         "redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])\n" +
-        "local version = redis.call('HINCRBY', KEYS[1], 'version', 1)\n" +
+        "local version = redis.call('INCR', KEYS[6])\n" +
+        "redis.call('EXPIRE', KEYS[6], ARGV[16])\n" +
+        "redis.call('HSET', KEYS[1], 'version', version)\n" +
         "redis.call('HDEL', KEYS[1], 'staleSince')\n" +
         "redis.call('HSET', KEYS[1],\n" +
         "  'homeTeam', ARGV[3], 'awayTeam', ARGV[4], 'league', ARGV[5],\n" +
@@ -161,7 +168,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                 RedisKeys.PROCESSED_PREFIX + event.getEventId(),
                 RedisKeys.GAMES_RECENT,
                 RedisKeys.OUTBOX_PREFIX + event.getGameId(),
-                RedisKeys.OUTBOX_PENDING
+                RedisKeys.OUTBOX_PENDING,
+                RedisKeys.VERSION_PREFIX + event.getGameId()
             );
             List<String> args = List.of(
                 String.valueOf(event.getSeq()),
@@ -178,7 +186,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                 String.valueOf(IDLE_GAME_TTL_SECONDS),
                 String.valueOf(nowMillis.getAsLong()),
                 GameEventParser.toJson(event),
-                String.valueOf(NO_SCORE_HEAL_MILLIS)
+                String.valueOf(NO_SCORE_HEAL_MILLIS),
+                String.valueOf(VERSION_TTL_SECONDS)
             );
             result = (Long) jedis.eval(PROCESS_EVENT_SCRIPT, keys, args);
         }

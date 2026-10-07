@@ -65,6 +65,19 @@ class EventProcessingServiceImplTest {
     }
 
     @Test
+    void versionSurvivesTheGameRecordExpiring() {
+        // game:<id> expires a day after a final, but Stage 1 remembers the last version for 8 days.
+        // If the counter restarted at 1, every play of a reused game id (the simulator's, or a
+        // rescheduled game) would be dropped by Stage 1 as already handled.
+        service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+        jedis.del("game:g1");
+        service.processEvent(ev("e2", 20, 4, 0, "SCORE_UPDATE"));
+        assertEquals(2L, sent.plays.get(1).getVersion());
+        long ttl = jedis.ttl("version:g1");
+        assertTrue(ttl > 8 * 86_400, "the counter outlives Stage 1's 8-day memory: " + ttl);
+    }
+
+    @Test
     void publishedPlayCarriesItsVersion() {
         service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
         service.processEvent(ev("e2", 20, 4, 0, "SCORE_UPDATE"));
