@@ -26,6 +26,15 @@ public final class RedisKeys {
     /** The last play version Stage 1 finished for a game: {@code s1:last:<gameId>} */
     public static final String STAGE1_LAST_PREFIX = "s1:last:";
 
+    /** Stage 2's dedup claim, one per message per user: {@code notif:<messageId>:<userId>} */
+    public static final String NOTIF_DEDUP_PREFIX = "notif:";
+
+    /** Gateways holding a user's sockets (sorted set: gateway id, scored by expiry in seconds): {@code conn:<userId>} */
+    public static final String CONN_PREFIX = "conn:";
+
+    /** A gateway's own pub/sub channel; Stage 2 publishes there for the users it holds: {@code gw:<gatewayId>} */
+    public static final String GATEWAY_CHANNEL_PREFIX = "gw:";
+
     /** Account record JSON (id, username, bcrypt hash): {@code user:<userId>} */
     public static final String USER_PREFIX = "user:";
 

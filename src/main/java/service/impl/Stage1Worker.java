@@ -6,17 +6,13 @@ import model.NotificationMessage;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import redis.clients.jedis.JedisPool;
 import util.GameEventParser;
 
 import java.time.Duration;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -73,7 +69,7 @@ public final class Stage1Worker implements AutoCloseable {
                 handled++;
             }
         } catch (RuntimeException e) {
-            rewindToCommitted();
+            Offsets.rewindToCommitted(consumer);
             throw e;
         }
         if (!records.isEmpty()) consumer.commitSync();
@@ -107,17 +103,6 @@ public final class Stage1Worker implements AutoCloseable {
             if (failed.get() != null) throw new IllegalStateException("notifications not all confirmed", failed.get());
         }
         progress.recordIfHigher(play.getGameId(), play.getVersion());
-    }
-
-    /** After a failure mid-batch: go back to the last commit, so the failed play is read again. */
-    private void rewindToCommitted() {
-        Set<TopicPartition> assigned = consumer.assignment();
-        Map<TopicPartition, OffsetAndMetadata> committed = consumer.committed(assigned);
-        for (TopicPartition tp : assigned) {
-            OffsetAndMetadata o = committed.get(tp);
-            if (o != null) consumer.seek(tp, o.offset());
-            else consumer.seekToBeginning(Set.of(tp));
-        }
     }
 
     /** The loop: poll, handle, commit. A failure is logged and the batch is retried after a second. */

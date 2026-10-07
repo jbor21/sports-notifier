@@ -43,6 +43,13 @@ services:
     portEnv: STAGE1_WORKER_PORT
     clusterService: false
     kafka: true
+  # Stage 2: reads notifications, delivers each exactly once in effect (history + the user's gateways).
+  stage2-worker:
+    replicas: 0
+    port: 8086
+    portEnv: STAGE2_WORKER_PORT
+    clusterService: false
+    kafka: true
 
 # ESPN request settings, shared by the gateway's upcoming-games proxy and the poller. ESPN's
 # filtering changes over time; the daily espn-check workflow says when these stop working.
