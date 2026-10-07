@@ -8,6 +8,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.common.errors.WakeupException;
 
+import util.LoopHealth;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -68,8 +70,9 @@ public final class Stage2Worker implements AutoCloseable {
     }
 
     /** The loop: poll, deliver, commit. A failure is logged and the batch is retried after a second. */
-    public void run() {
+    public void run(LoopHealth health) {
         while (running) {
+            health.beat();
             try {
                 pollOnce(Duration.ofMillis(500));
             } catch (WakeupException e) {

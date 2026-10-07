@@ -12,6 +12,8 @@ import org.apache.kafka.common.errors.WakeupException;
 import redis.clients.jedis.JedisPool;
 import util.GameEventParser;
 
+import util.LoopHealth;
+
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -106,8 +108,9 @@ public final class Stage1Worker implements AutoCloseable {
     }
 
     /** The loop: poll, handle, commit. A failure is logged and the batch is retried after a second. */
-    public void run() {
+    public void run(LoopHealth health) {
         while (running) {
+            health.beat();
             try {
                 pollOnce(Duration.ofMillis(500));
             } catch (WakeupException e) {

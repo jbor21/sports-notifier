@@ -6,12 +6,16 @@ import redis.clients.jedis.JedisPool;
 import util.GsonJsonMapper;
 import util.JedisPoolHolder;
 import util.KafkaSettings;
+import util.LoopHealth;
 import util.Topics;
 
 import java.util.Collections;
 import java.util.List;
 
 public final class Stage2WorkerMain {
+
+    /** A pass normally takes about a second; a minute without one means the loop is stuck. */
+    private static final long LOOP_MAX_SILENCE_MILLIS = 60_000L;
 
     public static void main(String[] args) throws InterruptedException {
         JedisPoolHolder.awaitRedisOrExit("stage2-worker");
@@ -25,14 +29,23 @@ public final class Stage2WorkerMain {
 
         // The consumer is not thread-safe, so the loop owns it: shutdown asks the loop to stop, and the
         // loop's own thread closes the consumer (leaving the group, so its lanes move at once).
+        LoopHealth health = new LoopHealth(System::currentTimeMillis, LOOP_MAX_SILENCE_MILLIS);
         Thread loop = new Thread(() -> {
-            worker.run();
-            worker.close();
+            try {
+                worker.run(health);
+            } finally {
+                worker.close();
+            }
         }, "stage2-worker");
+        health.attach(loop);
         loop.start();
 
         Javalin app = Javalin.create(cfg -> cfg.jsonMapper(new GsonJsonMapper())).start(port);
-        app.get("/health", ctx -> ctx.json(Collections.singletonMap("status", "ok")));
+        // Fails when the consumer loop has died or stopped coming around, so Kubernetes restarts the pod.
+        app.get("/health", ctx -> {
+            boolean ok = health.isHealthy();
+            ctx.status(ok ? 200 : 503).json(Collections.singletonMap("status", ok ? "ok" : "consumer loop not running"));
+        });
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             worker.stop();
