@@ -15,8 +15,9 @@ info:
       signup and login. Every endpoint except signup, login, leagues, teams, catalog,
       and games requires it.
     - Requests with a body must send `Content-Type: application/json`.
-    - IDs are opaque strings. Team ids are league-qualified (`nba-bos`, `mlb-bos`),
-      because an abbreviation alone is ambiguous across leagues.
+    - IDs are opaque strings. Team and game ids are league-qualified (`nba-bos`,
+      `mlb-bos`, `nfl-401872948`), because an abbreviation alone is ambiguous across
+      leagues. Ids never name the data provider, so they survive a change of provider.
     - Alert types and game statuses may grow. The UI must ignore values it does not
       know rather than fail.
     - Errors always use the `Error` shape.
@@ -188,6 +189,11 @@ paths:
         Every alert type the league offers, with its defaults per follow kind and any
         options. The UI draws a follow's switches from this list instead of
         hard-coding them, so a new alert type appears without a UI change.
+
+        Until the daily league summary ships (alert wave 2), `DAILY_SUMMARY` is listed
+        with `availability: coming_soon`, and `FINAL` starts on for league follows.
+        When the summary ships, `FINAL` becomes an option for league follows, off by
+        default (`DESIGN.md` decision 15).
       security: []
       parameters:
         - $ref: '#/components/parameters/LeagueId'
@@ -238,7 +244,9 @@ paths:
       summary: Games for a day
       description: |
         Games on one calendar day in the given timezone, soonest first. Live scores
-        then update over the WebSocket (`subscribe_games`).
+        then update over the WebSocket (`subscribe_games`). Which dates are
+        supported (today only, or a range around it) is settled when the backend
+        implements this endpoint (Phase 3.4); a date outside it is a 422.
       security: []
       parameters:
         - name: date
@@ -571,7 +579,10 @@ components:
         password:
           type: string
           minLength: 8
-          maxLength: 128
+          maxLength: 72
+          description: |
+            8 to 72 bytes in UTF-8. bcrypt ignores everything past 72 bytes, so a longer
+            password is refused rather than silently cut short.
         timezone:
           $ref: '#/components/schemas/Timezone'
           description: Signup only. The UI sends the browser's timezone.
@@ -675,8 +686,9 @@ components:
         version:
           type: integer
           description: |
-            Increases with every change to this game. A WebSocket update with a lower
-            or equal version than the UI already has is stale and must be ignored.
+            A per-game counter that goes up by one with every accepted change to this
+            game, so it only ever increases. A WebSocket update with a lower or equal
+            version than the UI already has is stale and must be ignored.
         updatedAt: { type: string, format: date-time }
       example:
         id: nfl-401872948

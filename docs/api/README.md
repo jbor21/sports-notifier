@@ -7,7 +7,7 @@ The contract between the new web UI (phase 3b, in `web/`) and the backend. It wa
 | `openapi.yaml` | Every HTTP endpoint: paths, inputs, outputs, errors, examples. The standard format UI tools, code generators, and mock servers read. |
 | `websocket.md` | The live connection: notifications, live scores, keepalive, reconnecting. |
 
-Status: **draft, 2026-10-01.** The backend implements it in Phase 3. Until then only the mock serves it.
+Status: **final for Phase 3, 2026-10-06.** Reviewed against the backend design in the Phase 3 brainstorm. The backend implements it slice by slice: 3.2 (`/auth`, `/me`, `/follows`, `/notifications`), 3.3 (the alert catalog's behavior), 3.4 (`/games`, `/leagues`, live `game_update`). Until a slice lands, only the mock serves it.
 
 ## Screens and the calls behind them
 
@@ -50,11 +50,11 @@ It answers every endpoint with the examples in the spec and checks inputs agains
 | `/api/...` | `/api/v1/...` | Room for a v2 without breaking this UI. |
 | `/api/signup`, `/api/login` | `/auth/signup`, `/auth/login` | Grouped, so the sign-in method can change later without touching the rest. |
 | `PUT /api/preferences` with three generic event types | `/follows` with per-follow switches from the catalog | Decision 15. |
-| Team ids like `BOS` | League-qualified ids like `nba-bos` | `BOS` is the Celtics, the Red Sox, and the Bruins. |
+| Team ids like `BOS`, game ids like `espn-401872948` | League-qualified ids like `nba-bos`, `nfl-401872948` | `BOS` is the Celtics, the Red Sox, and the Bruins, and ids should not name the data provider. |
 | `/api/history?limit=50` | `/notifications` with filters, cursor paging, unread count, clear all, 30-day retention | What the history screen needs. |
 | `/api/upcoming` (ESPN proxy) | Folded into `/games?date=` | The UI never talks to the data provider, so the provider can change per sport. |
 | WebSocket `/ws`, notifications only | `/api/v1/ws` with notifications, live game updates, unread count, keepalive | Live scores on screen. |
-| Password minimum 4 | Minimum 8, usernames `a–z 0–9 _` | One of the Phase 2 fixes. |
+| Password minimum 4 | 8 to 72 bytes, usernames `a–z 0–9 _` | One of the Phase 2 fixes. bcrypt ignores bytes past 72. |
 
 ## Changing the contract
 

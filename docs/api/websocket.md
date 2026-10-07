@@ -146,5 +146,5 @@ Notes for whoever builds the server side; the UI can skip this.
 
 - **Notifications** follow decision 13: Stage 2 publishes to the channel of the gateway holding the user's socket.
 - **Game updates** are a second path. Every accepted snapshot also publishes its `GameSummary` to a per-game Redis channel. A gateway subscribes to the channels of games its tabs asked for, and unsubscribes when no tab wants them. Updates are per game, not per user, so a Super Bowl with 100,000 viewers is one message per gateway, not 100,000.
-- `version` comes from the game state the Lua script owns, so it increases in the same order the score does.
+- `version` is the per-game counter the Lua script increments on every accepted play, in the same step as the score, so it increases in the order the score changed. It is not the script's internal `seq`, which can go down when the script heals a bad ESPN clock (Phase 3.1 spec, section 1.4).
 - Multiple tabs: each tab is its own connection and gets its own copy of notifications and `unread_count`.
