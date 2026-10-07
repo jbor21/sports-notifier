@@ -1,0 +1,1137 @@
+{
+  "leagues": {
+    "NFL": [
+      {
+        "type": "STARTING_SOON",
+        "name": "Starting soon",
+        "description": "15 minutes before the scheduled start.",
+        "category": "before_game",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "GAME_START",
+        "name": "Kickoff",
+        "description": "The game starts.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "DELAYED",
+        "name": "Delayed or postponed",
+        "description": "The game is delayed, postponed, or canceled.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "LEAD_CHANGE",
+        "name": "Lead change",
+        "description": "The leading team changes.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "from_snapshots",
+        "availability": "available"
+      },
+      {
+        "type": "CLOSE_LATE",
+        "name": "Close game late",
+        "description": "Within 8 points with 5:00 or less left in the 4th quarter. Never in overtime.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "COMEBACK",
+        "name": "Comeback",
+        "description": "Down 14 or more, then within 8 in the second half; again when they take the lead.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "from_snapshots",
+        "availability": "available"
+      },
+      {
+        "type": "OVERTIME",
+        "name": "Overtime",
+        "description": "Overtime starts, and each further overtime period.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "FINAL",
+        "name": "Final",
+        "description": "Final score, and win, loss, or tie for your team.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "DAILY_SUMMARY",
+        "name": "Daily summary",
+        "description": "After the day's last game, one push with every final score.",
+        "category": "summary",
+        "appliesTo": [
+          "league"
+        ],
+        "defaults": {
+          "league": true
+        },
+        "precision": "exact",
+        "availability": "coming_soon"
+      },
+      {
+        "type": "TOUCHDOWN",
+        "name": "Touchdown",
+        "description": "Any touchdown in the game, sent right away with \"extra point pending.\"",
+        "category": "scoring",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "TRY_RESULT",
+        "name": "Extra point / 2-pt result",
+        "description": "The try after a touchdown: extra point good, 2-point conversion good, or no good.",
+        "category": "scoring",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "FIELD_GOAL",
+        "name": "Field goal",
+        "description": "A field goal.",
+        "category": "scoring",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "SAFETY",
+        "name": "Safety",
+        "description": "A safety.",
+        "category": "scoring",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "END_OF_PERIOD",
+        "name": "End of quarter",
+        "description": "End of the 1st and 3rd quarters.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "HALFTIME",
+        "name": "Halftime",
+        "description": "Halftime, with the score.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "TWO_MINUTE_WARNING",
+        "name": "Two-minute warning",
+        "description": "The clock crosses 2:00 in the 2nd or 4th quarter.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "RED_ZONE",
+        "name": "Red zone",
+        "description": "A team with the ball inside the 20.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "exact",
+        "availability": "coming_soon"
+      },
+      {
+        "type": "CHANCE_TO_WIN",
+        "name": "Chance to tie or win",
+        "description": "Trailing by 8 or less with the ball in the last 2:00 of the 4th quarter.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "coming_soon"
+      }
+    ],
+    "NBA": [
+      {
+        "type": "STARTING_SOON",
+        "name": "Starting soon",
+        "description": "15 minutes before the scheduled start.",
+        "category": "before_game",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "GAME_START",
+        "name": "Tip-off",
+        "description": "The game starts.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "DELAYED",
+        "name": "Delayed or postponed",
+        "description": "The game is delayed, postponed, or canceled.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "LEAD_CHANGE",
+        "name": "Lead change",
+        "description": "The leading team changes, in the 4th quarter and overtime only.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "from_snapshots",
+        "availability": "available"
+      },
+      {
+        "type": "CLOSE_LATE",
+        "name": "Close game late",
+        "description": "Within 5 points with 5:00 or less left in the 4th quarter. Never in overtime.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "COMEBACK",
+        "name": "Comeback",
+        "description": "Down 15 or more, then within 3 in the second half; again when they take the lead.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "from_snapshots",
+        "availability": "available"
+      },
+      {
+        "type": "OVERTIME",
+        "name": "Overtime",
+        "description": "Overtime starts, and each further overtime period.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "FINAL",
+        "name": "Final",
+        "description": "Final score, and win, loss, or tie for your team.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "DAILY_SUMMARY",
+        "name": "Daily summary",
+        "description": "After the day's last game, one push with every final score.",
+        "category": "summary",
+        "appliesTo": [
+          "league"
+        ],
+        "defaults": {
+          "league": true
+        },
+        "precision": "exact",
+        "availability": "coming_soon"
+      },
+      {
+        "type": "END_OF_PERIOD",
+        "name": "End of quarter",
+        "description": "End of the 1st and 3rd quarters.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "HALFTIME",
+        "name": "Halftime",
+        "description": "Halftime, with the score.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "BIG_RUN",
+        "name": "Big run",
+        "description": "One team scores 10 or more straight points.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "from_snapshots",
+        "availability": "available"
+      },
+      {
+        "type": "BIG_LEAD",
+        "name": "Big lead",
+        "description": "A 20-point lead. Once per game.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "TIE_LATE",
+        "name": "Tie game late",
+        "description": "A new tie in the 4th quarter or overtime.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "from_snapshots",
+        "availability": "available"
+      }
+    ],
+    "MLB": [
+      {
+        "type": "STARTING_SOON",
+        "name": "Starting soon",
+        "description": "15 minutes before the scheduled start.",
+        "category": "before_game",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "GAME_START",
+        "name": "First pitch",
+        "description": "The game starts.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "DELAYED",
+        "name": "Delayed or postponed",
+        "description": "The game is delayed, postponed, or canceled. Also when play resumes.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "LEAD_CHANGE",
+        "name": "Lead change",
+        "description": "The leading team changes.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "from_snapshots",
+        "availability": "available"
+      },
+      {
+        "type": "CLOSE_LATE",
+        "name": "Close game late",
+        "description": "Within 2 runs in the 8th or 9th inning. Never in extra innings.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "COMEBACK",
+        "name": "Comeback",
+        "description": "Down 4 or more, then within 1 from the 6th inning on; again when they take the lead.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "from_snapshots",
+        "availability": "available"
+      },
+      {
+        "type": "OVERTIME",
+        "name": "Extra innings",
+        "description": "Extra innings start.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "FINAL",
+        "name": "Final",
+        "description": "Final score, and win, loss, or tie for your team.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "DAILY_SUMMARY",
+        "name": "Daily summary",
+        "description": "After the day's last game, one push with every final score.",
+        "category": "summary",
+        "appliesTo": [
+          "league"
+        ],
+        "defaults": {
+          "league": true
+        },
+        "precision": "exact",
+        "availability": "coming_soon"
+      },
+      {
+        "type": "RUN_SCORED",
+        "name": "Run scored",
+        "description": "Runs score, one alert per update however many scored.",
+        "category": "scoring",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "END_OF_INNING",
+        "name": "End of inning",
+        "description": "Full innings only: every inning, or the innings you choose.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "exact",
+        "availability": "available",
+        "options": [
+          {
+            "key": "innings",
+            "kind": "inning_set",
+            "label": "Which innings"
+          }
+        ]
+      },
+      {
+        "type": "BIG_INNING",
+        "name": "Big inning",
+        "description": "3 or more runs in one inning.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "TIE_LATE",
+        "name": "Tie game late",
+        "description": "A new tie in the 7th inning or later.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "from_snapshots",
+        "availability": "available"
+      },
+      {
+        "type": "BASES_LOADED",
+        "name": "Bases loaded",
+        "description": "The bases are loaded.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "exact",
+        "availability": "coming_soon"
+      },
+      {
+        "type": "NO_HITTER",
+        "name": "No-hitter watch",
+        "description": "After the 6th inning, then every inning while it lasts; \"no-hitter over\" if broken up.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "coming_soon"
+      },
+      {
+        "type": "WALK_OFF",
+        "name": "Walk-off",
+        "description": "The home team takes the lead in the bottom of the 9th or later, ending the game.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      }
+    ],
+    "NHL": [
+      {
+        "type": "STARTING_SOON",
+        "name": "Starting soon",
+        "description": "15 minutes before the scheduled start.",
+        "category": "before_game",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "GAME_START",
+        "name": "Puck drop",
+        "description": "The game starts.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "DELAYED",
+        "name": "Delayed or postponed",
+        "description": "The game is delayed, postponed, or canceled.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "LEAD_CHANGE",
+        "name": "Lead change",
+        "description": "The leading team changes.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "from_snapshots",
+        "availability": "available"
+      },
+      {
+        "type": "CLOSE_LATE",
+        "name": "Close game late",
+        "description": "Within 1 goal with 5:00 or less left in the 3rd period. Never in overtime.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "COMEBACK",
+        "name": "Comeback",
+        "description": "Down 3 or more, then within 1 from the 2nd period on; again on the tying goal.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "from_snapshots",
+        "availability": "available"
+      },
+      {
+        "type": "OVERTIME",
+        "name": "Overtime",
+        "description": "Overtime starts, and each further overtime period.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "FINAL",
+        "name": "Final",
+        "description": "Final score, and win, loss, or tie for your team.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "DAILY_SUMMARY",
+        "name": "Daily summary",
+        "description": "After the day's last game, one push with every final score.",
+        "category": "summary",
+        "appliesTo": [
+          "league"
+        ],
+        "defaults": {
+          "league": true
+        },
+        "precision": "exact",
+        "availability": "coming_soon"
+      },
+      {
+        "type": "GOAL",
+        "name": "Goal",
+        "description": "Any goal in the game.",
+        "category": "scoring",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "END_OF_PERIOD",
+        "name": "End of period",
+        "description": "End of the 1st and 2nd periods.",
+        "category": "game_flow",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": false,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "TIE_LATE",
+        "name": "Tie game late",
+        "description": "A new tie with 5:00 or less left in the 3rd period.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "from_snapshots",
+        "availability": "available"
+      },
+      {
+        "type": "BIG_LEAD",
+        "name": "Big lead",
+        "description": "A lead of 3 or more goals. Once per game.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "SHUTOUT_WATCH",
+        "name": "Shutout watch",
+        "description": "A team scoreless after two periods, with a follow-up if they score.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": false,
+          "league": false,
+          "game": false
+        },
+        "precision": "exact",
+        "availability": "available"
+      },
+      {
+        "type": "SHOOTOUT",
+        "name": "Shootout",
+        "description": "The game goes to a shootout.",
+        "category": "big_moment",
+        "appliesTo": [
+          "team",
+          "league",
+          "game"
+        ],
+        "defaults": {
+          "team": true,
+          "league": true,
+          "game": true
+        },
+        "precision": "exact",
+        "availability": "available"
+      }
+    ]
+  }
+}
