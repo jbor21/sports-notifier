@@ -14,7 +14,7 @@ public final class EventProcessingServiceMain {
         JedisPoolHolder.awaitRedisOrExit("event-processing");
         int port = Integer.parseInt(System.getenv().getOrDefault("EVENT_PROCESSING_PORT", "8083"));
         JedisPool pool = JedisPoolHolder.create();
-        EventProcessingServiceImpl eps = new EventProcessingServiceImpl(pool);
+        EventProcessingServiceImpl eps = new EventProcessingServiceImpl(pool, new RedisStreamPublisher(pool), System::currentTimeMillis);
 
         Javalin app = Javalin.create(cfg -> cfg.jsonMapper(new GsonJsonMapper())).start(port);
 

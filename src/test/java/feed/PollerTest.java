@@ -15,6 +15,7 @@ import redis.clients.jedis.StreamEntryID;
 import redis.clients.jedis.resps.StreamEntry;
 import service.ProcessResult;
 import service.impl.EventProcessingServiceImpl;
+import service.impl.RedisStreamPublisher;
 import util.GameEventParser;
 
 import java.util.ArrayList;
@@ -70,7 +71,7 @@ class PollerTest {
         jedis = new Jedis("localhost", 6379);
         jedis.select(1);
         jedis.flushDB();
-        eps = new EventProcessingServiceImpl(pool);
+        eps = new EventProcessingServiceImpl(pool, new RedisStreamPublisher(pool), System::currentTimeMillis);
     }
 
     @AfterEach

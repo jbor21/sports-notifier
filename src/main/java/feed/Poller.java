@@ -83,7 +83,8 @@ public final class Poller {
                 // stop until the game passes it. Make that visible instead of logging "sent".
                 return sync ? LogLevel.DEBUG : LogLevel.WARN;
             }
-            if ("duplicate".equals(r.result()) || sync) return LogLevel.DEBUG;
+            // pending: the game's previous play is still on its way to the log; the next poll sends again.
+            if ("duplicate".equals(r.result()) || "pending".equals(r.result()) || sync) return LogLevel.DEBUG;
             return LogLevel.INFO;
         }
         if (r.status() >= 400 && r.status() < 500) return LogLevel.ERROR;

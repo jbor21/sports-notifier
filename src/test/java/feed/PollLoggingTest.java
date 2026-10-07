@@ -34,6 +34,13 @@ class PollLoggingTest {
     }
 
     @Test
+    void pendingIsDebug() {
+        // The game has an unsent play in the outbox; the next poll sends this again. Not a problem to report.
+        assertEquals(DEBUG, Poller.levelFor("SCORE_UPDATE", r(200, "pending")));
+        assertEquals(DEBUG, Poller.levelFor("GAME_SYNC", r(200, "pending")));
+    }
+
+    @Test
     void staleSyncIsDebug() {
         assertEquals(DEBUG, Poller.levelFor("GAME_SYNC", r(200, "stale")));
     }

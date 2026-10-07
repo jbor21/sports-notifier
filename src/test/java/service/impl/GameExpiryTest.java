@@ -24,7 +24,7 @@ class GameExpiryTest {
         jedis = new Jedis("localhost", 6379);
         jedis.select(1);
         jedis.flushDB();
-        service = new EventProcessingServiceImpl(pool);
+        service = new EventProcessingServiceImpl(pool, new RedisStreamPublisher(pool), System::currentTimeMillis);
     }
 
     @AfterEach

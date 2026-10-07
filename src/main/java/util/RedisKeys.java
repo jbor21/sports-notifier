@@ -17,6 +17,12 @@ public final class RedisKeys {
     /** SET NX dedup guard per event: {@code processed:<eventId>} */
     public static final String PROCESSED_PREFIX = "processed:";
 
+    /** One game's accepted play waiting for the log to confirm it (hash: version, play): {@code outbox:<gameId>} */
+    public static final String OUTBOX_PREFIX = "outbox:";
+
+    /** Games with a play in the outbox, scored by accept time in millis; the retry loop reads it. */
+    public static final String OUTBOX_PENDING = "outbox:pending";
+
     /** Account record JSON (id, username, bcrypt hash): {@code user:<userId>} */
     public static final String USER_PREFIX = "user:";
 

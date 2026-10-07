@@ -24,12 +24,4 @@ public interface EventProcessingService {
      * @return {@link ProcessResult#INVALID} if the JSON cannot be parsed, else as {@link #processEvent}
      */
     ProcessResult processJson(String json);
-
-    /**
-     * Publishes a validated event to the pub/sub broker so
-     * downstream workers can consume it asynchronously.
-     *
-     * @param event validated game event
-     */
-    void publishEvent(GameEvent event);
 }
