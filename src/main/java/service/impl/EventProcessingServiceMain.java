@@ -8,7 +8,6 @@ import util.JedisPoolHolder;
 import util.KafkaSettings;
 import util.Topics;
 import org.apache.kafka.clients.producer.KafkaProducer;
-import service.PlayPublisher;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -27,15 +26,7 @@ public final class EventProcessingServiceMain {
         JedisPool pool = JedisPoolHolder.create();
         KafkaPlayPublisher kafka = new KafkaPlayPublisher(
             new KafkaProducer<>(KafkaSettings.ingestProducer(KafkaSettings.bootstrap())), Topics.GAME_EVENTS);
-        RedisStreamPublisher stream = new RedisStreamPublisher(pool);
-        // Kafka's confirmation is what clears the outbox. Until the switch-over (Phase 3.1 Task 6) the
-        // course workers still read the Redis Stream, so plays are copied there too; that copy never
-        // clears anything, or it could clear a play Kafka never got.
-        PlayPublisher publisher = play -> {
-            stream.publish(play);
-            return kafka.publish(play);
-        };
-        EventProcessingServiceImpl eps = new EventProcessingServiceImpl(pool, publisher, System::currentTimeMillis);
+        EventProcessingServiceImpl eps = new EventProcessingServiceImpl(pool, kafka, System::currentTimeMillis);
 
         // The retry loop: plays still in the outbox after 5 s are sent again (a crashed pod, a Kafka outage).
         OutboxRelay relay = new OutboxRelay(new Outbox(pool), kafka, System::currentTimeMillis, RELAY_MIN_AGE_MILLIS);
