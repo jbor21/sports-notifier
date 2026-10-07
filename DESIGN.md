@@ -2,7 +2,7 @@
 
 This is the map of the project: what it does today, what we are changing it into, and every decision we made on the way. It is written so you can explain the system without reading the code line by line.
 
-Last updated 2026-09-28. Nothing in the "target" sections is built yet. The code on disk is still the course version described under "What exists today."
+Last updated 2026-10-07. Phases 1, 2, and 3.1 are built (see "Build order"). "What exists today" describes the course version as it was before the redesign.
 
 Revised 2026-09-28: hosting moved from one always-on Hetzner VM to Kubernetes, run on your laptop (k3d) and on AWS (EKS) only when you want it up. Kafka gets three brokers in the cloud. The evidence step became a correctness checker plus a chaos suite. Decisions 2, 6, 7, and 9 changed; 12 through 14 are new.
 
@@ -11,6 +11,8 @@ Revised 2026-09-29: decision 15, the notification catalog. Four sports, alerts a
 Revised 2026-09-30: decision 15 tightened. League follows get a daily summary instead of a final per game. The final is always its own push. Close-game conditions are explicit and never apply in overtime. Game-follow defaults, precedence between follows, overlap rules, NFL ties, and duplicate-proof alert ids are defined.
 
 Revised 2026-10-02: Phase 2 built (live-game check and merge pending); the fix list below says what it closed and what Phase 3 still owes. Decision 10 drops the Phase 2 provider comparison. ESPN only for now, plus a check that ESPN answers from a data-center address. The interface is named `ScoreFeed`.
+
+Revised 2026-10-07: Phase 3 is split into 3.1–3.4 (build order). 3.1, the Kafka pipeline, is built. Decision 5's crash window closes with an outbox in Redis and one unsent play per game; the script heals an ESPN clock that runs ahead of reality; a per-game `version` counter orders accepted plays.
 
 ---
 
@@ -228,7 +230,11 @@ Event type is not the key. A touchdown and a field goal from the same game share
 
 **Gave up.** A Kafka copy of events we refused (duplicates and late plays that would move the score backwards). We also accept a crash window: the script can say yes, and the process can die before Kafka acknowledges the write. A naive retry then looks like a duplicate and the play never arrives. The produce has to be retried without the script treating that retry as a new claim. Rejected events get an application log line, not a topic.
 
-**How the window closes.** The claim key has two states. The script sets `processed:<eventId>` to `claimed` when it accepts the event. After Kafka acknowledges the produce, Event Processing sets it to `produced`. A retry of the same event that finds `claimed` skips the score write and produces again. The worst case is the same play on the topic twice, which the per-user dedup key already absorbs. This only works if a retry carries the same event id, which is why the poller's ids have to come from ESPN's data and not from a random UUID.
+**How the window closes: an outbox** (built in Phase 3.1). The claim has two states, and they live in Redis next to the score. In the same atomic script that accepts a play, the play is written to the game's outbox slot (`outbox:<gameId>`): that is "claimed". When Kafka confirms the write, Event Processing clears the slot: that is "produced". A retry loop on every Event Processing pod re-sends whatever is still in the outbox after 5 seconds, which covers a pod that crashed after the script said yes, and a send that failed while Kafka was down. Nothing else would retry it: the poller has no memory and compares ESPN with the saved record, which already shows the new score. This is the transactional outbox pattern.
+
+**One unsent play per game.** While a game's play is in the outbox, the script answers "pending" to any newer play for that game and changes nothing; the poller sends it again on its next poll. So a game's plays reach Kafka in the order they were accepted, even when a crashed pod's play is re-sent late. Without the rule, a stuck play (seq 10) re-sent after a newer one (seq 11) would be dropped by Stage 1 as old. A per-game lock in Redis was rejected: a pod that stalls past the lock's timeout, in a long garbage-collection pause, can still send an older play after a newer one. The script can't be interleaved, so the rule holds without a timeout. The worst case is the same play on the topic twice (two retry loops at once), which Stage 1 drops by its `version`.
+
+**When ESPN's clock runs ahead of reality.** In 2 of 23 recorded NHL games, ESPN briefly showed a clock ahead of the real one (4:01 left, then 11:45). That snapshot's `seq` became the bar, and every real snapshot after it was "stale" for minutes. The script now also accepts an older-looking play in the same period if it has more points (an older snapshot never does), or if the same period and score have kept arriving for 30 seconds; either lowers the bar to the real clock. Only for real game positions (`seq` below 10^14), not the simulator's run-ordered values. Because `seq` can now go down, each game also has a `version`, a counter the script raises on every accepted play in the same step as the score. Everything after the script orders and dedups by `version`; the API's `version` is the same counter.
 
 **Why not the other way.** Produce-then-script makes Kafka a complete inbox of everything the poller sent, and a crash cannot eat the raw event. Every reader of that topic then has to apply the stale check. The check is cheap (well under a millisecond). Forgetting it in one new consumer is a bug: a history writer or a metrics job would treat a rejected score as real. A second "accepted only" topic fixes that and puts the gate one hop later, with extra lag that looks like real backlog when the inbox is full of duplicates.
 
@@ -548,7 +554,7 @@ The result is already filtered, and a user reached through several follows appea
 |---|---|
 | Stage 1 or Stage 2 worker | Kafka session timeout, lanes move to another worker, dedup key prevents a second notification. |
 | Gateway | Its WebSockets drop. Users reconnect to another gateway, which overwrites their `conn:` entry. Sessions are in Redis. Anything sent in the gap is in history. |
-| Kafka broker, laptop (one broker) | Pipeline stalls, retries, then continues when Kubernetes restarts the broker. Disk has the acknowledged log. |
+| Kafka broker, laptop (one broker) | The first play after it goes down is accepted and waits in the outbox; after that the game answers "pending" and its live score freezes. Nothing accepted is lost. When Kubernetes restarts the broker (its disk has the acknowledged log), the retry loop sends the waiting play first, and the next poll carries everything that happened meanwhile as one play. |
 | Kafka broker, cloud (three brokers) | Kafka elects a new leader for that broker's lanes from the remaining copies. Writes acknowledged by two copies are not lost. The pipeline pauses for seconds, not minutes. |
 | Redis or Postgres pod | Score updates, sessions, or account writes stop until Kubernetes restarts the pod. Disk has the Redis snapshot and the Postgres data. Only in the same availability zone as its disk. |
 | A cloud node | Kubernetes restarts its pods on other nodes. If it held a broker, see above. If it held Redis or Postgres, see above. |
@@ -562,16 +568,21 @@ In-system speed, once a play exists: produce with no intentional batching delay 
 
 ## Security and correctness still to fix in the current code
 
-These were the known bugs in the course code. Phase 2 fixed the ones that survive into the new pipeline; the rest close as Phase 3 lands. Details of each fix are in `docs/superpowers/specs/2026-10-02-phase-2-correctness-security-design.md`.
+These were the known bugs in the course code. Phase 2 fixed the ones that survive into the new pipeline, Phase 3.1 closed the pipeline ones, and the rest close as Phase 3 lands. Details of each fix are in `docs/superpowers/specs/2026-10-02-phase-2-correctness-security-design.md`.
 
-**Still open (Phase 3):**
+**Still open (Phase 3.2 onward):**
 
-- The Lua script and the publish are separate steps. A crash between them marks the event processed and never publishes it. The Kafka version closes that window with the two-state claim (decision 5). Phase 2 prepared for it: the script now checks the event id before `seq`, so a retry is a "duplicate", never "stale".
-- Every gateway subscribes to `notify:*` and reads every notification (`NotificationFanOut.java`). Route to the gateway that holds the socket (decision 13).
 - Team ids are bare abbreviations (`sub:team:BOS`). `BOS` is the Celtics, the Red Sox, and the Bruins, so following one follows all three. Team ids become league-qualified (`nba-bos`) in Phase 3.2, as the API spec uses, and the Redis sets with them.
-- If a worker dies before ack, the entry sits forever. Kafka's session timeout replaces the missing Redis reclaim. Per-user dedup has to exist before retries are turned on, or people get duplicates.
-- Accounts are lost when the cluster is deleted, until Postgres.
-- **One ESPN snapshot that runs ahead of reality becomes the floor.** A clock glitch showing 0:00 mid-period, or an early `completed`, gets a large `seq`; every later snapshot is stale until the game passes it, so those alerts are lost. The poller logs each such stale alert as a warning. Seen for real in the 60-hour recording (2026-10-02 to 10-05): 2 of 23 NHL games showed a clock ahead of reality (4:01 left, then 11:45; 0:00 mid-period). Nothing was lost only because nobody scored in those minutes. Fixing it is a Phase 3.1 design item.
+- Accounts are lost when the cluster is deleted, until Postgres (3.2).
+- An early "final" from ESPN still becomes the bar for the rest of the game. Never observed; the clock heals below cover only the same period.
+- Clock-based alerts (close game late at 5:00) could fire early during a clock glitch. 3.3's detectors.
+
+**Fixed in Phase 3.1** (details in `docs/superpowers/specs/2026-10-06-phase-3-1-kafka-pipeline-design.md`):
+
+- **The script-then-publish window.** An accepted play is written to an outbox in the same script and cleared only when Kafka confirms it; a retry loop re-sends leftovers, and a game has at most one unsent play so plays reach Kafka in order (decision 5). Tested by a crash after accept, two retry loops at once, a slow broker, and a paused broker.
+- **A worker that dies before acknowledging.** Kafka consumer groups move its lanes; workers commit only after a batch is done. Stage 1 dedups by `version` (recorded set-if-higher, so a stalled worker can't lower it); Stage 2 delivers through one script that claims `notif:<messageId>:<userId>`, writes history, and publishes, so a redelivery is a no-op. Killing either stage worker during a simulation left each user's history equal to what Stage 1 sent (305, 306, 308 messages).
+- **The `notify:*` broadcast.** Each gateway listens only on `gw:<its id>` and records itself in `conn:<userId>` (decision 13); it removes itself before closing sockets with 4000 on shutdown. The smoke test checks a live socket gets the notification.
+- **An ESPN snapshot that runs ahead of reality.** The goal heal and the 30-second no-score heal (decision 5). Seen for real in 2 of 23 recorded NHL games.
 
 **Fixed in Phase 2:**
 
@@ -593,8 +604,12 @@ We implement in this order. The system runs at the end of each step. Everything 
 
 0. **Lock the plan.** This document. Git init, and commit the course code untouched first, so the original is always there to point back to.
 1. **Foundation.** Flatten `com3810/`. One Dockerfile, `SERVICE` picks the main. A Helm chart running the current services and Redis on k3d. Tests in GitHub Actions. **Done.**
-2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data. **Built** 2026-10-02 on branch `phase-2-correctness`; done when a live game has been checked by hand and the PR is merged.
-3. **The new pipeline.** Postgres for accounts, preferences, and history, with Redis subscriber sets rebuilt on startup. Kafka through Strimzi with one broker. The two topics, the script-then-produce path with the two-state claim, consumer groups, per-user dedup. Gateway routing (decision 13). The notification catalog's first wave: per-follow preferences in Postgres resolved into Redis sets, the detector framework, and wave 1 alerts (decision 15).
+2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data. **Done** (PR #2, 2026-10-02). Fixes from 60 hours of recorded ESPN data followed in PR #4; the by-hand live-game check is issue #3.
+3. **The new pipeline**, split into four sub-phases, each with its own spec, plan, and PR:
+   - **3.1 Kafka pipeline.** Kafka through Strimzi with one broker, the two topics, script-then-produce with the outbox, Stage 1 and Stage 2 consumer groups, per-user dedup, gateway routing (decision 13). **Built** 2026-10-07 (spec and plan `2026-10-06-phase-3-1-kafka-pipeline`).
+   - **3.2 Postgres.** Accounts, follows shaped for decision 15, notification history, Redis subscriber sets rebuilt on startup, the `/auth`, `/me`, `/follows`, `/notifications` endpoints of `docs/api/`. The course UI stops working here; the new UI arrives in 3b.
+   - **3.3 Alerts, wave 1.** The detector framework and wave 1 detectors in Stage 1, most-specific-follow set math, combining, deterministic alert ids (decision 15).
+   - **3.4 Live API.** `/games`, `/leagues`, the alert catalog, and live `game_update` over the WebSocket through a per-game channel.
 3b. **New UI.** A full redesign of the web UI, frontend only: it calls the gateway's API and WebSocket and has no database, auth, or server code of its own. The code lives in `web/` and ships as static files in the same Helm chart. It is built against the API spec in `docs/api/`, written before Phase 3 and implemented by Phase 3, so the UI can start early against a mock server. Built as an installable web app (PWA) so Phase 7's Web Push can reach a phone. Screens can be designed any time; the build lands after Phase 3.
 4. **Proof tools.** Recorded-game replay, the correctness checker, OpenTelemetry traces, Prometheus and Grafana for lag and latency. Alert waves 2 and 3, each detector tested against recorded games.
 5. **AWS.** Terraform for the network, EKS, ECR, and S3. The Postgres dump and restore. Three Kafka brokers. KEDA on lag. GitHub Actions pushes the image to ECR.
