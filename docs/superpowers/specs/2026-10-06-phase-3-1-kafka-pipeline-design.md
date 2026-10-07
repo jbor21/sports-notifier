@@ -267,11 +267,11 @@ One branch, one PR, one commit or more per task. CI is green after every task, s
 | # | Task | Keeps CI green by | Built |
 |---|---|---|---|
 | 1 | Game id switch (`EspnScoreFeed`, `EspnProxyHandler`, tests) | — | inline, test-first |
-| 2 | Script: pending, both heals, `version`, outbox, **clear** | The existing Redis Stream publish runs **clear**, so games never stay `pending` | inline, test-first, small steps |
+| 2 | Script: pending, both heals, `version`, outbox, **clear** | The existing Redis Stream publish runs **clear**, so games never stay `pending`. This lasts only until task 4 | inline, test-first, small steps |
 | 3 | Infrastructure: Strimzi in `make cluster`, broker and topics in the chart, network policy, Testcontainers, `kafka-clients`, smoke checks for topics and the stranger pod | Kafka is deployed but unused | subagent, walked through |
-| 4 | Event Processing: producer, clear on confirmation, retry loop, outage test | Publishes to both the Redis Stream and Kafka; the course workers still read the stream | inline |
+| 4 | Event Processing: producer, clear on confirmation, retry loop, outage test | Publishes to both the Redis Stream and Kafka; the course workers still read the stream. From this task on only Kafka's confirmation runs **clear**: the stream publish stops clearing, or it could clear a play Kafka never got | inline |
 | 5 | Stage 1 consumer | Built and tested, deployed switched off (otherwise its messages pile up and Stage 2 would deliver them again) | inline |
-| 6 | Stage 2 consumer and delivery script; ends with the switch-over commit: both stages on, Redis Stream publish off, course workers off | Stage 2 publishes on both `notify:<userId>` and `gw:` until task 7 | inline |
+| 6 | Stage 2 consumer and delivery script; ends with the switch-over commit: both stages on, Redis Stream publish off, course workers off | Stage 2 publishes on both `notify:<userId>` and `gw:` until task 7. At the switch-over the laptop cluster is rebuilt (`make down`, `make cluster up`): Stage 1's first start reads from the beginning of `game-events`, and on a reused cluster it would re-alert every play produced since task 4. CI's cluster is always fresh | inline |
 | 7 | Gateway routing and graceful shutdown | Removes the `notify:` publish in the same commit that moves the gateway to its own channel | inline |
 | 8 | Delete the Redis Stream, the course workers, `NotificationFanOut`'s broadcast, old `RedisKeys` names; smoke check for plays sent before workers start | Deletes only code already switched off | inline |
 | 9 | Docs and the quiz section | — | inline |
