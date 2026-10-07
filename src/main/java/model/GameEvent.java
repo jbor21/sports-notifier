@@ -34,6 +34,12 @@ public class GameEvent {
     private String league;
     /** Position in the game; bigger is later. Orders events for the Lua script. See {@code feed.Seq}. */
     private long seq;
+    /**
+     * The game's accept counter, set by the Lua script when it accepts this play: 1, 2, 3, ... per
+     * game. 0 until accepted. Everything after the script orders and dedups plays by it, not by
+     * {@code seq}, because healing a bad ESPN clock can lower {@code seq}.
+     */
+    private long version;
 
     public GameEvent() {}
 
@@ -79,4 +85,13 @@ public class GameEvent {
     public String getGameStatus() { return gameStatus; }
     public String getLeague() { return league; }
     public long getSeq() { return seq; }
+    public long getVersion() { return version; }
+
+    /** A copy of this play with its accept counter set. */
+    public GameEvent withVersion(long version) {
+        GameEvent copy = new GameEvent(gameId, eventId, eventType, team, timestamp, description,
+            homeTeam, awayTeam, homeScore, awayScore, gameStatus, league, seq);
+        copy.version = version;
+        return copy;
+    }
 }

@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.javalin.http.Context;
 import feed.EspnClient;
+import feed.GameIds;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -56,7 +57,7 @@ public final class EspnProxyHandler {
         ctx.json(upcoming);
     }
 
-    private static Map<String, Object> parseScheduledGame(JsonObject event, String league) {
+    static Map<String, Object> parseScheduledGame(JsonObject event, String league) {
         JsonArray comps = event.getAsJsonArray("competitions");
         if (comps == null || comps.isEmpty()) return null;
         JsonObject comp = comps.get(0).getAsJsonObject();
@@ -88,7 +89,7 @@ public final class EspnProxyHandler {
             ? event.get("date").getAsString() : null;
 
         Map<String, Object> game = new HashMap<>();
-        game.put("gameId",       "espn-" + event.get("id").getAsString());
+        game.put("gameId",       GameIds.of(league, event.get("id").getAsString()));
         game.put("homeTeam",     home);
         game.put("awayTeam",     away);
         game.put("homeLogo",     homeLogo);

@@ -8,6 +8,11 @@ public enum ProcessResult {
     DUPLICATE,
     /** Not later in the game than the saved state; nothing changed and the id stays unclaimed. */
     STALE,
+    /**
+     * The game has an older accepted play the log has not confirmed yet. Nothing changed and the
+     * id stays unclaimed; the sender tries again later (the poller does on its next poll).
+     */
+    PENDING,
     /** Missing required fields or unparseable; nothing changed. */
     INVALID
 }

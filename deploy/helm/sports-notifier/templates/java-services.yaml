@@ -30,6 +30,9 @@ spec:
             {{- if $svc.espn }}
             {{- include "sports-notifier.espnEnv" $ | nindent 12 }}
             {{- end }}
+            {{- if $svc.kafka }}
+            {{- include "sports-notifier.kafkaEnv" $ | nindent 12 }}
+            {{- end }}
             - name: {{ $svc.portEnv }}
               value: {{ $svc.port | quote }}
             {{- range $k, $v := $svc.env }}

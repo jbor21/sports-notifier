@@ -44,3 +44,9 @@ livenessProbe:
 - name: ESPN_USER_AGENT
   value: {{ .Values.espn.userAgent | quote }}
 {{- end }}
+
+{{/* The Kafka bootstrap address (a Service Strimzi creates), for every workload that uses Kafka. Arg: root context. */}}
+{{- define "sports-notifier.kafkaEnv" -}}
+- name: KAFKA_BOOTSTRAP
+  value: {{ printf "%s-kafka-bootstrap:9092" .Release.Name | quote }}
+{{- end }}

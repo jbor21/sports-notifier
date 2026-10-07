@@ -13,6 +13,7 @@ probes:
   liveness:  { periodSeconds: 20, failureThreshold: 3 }
 
 # One Deployment per entry, named after the key. clusterService: false means no Service object.
+# kafka: true gives the service KAFKA_BOOTSTRAP, the broker's address.
 services:
   gateway:
     replicas: 1
@@ -20,20 +21,29 @@ services:
     portEnv: GATEWAY_PORT
     clusterService: true
     espn: true          # gets ESPN_HOST / ESPN_USER_AGENT for /api/upcoming
+    podNameEnv: GATEWAY_ID   # this gateway's id: its channel is gw:<id>, and conn:<userId> names it
     env:
       USER_PREF_URL: http://user-pref:8081
       GAME_STATE_URL: http://game-state:8082
       NOTIFICATION_URL: http://notification:8087
   user-pref:        { replicas: 1, port: 8081, portEnv: USER_PREF_PORT,        clusterService: true }
   game-state:       { replicas: 1, port: 8082, portEnv: GAME_STATE_PORT,       clusterService: true }
-  event-processing: { replicas: 1, port: 8083, portEnv: EVENT_PROCESSING_PORT, clusterService: true }
+  event-processing: { replicas: 1, port: 8083, portEnv: EVENT_PROCESSING_PORT, clusterService: true, kafka: true }
   notification:     { replicas: 1, port: 8087, portEnv: NOTIFICATION_PORT,     clusterService: true }
-  pubsub-worker:
-    replicas: 2
-    port: 8084
-    portEnv: PUBSUB_WORKER_PORT
+  # Stage 1: reads game-events, writes one notifications message per user.
+  stage1-worker:
+    replicas: 1
+    port: 8085
+    portEnv: STAGE1_WORKER_PORT
     clusterService: false
-    podNameEnv: PUBSUB_CONSUMER_NAME   # unique consumer name per pod in the Redis consumer group
+    kafka: true
+  # Stage 2: reads notifications, delivers each exactly once in effect (history + the user's gateways).
+  stage2-worker:
+    replicas: 1
+    port: 8086
+    portEnv: STAGE2_WORKER_PORT
+    clusterService: false
+    kafka: true
 
 # ESPN request settings, shared by the gateway's upcoming-games proxy and the poller. ESPN's
 # filtering changes over time; the daily espn-check workflow says when these stop working.
@@ -45,6 +55,20 @@ espn:
 redis:
   image: redis:7.4
   storage: 1Gi
+
+# Kafka, run by the Strimzi operator that `make cluster` installs. The broker is named after the Helm
+# release; services reach it at <release>-kafka-bootstrap:9092. These are the laptop's sizes; Phase 5's
+# values-aws.yaml sets 3 brokers, replication 3, min.insync.replicas 2.
+kafka:
+  version: 4.3.1            # same as kafka-clients in pom.xml; on Strimzi 1.2.0's supported list
+  replicas: 1               # nodes, each both controller and broker
+  storage: 2Gi
+  heap: 512m
+  replicationFactor: 1
+  minInsyncReplicas: 1
+  topics:
+    game-events:   { partitions: 12, retentionMs: 604800000 }   # 7 days; key = game id
+    notifications: { partitions: 48, retentionMs: 86400000 }    # 1 day; key = user id
 
 # The ESPN poller. Polls a league every liveMs while it has a live game or one starting within
 # 10 minutes, otherwise every idleMs.

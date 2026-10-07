@@ -32,7 +32,7 @@ class EspnScoreFeedTest {
     @Test
     void nflLiveParsesPositionAndScore() throws IOException {
         GameSnapshot g = only("nfl-live.json", "NFL");
-        assertEquals("espn-401872965", g.gameId());
+        assertEquals("nfl-401872965", g.gameId());
         assertEquals("NFL", g.league());
         assertEquals("WSH", g.homeTeam());
         assertEquals("IND", g.awayTeam());
@@ -43,6 +43,11 @@ class EspnScoreFeedTest {
         assertEquals(1200, g.clockTenths());
         assertEquals(Stage.IN_PLAY, g.stage());
         assertEquals("IN_PROGRESS", g.status());
+    }
+
+    @Test
+    void gameIdNamesTheLeagueNotTheProvider() throws IOException {
+        assertEquals("mlb-401907990", only("mlb-live.json", "MLB").gameId());
     }
 
     @Test
@@ -127,7 +132,7 @@ class EspnScoreFeedTest {
     void brokenGameIsSkipped() throws IOException {
         List<GameSnapshot> games = parse("broken.json", "NHL");
         assertEquals(1, games.size());
-        assertEquals("espn-401891803", games.get(0).gameId());
+        assertEquals("nhl-401891803", games.get(0).gameId());
     }
 
     @Test

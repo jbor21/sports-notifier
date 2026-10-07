@@ -9,6 +9,9 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 import service.ProcessResult;
+import testsupport.TestPublisher;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -17,6 +20,7 @@ class EventProcessingServiceImplTest {
     private JedisPool pool;
     private Jedis jedis;
     private EventProcessingServiceImpl service;
+    private TestPublisher sent;
 
     @BeforeEach
     void setUp() {
@@ -24,7 +28,8 @@ class EventProcessingServiceImplTest {
         jedis = new Jedis("localhost", 6379);
         jedis.select(1);
         jedis.flushDB();
-        service = new EventProcessingServiceImpl(pool);
+        sent = new TestPublisher(true);
+        service = new EventProcessingServiceImpl(pool, sent, System::currentTimeMillis);
     }
 
     @AfterEach
@@ -41,17 +46,49 @@ class EventProcessingServiceImplTest {
     @Test
     void acceptedEventIsPublishedAndSaved() {
         assertEquals(ProcessResult.ACCEPTED, service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE")));
-        assertEquals(1L, jedis.xlen("game-events"));
+        assertEquals(1, sent.plays.size());
         assertEquals("10", jedis.hget("game:g1", "lastSeq"));
         assertEquals("LAL", jedis.hget("game:g1", "homeTeam"));
         assertEquals("2", jedis.hget("game:g1", "homeScore"));
     }
 
     @Test
+    void versionRisesOnlyOnAccept() {
+        // version orders accepted plays for everything after the script; seq can't, because a heal can lower it.
+        service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+        assertEquals("1", jedis.hget("game:g1", "version"));
+        service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));   // duplicate
+        service.processEvent(ev("e0", 5, 1, 0, "SCORE_UPDATE"));    // stale
+        assertEquals("1", jedis.hget("game:g1", "version"));
+        service.processEvent(ev("e2", 20, 4, 0, "SCORE_UPDATE"));
+        assertEquals("2", jedis.hget("game:g1", "version"));
+    }
+
+    @Test
+    void versionSurvivesTheGameRecordExpiring() {
+        // game:<id> expires a day after a final, but Stage 1 remembers the last version for 8 days.
+        // If the counter restarted at 1, every play of a reused game id (the simulator's, or a
+        // rescheduled game) would be dropped by Stage 1 as already handled.
+        service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+        jedis.del("game:g1");
+        service.processEvent(ev("e2", 20, 4, 0, "SCORE_UPDATE"));
+        assertEquals(2L, sent.plays.get(1).getVersion());
+        long ttl = jedis.ttl("version:g1");
+        assertTrue(ttl > 8 * 86_400, "the counter outlives Stage 1's 8-day memory: " + ttl);
+    }
+
+    @Test
+    void publishedPlayCarriesItsVersion() {
+        service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+        service.processEvent(ev("e2", 20, 4, 0, "SCORE_UPDATE"));
+        assertEquals(2L, sent.plays.get(sent.plays.size() - 1).getVersion());
+    }
+
+    @Test
     void sameIdTwiceIsDuplicate() {
         service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
         assertEquals(ProcessResult.DUPLICATE, service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE")));
-        assertEquals(1L, jedis.xlen("game-events"));
+        assertEquals(1, sent.plays.size());
     }
 
     @Test
@@ -84,11 +121,12 @@ class EventProcessingServiceImplTest {
     }
 
     @Test
-    void gameSyncSavesStateButPublishesNothing() {
+    void gameSyncSavesStateAndIsSentToo() {
+        // Every accepted play goes to the log, GAME_SYNC included; Stage 1 notifies nobody for it.
         GameEvent sync = new GameEvent("g1", "e1", "GAME_SYNC", "LAL", 1000L, "LAL vs BOS: HALFTIME",
             "LAL", "BOS", 50, 48, "HALFTIME", "NBA", 10);
         assertEquals(ProcessResult.ACCEPTED, service.processEvent(sync));
-        assertEquals(0L, jedis.xlen("game-events"));
+        assertEquals(List.of("GAME_SYNC"), sent.types());
         assertEquals("HALFTIME", jedis.hget("game:g1", "status"));
     }
 
@@ -110,7 +148,7 @@ class EventProcessingServiceImplTest {
         GameEvent noGame = new GameEvent(null, "e1", "GAME_START", "LAL", 1000L, "desc",
             "LAL", "BOS", 0, 0, "IN_PROGRESS", "NBA", 10);
         assertEquals(ProcessResult.INVALID, service.processEvent(noGame));
-        assertEquals(0L, jedis.xlen("game-events"));
+        assertTrue(sent.plays.isEmpty());
     }
 
     @Test

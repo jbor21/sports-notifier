@@ -1,5 +1,6 @@
 package service.impl;
 
+import com.google.gson.Gson;
 import model.Notification;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,32 +34,16 @@ class NotificationServiceImplTest {
         pool.close();
     }
 
-    @Test
-    void sendNotification_single_storesInHistory() {
-        Notification notif = new Notification(null, "g1", "Score update!", 1000L);
-        service.sendNotification("user1", notif);
-
-        List<Notification> history = service.getNotificationHistory("user1", 10);
-        assertEquals(1, history.size());
-        assertEquals("g1", history.get(0).getGameId());
-        assertEquals("Score update!", history.get(0).getMessage());
-    }
-
-    @Test
-    void sendNotification_bulk_storesForAllUsers() {
-        Notification notif = new Notification(null, "g1", "Game on!", 1000L);
-        service.sendNotification(List.of("user1", "user2", "user3"), notif);
-
-        assertEquals(1, service.getNotificationHistory("user1", 10).size());
-        assertEquals(1, service.getNotificationHistory("user2", 10).size());
-        assertEquals(1, service.getNotificationHistory("user3", 10).size());
+    /** History is written by Stage 2's deliver script; here it is seeded the same way, newest first. */
+    private void deliver(String userId, String message, long ts) {
+        jedis.lpush("notifications:" + userId, new Gson().toJson(new Notification(userId, "g1", message, ts)));
     }
 
     @Test
     void getNotificationHistory_returnsNewestFirst() {
-        service.sendNotification("user1", new Notification(null, "g1", "first", 1000L));
-        service.sendNotification("user1", new Notification(null, "g1", "second", 2000L));
-        service.sendNotification("user1", new Notification(null, "g1", "third", 3000L));
+        deliver("user1", "first", 1000L);
+        deliver("user1", "second", 2000L);
+        deliver("user1", "third", 3000L);
 
         List<Notification> history = service.getNotificationHistory("user1", 10);
         assertEquals("third", history.get(0).getMessage());
@@ -69,7 +54,7 @@ class NotificationServiceImplTest {
     @Test
     void getNotificationHistory_respectsLimit() {
         for (int i = 0; i < 5; i++) {
-            service.sendNotification("user1", new Notification(null, "g1", "msg" + i, i));
+            deliver("user1", "msg" + i, i);
         }
 
         List<Notification> history = service.getNotificationHistory("user1", 3);

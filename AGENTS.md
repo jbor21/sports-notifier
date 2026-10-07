@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-10-02.
+asks. Last updated 2026-10-07.
 
 ---
 
@@ -38,36 +38,44 @@ over WebSocket as those events occur.
 
 ## Architecture
 
-Nine independent JVM processes coordinated **entirely through Redis**. There is
-no database — Redis holds streams, pub/sub, sets, hashes, and TTL sessions.
+Separate JVM processes, one Docker image (`SERVICE` picks the main), deployed
+by one Helm chart on k3d. **Kafka** (Strimzi, one broker locally) is the event
+log; **Redis** holds the live score, the outbox, sessions, accounts and
+preferences (until Phase 3.2's Postgres), the `sub:*` index, and pub/sub to
+gateways.
 
 ```
 Simulator / ESPN Poller
       │ POST /events
       ▼
-Event Processing (8083) ──► atomic Lua: staleness + dedup + game-state write
-      │ XADD game-events (MAXLEN ~1000)
+Event Processing (8083) ──► atomic Lua: duplicate · pending · newer (seq, two heals)
+      │                     → state write + version + outbox:<gameId>
+      │ produce game-events (key = gameId, 12 lanes); confirmation clears the outbox;
+      │ a retry loop re-sends leftovers
       ▼
-Redis Stream ──► worker-1 / worker-2   (XREADGROUP, one consumer group)
-                      │ SSCAN sub:team:* / sub:game:* / sub:league:*
-                      ▼
-              Notification (8087) ──► LPUSH history + PUBLISH notify:<userId>
-                                                │
-Browser ◄── WebSocket ◄── Gateway (8080) ◄── PSUBSCRIBE notify:*
+Stage 1 (8085, group stage1) ──► version dedup, audience from sub:* sets
+      │ produce notifications (key = userId, 48 lanes), one message per user
+      ▼
+Stage 2 (8086, group stage2) ──► one Lua script: notif:<msg>:<user> claim
+      │                          + history + PUBLISH gw:<gatewayId> per conn:<userId>
+      ▼
+Browser ◄── WebSocket ◄── Gateway (8080) ◄── SUBSCRIBE gw:<its pod name>
 ```
 
 | Service | Port | Entry point | Role |
 |---|---|---|---|
-| Gateway | 8080 | `gateway.GatewayMain` | HTTP API, WebSocket push, sessions |
+| Gateway | 8080 | `gateway.GatewayMain` | HTTP API, WebSocket push, sessions, `conn:` registry |
 | User Preference | 8081 | `service.impl.UserPreferenceServiceMain` | Accounts, prefs, subscription index |
 | Game State | 8082 | `service.impl.GameStateServiceMain` | Game state reads **only** |
-| Event Processing | 8083 | `service.impl.EventProcessingServiceMain` | Validate, dedup, state write, publish |
-| PubSub Worker ×2 | 8084/8085 | `service.impl.PubSubWorkerMain` | Consume stream, fan out |
-| Notification | 8087 | `service.impl.NotificationServiceMain` | History + Redis publish |
+| Event Processing | 8083 | `service.impl.EventProcessingServiceMain` | Validate, Lua accept, outbox, produce, retry loop |
+| Stage 1 | 8085 | `service.impl.Stage1WorkerMain` | game-events → one message per user |
+| Stage 2 | 8086 | `service.impl.Stage2WorkerMain` | notifications → history + the user's gateways |
+| Notification | 8087 | `service.impl.NotificationServiceMain` | History reads |
 | Simulator / ESPN Poller | — | `simulator.*` | Event sources |
 
-**Stack:** Java 17 · Maven · Javalin 6.1.6 · Jedis 4.4.7 · Gson · jbcrypt
-**Size:** ~3,000 lines Java · one 1,851-line `index.html` (vanilla JS, no framework, no build step) · 125 tests
+**Stack:** Java 17 · Maven · Javalin 6.1.6 · Jedis 4.4.7 · Gson · jbcrypt ·
+kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · Testcontainers 2.0.5
+**Size:** ~4,000 lines Java · one 1,851-line `index.html` (vanilla JS, no framework, no build step) · 202 tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -100,8 +108,8 @@ than what's on disk. Verified against the source:
 
 Earlier-stage feedback also addressed: Stage 2's "Event Processing querying User
 Preference on every event will bottleneck at Super Bowl scale — use pub/sub
-fan-out and cache preferences" is handled by the Redis Streams fan-out plus the
-`sub:*` inverted index.
+fan-out and cache preferences" is handled by the two-stage Kafka fan-out (Stage 1
+finds the audience, Stage 2 delivers) plus the `sub:*` inverted index.
 
 **Do not re-fix these.** If a future task sounds like one of them, verify first.
 
@@ -109,22 +117,15 @@ fan-out and cache preferences" is handled by the Redis Streams fan-out plus the
 
 ## Open problems (found by review, not by the professor)
 
-Phase 2 fixed most of the review's list (see `DESIGN.md`, "Security and
-correctness still to fix"). Still true of the code on disk, all closed by
-Phase 3's pipeline. Do not re-solve them by keeping Redis as the only database
-or Redis Streams as the log.
+Phase 2 and Phase 3.1 fixed most of the review's list (see `DESIGN.md`,
+"Security and correctness still to fix"). Still true of the code on disk:
 
-1. **Script-then-publish window** — a crash after the Lua script accepts an
-   event and before `XADD` loses that event. Phase 3's two-state claim
-   (decision 5). The script already checks the id before `seq`, so a retry
-   is reported as `duplicate`.
-2. **No pending-entry recovery** — if a worker dies mid-event, `xack` never
-   fires and the entry sits in `XPENDING`. Kafka's rebalance replaces this.
-3. **Gateway broadcast** — `NotificationFanOut.java` does `PSUBSCRIBE notify:*`,
-   so every gateway reads every notification. Target is per-gateway routing
-   (`DESIGN.md` decision 13).
-4. **Accounts live in Redis** — `make down` deletes them. Postgres, Phase 3.
-5. **Network policies need an engine on EKS** — k3s enforces them; EKS ignores
+1. **Accounts live in Redis** — `make down` deletes them. Postgres, Phase 3.2.
+2. **Team ids are bare abbreviations** — `sub:team:BOS` is the Celtics, the Red
+   Sox, and the Bruins. League-qualified ids in 3.2.
+3. **An early "final" from ESPN** becomes the bar for the rest of the game; the
+   clock heals cover only the same period. Never observed.
+4. **Network policies need an engine on EKS** — k3s enforces them; EKS ignores
    them unless a policy engine is enabled (Phase 5).
 
 ---
@@ -139,21 +140,30 @@ or Redis Streams as the log.
   `Makefile`, `scripts/`, `deploy/helm/sports-notifier/`, `.github/workflows/`.
   One shaded JAR; `app.Launcher` reads `SERVICE` and runs that service's main.
 - **Test:** `make test`. It starts a throwaway Redis on `localhost:6379` (the
-  tests use DB 1 and flush it) and removes it afterwards.
+  tests use DB 1 and flush it) and removes it afterwards. Kafka tests start a
+  broker through Testcontainers, so Docker must be running.
 - **Run locally (k3d):** `make cluster` once, then `make up` (build image,
   import into k3d, Helm install). Open `http://localhost:8080`. Also
   `make simulate`, `make smoke` (end-to-end check), `make logs`, `make down`.
-  `make down` deletes the cluster and every account with it until Phase 3.
+  `make down` deletes the cluster and every account with it until Phase 3.2.
 - **CI:** GitHub Actions runs the tests, then `make cluster up smoke` on a
   throwaway k3d cluster, on every push and pull request.
-- **Phase 2 (Correctness and security) is merged** (PR #2, 2026-10-02): spec
-  `docs/superpowers/specs/2026-10-02-phase-2-correctness-security-design.md`,
-  plan `docs/superpowers/plans/2026-10-02-phase-2-correctness-security.md`.
-  Its live-game check is still open as issue #3; ESPN recordings for it are in
-  `~/sportsnotifier-recordings/` on the laptop (outside the repo).
-- **Next step: Phase 3** (Postgres, Kafka, gateway routing, decision 15 wave 1),
-  starting with its brainstorm, which also reviews the API spec parked on
-  branch `api-spec` (worktree `.worktrees/api-spec`).
+- **Phase 2 (Correctness and security) is merged** (PR #2, 2026-10-02). Fixes
+  from 60 hours of recorded ESPN data are in PR #4. The by-hand live-game
+  check is still issue #3.
+- **Phase 3 is split into 3.1–3.4** (`DESIGN.md` build order). **3.1 Kafka
+  pipeline is built** on branch `phase-3-1-kafka` (PR #6): spec
+  `docs/superpowers/specs/2026-10-06-phase-3-1-kafka-pipeline-design.md`, plan
+  `docs/superpowers/plans/2026-10-06-phase-3-1-kafka-pipeline.md`. The API spec
+  for the new UI is final and on main (`docs/api/`, PR #5).
+- **Next step: Phase 3.2 (Postgres)**, starting with its brainstorm. The course
+  UI is allowed to break there (no adapter endpoints); the new UI is 3b.
+- **New in Phase 3.1:** Strimzi is installed by `make cluster`; the broker and
+  topics are resources in the chart (`templates/kafka*.yaml`). The accept
+  script answers `pending` while a game has an unsent play in `outbox:<gameId>`.
+  Ids after the script are `<gameId>:v<version>`. Game ids are
+  `<league>-<espnId>` (`feed/GameIds`). After switching between branches that
+  change the pipeline, rebuild the laptop cluster (`make down && make cluster up`).
 - **New in Phase 2:** events carry `seq` (game progress as one number;
   `feed/Seq.java`); the poller is `feed/Poller.java` behind `feed/ScoreFeed`
   (ESPN adapter `EspnScoreFeed`, HTTP in `EspnClient`); `GAME_SYNC` saves

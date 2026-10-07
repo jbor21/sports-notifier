@@ -8,6 +8,7 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 import service.impl.EventProcessingServiceImpl;
+import testsupport.TestPublisher;
 
 import java.util.List;
 import java.util.Map;
@@ -27,7 +28,7 @@ class GameListingHandlerTest {
         jedis = new Jedis("localhost", 6379);
         jedis.select(1);
         jedis.flushDB();
-        eps = new EventProcessingServiceImpl(pool);
+        eps = new EventProcessingServiceImpl(pool, new TestPublisher(true), System::currentTimeMillis);
         handler = new GameListingHandler(pool);
     }
 

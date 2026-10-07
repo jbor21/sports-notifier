@@ -17,6 +17,27 @@ public final class RedisKeys {
     /** SET NX dedup guard per event: {@code processed:<eventId>} */
     public static final String PROCESSED_PREFIX = "processed:";
 
+    /** One game's accepted play waiting for the log to confirm it (hash: version, play): {@code outbox:<gameId>} */
+    public static final String OUTBOX_PREFIX = "outbox:";
+
+    /** A game's accept counter, kept apart from the game record so it outlives it: {@code version:<gameId>} */
+    public static final String VERSION_PREFIX = "version:";
+
+    /** Games with a play in the outbox, scored by accept time in millis; the retry loop reads it. */
+    public static final String OUTBOX_PENDING = "outbox:pending";
+
+    /** The last play version Stage 1 finished for a game: {@code s1:last:<gameId>} */
+    public static final String STAGE1_LAST_PREFIX = "s1:last:";
+
+    /** Stage 2's dedup claim, one per message per user: {@code notif:<messageId>:<userId>} */
+    public static final String NOTIF_DEDUP_PREFIX = "notif:";
+
+    /** Gateways holding a user's sockets (sorted set: gateway id, scored by expiry in seconds): {@code conn:<userId>} */
+    public static final String CONN_PREFIX = "conn:";
+
+    /** A gateway's own pub/sub channel; Stage 2 publishes there for the users it holds: {@code gw:<gatewayId>} */
+    public static final String GATEWAY_CHANNEL_PREFIX = "gw:";
+
     /** Account record JSON (id, username, bcrypt hash): {@code user:<userId>} */
     public static final String USER_PREFIX = "user:";
 
@@ -50,12 +71,4 @@ public final class RedisKeys {
     /** Per-user notification history list: {@code notifications:<userId>} */
     public static final String NOTIFICATIONS_PREFIX = "notifications:";
 
-    /** Per-user Redis Pub/Sub channel for real-time push: {@code notify:<userId>} */
-    public static final String NOTIFY_CHANNEL_PREFIX = "notify:";
-
-    /** Redis Stream key for game events shared by all PubSub Workers. */
-    public static final String GAME_EVENTS_STREAM = "game-events";
-
-    /** Redis Streams consumer group name for PubSub Workers. */
-    public static final String WORKER_GROUP = "workers";
 }

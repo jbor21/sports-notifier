@@ -15,6 +15,11 @@
         <junit.version>5.10.2</junit.version>
         <javalin.version>6.1.6</javalin.version>
         <slf4j.version>2.0.13</slf4j.version>
+        <!-- Kafka 4.3.1 on both sides: the client here, and the broker Strimzi 1.2.0 runs
+             (values.yaml kafka.version; 4.3.1 is on Strimzi 1.2.0's supported list and is its default).
+             Tests run the same version in apache/kafka-native (KafkaTestSupport). -->
+        <kafka.version>4.3.1</kafka.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
         <maven.test.skip>false</maven.test.skip>
         <skipTests>false</skipTests>
     </properties>
@@ -55,6 +60,25 @@
             <groupId>org.mindrot</groupId>
             <artifactId>jbcrypt</artifactId>
             <version>0.4</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>${kafka.version}</version>
+        </dependency>
+        <!-- Testcontainers 2.x renamed its modules with a testcontainers- prefix
+             (formerly org.testcontainers:kafka and :junit-jupiter). -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-kafka</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

@@ -9,11 +9,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class LauncherTest {
 
     private static final List<String> NAMES = List.of("gateway", "user-pref", "game-state",
-        "event-processing", "pubsub-worker", "notification", "simulator", "espn-poller");
+        "event-processing", "stage1-worker", "stage2-worker", "notification", "simulator", "espn-poller");
     private static final String VALID = "Valid values: " + String.join(", ", NAMES);
 
     @Test
-    void serviceNamesAreExactlyTheEight() {
+    void serviceNamesAreExactlyThese() {
         assertEquals(NAMES, List.copyOf(Launcher.SERVICES.keySet()));
     }
 
