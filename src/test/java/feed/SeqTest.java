@@ -75,6 +75,16 @@ class SeqTest {
     }
 
     @Test
+    void mlbOutsDoNotCountBetweenHalves() {
+        // Recorded 2026-10-03: "End 2nd" with 2 outs, then "End 2nd" with 0 outs. Between halves
+        // the outs are leftovers, and counting them made the second snapshot look older.
+        assertEquals(Seq.of(mlb(LIVE, 2, Half.END, 2, IN_PLAY, 0, 0)),
+                     Seq.of(mlb(LIVE, 2, Half.END, 0, IN_PLAY, 0, 0)));
+        assertEquals(Seq.of(mlb(LIVE, 1, Half.MIDDLE, 3, IN_PLAY, 0, 0)),
+                     Seq.of(mlb(LIVE, 1, Half.MIDDLE, 0, IN_PLAY, 0, 0)));
+    }
+
+    @Test
     void mlbClockFieldIsIgnored() {
         GameSnapshot withClock = new GameSnapshot("espn-2", "MLB", "CHC", "STL", 1, 1,
             LIVE, 4, Half.TOP, 1234, 1, IN_PLAY, "IN_PROGRESS", 0L);

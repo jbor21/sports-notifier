@@ -8,22 +8,22 @@
     {
      "status": {
       "clock": 0.0,
-      "displayClock": "0:00",
+      "displayClock": "0.0",
       "period": 1,
       "type": {
-       "id": "1",
+       "id": "22",
        "name": "STATUS_END_PERIOD",
        "state": "in",
        "completed": false,
-       "description": "Scheduled",
-       "detail": "End of 1st",
+       "description": "End of Period",
+       "detail": "End of 1st Quarter",
        "shortDetail": "End of 1st"
       }
      },
      "competitors": [
       {
        "homeAway": "home",
-       "score": "30",
+       "score": "23",
        "team": {
         "abbreviation": "TOR",
         "displayName": "Toronto Raptors",
@@ -32,17 +32,23 @@
       },
       {
        "homeAway": "away",
-       "score": "28",
+       "score": "41",
        "team": {
         "abbreviation": "MIA",
         "displayName": "Miami Heat",
         "logo": "https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/mia.png"
        }
       }
-     ]
+     ],
+     "situation": {
+      "outs": null,
+      "lastPlay": {
+       "text": "End of the 1st Quarter"
+      }
+     }
     }
    ]
   }
  ],
- "_note": "derived 2026-10-02 from a captured file by editing status fields; replace with a live capture"
+ "_note": "captured live: recording nba/20261003T234326Z.json.gz, trimmed to one game by scripts/trim-espn-fixture.py"
 }
