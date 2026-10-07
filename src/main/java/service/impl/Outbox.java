@@ -3,12 +3,14 @@ package service.impl;
 import model.GameEvent;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
+import service.PlayPublisher;
 import util.GameEventParser;
 import util.RedisKeys;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Accepted plays waiting for the log to confirm them (DESIGN.md decision 5, Phase 3.1 spec section 1.2).
@@ -47,6 +49,34 @@ public final class Outbox {
                 List.of(String.valueOf(version), gameId));
             return Long.valueOf(1L).equals(r);
         }
+    }
+
+    /**
+     * Sends a waiting play and clears its slot once the log confirms it. If the send fails, the slot
+     * stays and the retry loop sends it again. Both Event Processing and the retry loop send this way.
+     *
+     * @return completes after the slot is cleared; completes exceptionally if the send failed
+     */
+    public CompletableFuture<Void> send(PlayPublisher publisher, GameEvent play) {
+        CompletableFuture<Void> sent;
+        try {
+            sent = publisher.publish(play);
+        } catch (RuntimeException e) {
+            sent = CompletableFuture.failedFuture(e);
+        }
+        return sent.whenComplete((ok, err) -> {
+            if (err != null) {
+                System.err.println("[Outbox] send failed, left in the outbox for retry: "
+                    + play.getEventId() + " v" + play.getVersion() + ": " + err.getMessage());
+            }
+        }).thenRun(() -> {
+            try {
+                clear(play.getGameId(), play.getVersion());
+            } catch (RuntimeException e) {
+                System.err.println("[Outbox] sent " + play.getEventId()
+                    + " but could not clear its slot; the retry loop will send it once more: " + e.getMessage());
+            }
+        });
     }
 
     /** Games whose waiting play was accepted at or before {@code olderThanMillis}, oldest first. */

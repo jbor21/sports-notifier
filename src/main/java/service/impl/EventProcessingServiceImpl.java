@@ -195,29 +195,12 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     }
 
     /**
-     * Sends an accepted play and clears its outbox slot once the log confirms it. The caller gets
-     * its answer without waiting: the play is already safe in the outbox, and if the send fails the
-     * slot stays, so the retry loop sends it again. Every accepted play goes out, GAME_SYNC included.
+     * The caller gets its answer without waiting for the log: the play is already safe in the
+     * outbox, and if the send fails the slot stays, so the retry loop sends it again. Every
+     * accepted play goes out, GAME_SYNC included.
      */
     private void publish(GameEvent play) {
-        try {
-            publisher.publish(play).whenComplete((ok, err) -> {
-                if (err != null) {
-                    System.err.println("[EventProcessingService] send failed, left in the outbox for retry: "
-                        + play.getEventId() + " v" + play.getVersion() + ": " + err.getMessage());
-                    return;
-                }
-                try {
-                    outbox.clear(play.getGameId(), play.getVersion());
-                } catch (RuntimeException e) {
-                    System.err.println("[EventProcessingService] sent " + play.getEventId()
-                        + " but could not clear its outbox slot; the retry loop will send it once more: " + e.getMessage());
-                }
-            });
-        } catch (RuntimeException e) {
-            System.err.println("[EventProcessingService] send failed, left in the outbox for retry: "
-                + play.getEventId() + ": " + e.getMessage());
-        }
+        outbox.send(publisher, play);
     }
 
     private static String orEmpty(String s) {
