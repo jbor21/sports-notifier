@@ -97,6 +97,19 @@ class AudienceTest {
     }
 
     @Test
+    void redisErrorWhileBuildingFailsInsteadOfWideningTheAudience() {
+        // If the union succeeded and the type filter failed silently, every team follower would get
+        // the play whether or not they asked for that event type.
+        follow("bos-fan", "sub:team:BOS", "GAME_START");
+        jedis.del("sub:notif:SCORE_UPDATE");
+        jedis.set("sub:notif:SCORE_UPDATE", "not a set");          // SINTERSTORE fails with WRONGTYPE
+        List<String> paged = new ArrayList<>();
+        assertThrows(redis.clients.jedis.exceptions.JedisDataException.class,
+            () -> audience.forEachPage(lalBos("SCORE_UPDATE", "LAL"), paged::addAll));
+        assertTrue(paged.isEmpty());
+    }
+
+    @Test
     void temporarySetIsNamedByVersionAndRemoved() {
         follow("bos-fan", "sub:team:BOS", "SCORE_UPDATE");
         List<String> seenKeys = new ArrayList<>();

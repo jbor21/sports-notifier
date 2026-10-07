@@ -108,6 +108,17 @@ class DeliveryTest {
     }
 
     @Test
+    void scriptErrorFailsTheBatchAndLeavesNoClaim() {
+        // Review finding I1: a pipelined script error was swallowed and the batch committed, so the
+        // notification was lost. And Redis does not roll back a script that fails halfway, so a claim
+        // written before the failing write would make the retry think it was already delivered.
+        jedis.set("notifications:u1", "not a list");                 // LPUSH will fail with WRONGTYPE
+        assertThrows(redis.clients.jedis.exceptions.JedisDataException.class,
+            () -> delivery.deliverAll(List.of(msg("u1", 1))));
+        assertFalse(jedis.exists("notif:nba-1:v1:u1"), "no claim left behind, so the retry delivers it");
+    }
+
+    @Test
     void dedupKeyLastsTwoDays() {
         delivery.deliver(msg("u1", 1));
         long ttl = jedis.ttl("notif:nba-1:v1:u1");

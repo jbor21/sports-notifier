@@ -82,6 +82,13 @@ class ConnectionRegistryTest {
     }
 
     @Test
+    void renewalErrorIsReported() {
+        jedis.set("conn:u1", "not a sorted set");
+        assertThrows(redis.clients.jedis.exceptions.JedisDataException.class,
+            () -> new ConnectionRegistry(pool, "A", 90).renewAll(Set.of("u1")));
+    }
+
+    @Test
     void removeAllOnShutdownKeepsOtherGateways() {
         ConnectionRegistry a = new ConnectionRegistry(pool, "A", 90);
         a.add("both");

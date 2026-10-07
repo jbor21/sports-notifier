@@ -7,6 +7,7 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.Pipeline;
 import util.RedisKeys;
+import util.RedisPipelines;
 
 import java.util.List;
 
@@ -21,9 +22,11 @@ import java.util.List;
  *   deliver, then mark   crash in between: the retry delivers again  a duplicate
  * </pre>
  *
- * One Lua script does all of it: claim the dedup key, add the history entry, and publish to every
- * gateway holding the user's socket. Redis runs the script as one step, so all three happen or none
- * do, and a redelivered message finds the key and does nothing. At-least-once Kafka plus this
+ * One Lua script does all of it: check the dedup key, add the history entry, publish to every
+ * gateway holding the user's socket, and only then claim the key. Redis runs the script as one step,
+ * so nothing can land in between, and a redelivered message finds the key and does nothing. The
+ * claim is last because Redis does not undo a script that fails halfway: a claim written before a
+ * failing write would make the retry believe the message was delivered. At-least-once Kafka plus this
  * script is exactly once in effect, which is what the Phase 4 checker tests.
  *
  * The publish to the gateway is Redis pub/sub, fire-and-forget: a gateway that dies at that instant
@@ -45,7 +48,7 @@ public class Delivery {
      * Returns 1 delivered, 0 already delivered.
      */
     private static final String DELIVER_SCRIPT =
-        "if not redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[2]) then return 0 end\n" +
+        "if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end\n" +
         "redis.call('LPUSH', KEYS[2], ARGV[1])\n" +
         "redis.call('LTRIM', KEYS[2], 0, ARGV[3])\n" +
         "local now = tonumber(redis.call('TIME')[1])\n" +
@@ -53,6 +56,7 @@ public class Delivery {
         "for _, gw in ipairs(redis.call('ZRANGE', KEYS[3], 0, -1)) do\n" +
         "  redis.call('PUBLISH', ARGV[5] .. gw, ARGV[4])\n" +
         "end\n" +
+        "redis.call('SET', KEYS[1], '1', 'EX', ARGV[2])\n" +
         "return 1\n";
 
     private final JedisPool pool;
@@ -68,13 +72,16 @@ public class Delivery {
         }
     }
 
-    /** One script per message, pipelined: one round trip, and Redis runs them in this order. */
+    /**
+     * One script per message, pipelined: one round trip, and Redis runs them in this order.
+     * Throws on any error reply, so Stage 2 rewinds and retries the batch instead of committing it.
+     */
     public void deliverAll(List<NotificationMessage> batch) {
         if (batch.isEmpty()) return;
         try (Jedis jedis = pool.getResource()) {
             Pipeline p = jedis.pipelined();
             for (NotificationMessage m : batch) p.eval(DELIVER_SCRIPT, keys(m), args(m));
-            p.sync();
+            RedisPipelines.syncChecked(p);
         }
     }
 

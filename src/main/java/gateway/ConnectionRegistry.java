@@ -4,6 +4,7 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.Pipeline;
 import util.RedisKeys;
+import util.RedisPipelines;
 
 import java.util.Collection;
 import java.util.List;
@@ -61,7 +62,7 @@ public final class ConnectionRegistry {
             for (String userId : userIds) {
                 p.eval(ADD_SCRIPT, List.of(RedisKeys.CONN_PREFIX + userId), List.of(gatewayId, String.valueOf(entryTtlSeconds)));
             }
-            p.sync();
+            RedisPipelines.syncChecked(p);
         }
     }
 
@@ -71,7 +72,7 @@ public final class ConnectionRegistry {
         try (Jedis jedis = pool.getResource()) {
             Pipeline p = jedis.pipelined();
             for (String userId : userIds) p.zrem(RedisKeys.CONN_PREFIX + userId, gatewayId);
-            p.sync();
+            RedisPipelines.syncChecked(p);
         }
     }
 }

@@ -7,6 +7,7 @@ import redis.clients.jedis.Pipeline;
 import redis.clients.jedis.params.ScanParams;
 import redis.clients.jedis.resps.ScanResult;
 import util.RedisKeys;
+import util.RedisPipelines;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -52,7 +53,9 @@ public final class Audience {
                 p.sinterstore(audience, audience, RedisKeys.SUB_NOTIF_PREFIX + play.getEventType());
                 // Safety net: if this worker dies mid-fan-out, the temporary set still goes away.
                 p.expire(audience, TEMP_KEY_TTL_SECONDS);
-                p.sync();
+                // Checked: if the union worked and the type filter failed, the audience would be
+                // every follower, not just those who asked for this event type.
+                RedisPipelines.syncChecked(p);
 
                 ScanParams params = new ScanParams().count(PAGE_SIZE);
                 String cursor = ScanParams.SCAN_POINTER_START;
