@@ -7,6 +7,8 @@ CHART      := deploy/helm/sports-notifier
 # Strimzi 1.2.0 runs Kafka 4.2.0 to 4.3.1; values.yaml asks for 4.3.1, the same as kafka-clients in pom.xml.
 STRIMZI_CHART   := oci://quay.io/strimzi-helm/strimzi-kafka-operator
 STRIMZI_VERSION := 1.2.0
+# Postgres's data lives in this folder on the Mac, mounted into the k3d node, so `make down` keeps it.
+PG_DIR ?= $(HOME)/.sportsnotifier/postgres
 # Always talk to the k3d cluster, whatever kubectl's current context is (e.g. after switching to EKS).
 KUBE_CONTEXT ?= k3d-$(CLUSTER)
 export KUBE_CONTEXT
@@ -24,9 +26,14 @@ TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status 
 cluster:
 	@if k3d cluster get $(CLUSTER) >/dev/null 2>&1; then \
 		echo "Cluster $(CLUSTER) already exists"; \
+		docker inspect k3d-$(CLUSTER)-server-0 --format '{{range .Mounts}}{{.Destination}}{{"\n"}}{{end}}' \
+			| grep -qx /var/lib/sportsnotifier/postgres \
+			|| { echo "The cluster has no Postgres folder mounted. Recreate the cluster: make down && make cluster"; exit 1; }; \
 		k3d cluster start $(CLUSTER) >/dev/null; \
 	else \
-		k3d cluster create $(CLUSTER) -p "127.0.0.1:8080:80@loadbalancer" --wait; \
+		mkdir -p $(PG_DIR); \
+		k3d cluster create $(CLUSTER) -p "127.0.0.1:8080:80@loadbalancer" \
+			--volume "$(PG_DIR):/var/lib/sportsnotifier/postgres@server:0" --wait; \
 	fi
 	@for i in $$(seq 1 60); do \
 		kubectl --context $(KUBE_CONTEXT) get --raw /readyz >/dev/null 2>&1 && break; \

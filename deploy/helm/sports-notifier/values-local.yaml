@@ -21,3 +21,11 @@ kafka:
   heap: 512m
   replicationFactor: 1
   minInsyncReplicas: 1
+
+# Postgres keeps its data in a folder on the Mac, mounted into the k3d node by `make cluster`, so it
+# survives `make down`. The password is fixed because Postgres reads it only when it first creates
+# that folder: a generated one would change with every new cluster and no service could log in.
+# Postgres is reachable only inside the cluster, behind a network policy.
+postgres:
+  hostPath: /var/lib/sportsnotifier/postgres
+  password: local-dev-only-password

@@ -45,6 +45,17 @@ livenessProbe:
   value: {{ .Values.espn.userAgent | quote }}
 {{- end }}
 
+{{/* Postgres address and login, for every workload that uses Postgres. Arg: root context. */}}
+{{- define "sports-notifier.postgresEnv" -}}
+- name: PG_URL
+  value: jdbc:postgresql://postgres:5432/sportsnotifier
+- name: PG_USER
+  value: sportsnotifier
+- name: PG_PASSWORD
+  valueFrom:
+    secretKeyRef: { name: postgres, key: password }
+{{- end }}
+
 {{/* The Kafka bootstrap address (a Service Strimzi creates), for every workload that uses Kafka. Arg: root context. */}}
 {{- define "sports-notifier.kafkaEnv" -}}
 - name: KAFKA_BOOTSTRAP

@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    {{- include "sports-notifier.labels" "postgres" | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+{{- /*
+The password is read only when Postgres first creates its data folder. Order: the value set in
+values (laptop: fixed, because the folder outlives the cluster), else the Secret already in the
+cluster (so upgrades keep it), else a new random one.
+*/}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace "postgres" }}
+{{- $password := .Values.postgres.password }}
+{{- if and (not $password) $existing }}
+{{- $password = index $existing.data "password" | b64dec }}
+{{- end }}
+{{- if not $password }}
+{{- $password = randAlphaNum 32 }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres
+  labels:
+    {{- include "sports-notifier.labels" "postgres" | nindent 4 }}
+type: Opaque
+stringData:
+  password: {{ $password | quote }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    {{- include "sports-notifier.labels" "postgres" | nindent 4 }}
+spec:
+  serviceName: postgres
+  # Hard-coded: two Postgres pods would be two unrelated databases, not a replica.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        {{- include "sports-notifier.labels" "postgres" | nindent 8 }}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          env:
+            # initdb wants an empty folder it owns; the mount point may hold lost+found or be root-owned.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_DB
+              value: sportsnotifier
+            - name: POSTGRES_USER
+              value: sportsnotifier
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: postgres, key: password }
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "sportsnotifier"] }
+            periodSeconds: 10
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "sportsnotifier"] }
+            periodSeconds: 20
+            failureThreshold: 6
+      {{- if .Values.postgres.hostPath }}
+      # Laptop: a folder on the Mac (mounted into the k3d node by `make cluster`), so the data
+      # survives `make down`.
+      volumes:
+        - name: data
+          hostPath:
+            path: {{ .Values.postgres.hostPath }}
+            type: DirectoryOrCreate
+      {{- end }}
+  {{- if not .Values.postgres.hostPath }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storage }}
+  {{- end }}

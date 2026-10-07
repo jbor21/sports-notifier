@@ -11,6 +11,8 @@ import model.User;
 import model.UserPreferences;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
+import com.zaxxer.hikari.HikariDataSource;
+import util.Db;
 import util.GsonJsonMapper;
 import util.JedisPoolHolder;
 import util.RedisKeys;
@@ -25,6 +27,9 @@ public final class UserPreferenceServiceMain {
         JedisPoolHolder.awaitRedisOrExit("user-pref");
         int port = Integer.parseInt(System.getenv().getOrDefault("USER_PREF_PORT", "8081"));
         JedisPool pool = JedisPoolHolder.create();
+        // Accounts still live in Redis until they move to Postgres; for now this only creates the schema.
+        HikariDataSource db = Db.fromEnv("user-pref");
+        Db.migrate(db);
         UserPreferenceServiceImpl prefSvc = new UserPreferenceServiceImpl(pool);
         AccountService accounts = new AccountService(pool);
 
@@ -67,6 +72,7 @@ public final class UserPreferenceServiceMain {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             app.stop();
             pool.close();
+            db.close();
         }));
 
         System.out.println("[UserPrefService] listening on :" + port);
