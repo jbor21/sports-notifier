@@ -568,6 +568,7 @@ These were the known bugs in the course code. Phase 2 fixed the ones that surviv
 
 - The Lua script and the publish are separate steps. A crash between them marks the event processed and never publishes it. The Kafka version closes that window with the two-state claim (decision 5). Phase 2 prepared for it: the script now checks the event id before `seq`, so a retry is a "duplicate", never "stale".
 - Every gateway subscribes to `notify:*` and reads every notification (`NotificationFanOut.java`). Route to the gateway that holds the socket (decision 13).
+- Team ids are bare abbreviations (`sub:team:BOS`). `BOS` is the Celtics, the Red Sox, and the Bruins, so following one follows all three. Team ids become league-qualified (`nba-bos`) in Phase 3.2, as the API spec uses, and the Redis sets with them.
 - If a worker dies before ack, the entry sits forever. Kafka's session timeout replaces the missing Redis reclaim. Per-user dedup has to exist before retries are turned on, or people get duplicates.
 - Accounts are lost when the cluster is deleted, until Postgres.
 - **One ESPN snapshot that runs ahead of reality becomes the floor.** A clock glitch showing 0:00 mid-period, or an early `completed`, gets a large `seq`; every later snapshot is stale until the game passes it, so those alerts are lost. The poller logs each such stale alert as a warning. Watch for it in the live-game check; fixing it needs detector logic (Phase 3).
