@@ -65,6 +65,40 @@ public final class ApiV1Routes {
             if (userId == null) return;
             forward(ctx, SimpleHttp.patchJson(userPrefUrl + "/users/" + enc(userId), ctx.body()));
         });
+
+        app.get("/api/v1/follows", ctx -> {
+            String userId = requireUser(pool, ctx);
+            if (userId == null) return;
+            forward(ctx, SimpleHttp.get(userPrefUrl + "/users/" + enc(userId) + "/follows"));
+        });
+
+        app.post("/api/v1/follows", ctx -> {
+            String userId = requireUser(pool, ctx);
+            if (userId == null) return;
+            forward(ctx, SimpleHttp.postJson(userPrefUrl + "/users/" + enc(userId) + "/follows", ctx.body()));
+        });
+
+        app.get("/api/v1/follows/{id}", ctx -> {
+            String userId = requireUser(pool, ctx);
+            if (userId == null) return;
+            forward(ctx, SimpleHttp.get(followUrl(userPrefUrl, userId, ctx)));
+        });
+
+        app.patch("/api/v1/follows/{id}", ctx -> {
+            String userId = requireUser(pool, ctx);
+            if (userId == null) return;
+            forward(ctx, SimpleHttp.patchJson(followUrl(userPrefUrl, userId, ctx), ctx.body()));
+        });
+
+        app.delete("/api/v1/follows/{id}", ctx -> {
+            String userId = requireUser(pool, ctx);
+            if (userId == null) return;
+            forward(ctx, SimpleHttp.delete(followUrl(userPrefUrl, userId, ctx)));
+        });
+    }
+
+    private static String followUrl(String userPrefUrl, String userId, Context ctx) {
+        return userPrefUrl + "/users/" + enc(userId) + "/follows/" + enc(ctx.pathParam("id"));
     }
 
     /** The signed-in user's id, or null after answering 401 in the API's Error shape. */

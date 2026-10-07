@@ -1,13 +1,17 @@
 package service.impl;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import catalog.AlertCatalog;
+import catalog.Teams;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import model.UserPreferences;
+import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import com.zaxxer.hikari.HikariDataSource;
 import util.ApiError;
@@ -16,8 +20,12 @@ import util.ApiResult;
 import util.Db;
 import util.GsonJsonMapper;
 import util.JedisPoolHolder;
+import util.RedisKeys;
 
 import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 public final class UserPreferenceServiceMain {
 
@@ -31,6 +39,12 @@ public final class UserPreferenceServiceMain {
         Db.migrate(db);
         UserPreferenceServiceImpl prefSvc = new UserPreferenceServiceImpl(pool);
         AccountService accounts = new AccountService(db);
+        FollowService follows = new FollowService(db, pool, AlertCatalog.load(), Teams.load(), gameId -> {
+            try (Jedis jedis = pool.getResource()) {
+                Map<String, String> record = jedis.hgetAll(RedisKeys.GAME_PREFIX + gameId);
+                return record.isEmpty() ? Optional.empty() : Optional.of(record);
+            }
+        });
 
         Javalin app = Javalin.create(cfg -> cfg.jsonMapper(new GsonJsonMapper())).start(port);
 
@@ -52,6 +66,35 @@ public final class UserPreferenceServiceMain {
             if (body == null) return;
             ApiJson.write(ctx, accounts.updateTimezone(ctx.pathParam("userId"), field(body, "timezone")));
         });
+
+        app.get("/users/{userId}/follows", ctx -> {
+            ApiResult<List<Follow>> r = follows.list(ctx.pathParam("userId"));
+            JsonObject out = new JsonObject();
+            JsonArray items = new JsonArray();
+            r.body().forEach(f -> items.add(follows.toApi(f)));
+            out.add("items", items);
+            ctx.contentType("application/json").result(out.toString());
+        });
+        app.post("/users/{userId}/follows", ctx -> {
+            JsonObject body = jsonBody(ctx);
+            if (body == null) return;
+            JsonElement target = body.get("target");
+            if (target == null || !target.isJsonObject()) {
+                ApiJson.write(ctx, ApiResult.fail(ApiError.validation("target", "required", "Say what to follow.")));
+                return;
+            }
+            writeFollow(ctx, follows, follows.create(ctx.pathParam("userId"),
+                    field(target.getAsJsonObject(), "kind"), field(target.getAsJsonObject(), "id")));
+        });
+        app.get("/users/{userId}/follows/{id}", ctx ->
+                writeFollow(ctx, follows, follows.get(ctx.pathParam("userId"), ctx.pathParam("id"))));
+        app.patch("/users/{userId}/follows/{id}", ctx -> {
+            JsonObject body = jsonBody(ctx);
+            if (body == null) return;
+            writeFollow(ctx, follows, follows.patch(ctx.pathParam("userId"), ctx.pathParam("id"), body));
+        });
+        app.delete("/users/{userId}/follows/{id}", ctx ->
+                ApiJson.write(ctx, follows.delete(ctx.pathParam("userId"), ctx.pathParam("id"))));
 
         app.get("/prefs/{userId}", ctx -> {
             UserPreferences prefs = prefSvc.getPreferences(ctx.pathParam("userId"));
@@ -97,5 +140,10 @@ public final class UserPreferenceServiceMain {
     private static String field(JsonObject body, String name) {
         JsonElement el = body.get(name);
         return el != null && el.isJsonPrimitive() ? el.getAsString() : null;
+    }
+
+    private static void writeFollow(Context ctx, FollowService follows, ApiResult<Follow> r) {
+        if (!r.isOk()) { ApiJson.write(ctx, r); return; }
+        ctx.status(r.status()).contentType("application/json").result(follows.toApi(r.body()).toString());
     }
 }

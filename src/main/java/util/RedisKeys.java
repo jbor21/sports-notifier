@@ -53,17 +53,26 @@ public final class RedisKeys {
     /** Session token → userId mapping: {@code sid:<token>} */
     public static final String SESSION_PREFIX = "sid:";
 
-    /** Inverted index — users subscribed to a team: {@code sub:team:<team>} */
+    /** Users following a team, one set per alert type: {@code sub:team:<teamId>:<ALERT>} (3.1: {@code sub:team:<team>}) */
     public static final String SUB_TEAM_PREFIX = "sub:team:";
 
-    /** Inverted index — users subscribed to a specific game: {@code sub:game:<gameId>} */
+    /** Users following a game, one set per alert type: {@code sub:game:<gameId>:<ALERT>} */
     public static final String SUB_GAME_PREFIX = "sub:game:";
 
-    /** Inverted index — users subscribed to a league: {@code sub:league:<league>} */
+    /** Users following a league, one set per alert type: {@code sub:league:<league>:<ALERT>} */
     public static final String SUB_LEAGUE_PREFIX = "sub:league:";
 
     /** Inverted index — users who enabled a notification type: {@code sub:notif:<type>} */
     public static final String SUB_NOTIF_PREFIX = "sub:notif:";
+
+    /**
+     * Set when the sub:* sets were last rebuilt from Postgres. Missing means they may be empty or
+     * stale: user-pref rebuilds them, and Stage 1 waits until it is back (Phase 3.2 spec, 5.4 and 6).
+     */
+    public static final String SUB_BUILT = "sub:built";
+
+    /** Where a rebuild writes each set before renaming it into place: {@code sub:tmp:<buildId>:<key>} */
+    public static final String SUB_TMP_PREFIX = "sub:tmp:";
 
     /** Temporary audience set built during one event's fan-out: {@code fanout:<eventId>} */
     public static final String FANOUT_PREFIX = "fanout:";
