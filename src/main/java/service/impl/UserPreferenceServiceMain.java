@@ -1,36 +1,47 @@
 package service.impl;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import model.User;
 import model.UserPreferences;
-import org.mindrot.jbcrypt.BCrypt;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import util.GsonJsonMapper;
 import util.JedisPoolHolder;
+import util.RedisKeys;
 
 import java.util.Collections;
-import java.util.UUID;
 
 public final class UserPreferenceServiceMain {
 
     private static final Gson GSON = new Gson();
 
     public static void main(String[] args) {
+        JedisPoolHolder.awaitRedisOrExit("user-pref");
         int port = Integer.parseInt(System.getenv().getOrDefault("USER_PREF_PORT", "8081"));
         JedisPool pool = JedisPoolHolder.create();
         UserPreferenceServiceImpl prefSvc = new UserPreferenceServiceImpl(pool);
+        AccountService accounts = new AccountService(pool);
 
         Javalin app = Javalin.create(cfg -> cfg.jsonMapper(new GsonJsonMapper())).start(port);
 
         app.get("/health", ctx -> ctx.json(Collections.singletonMap("status", "ok")));
 
-        app.post("/users", ctx -> signup(ctx, pool));
-        app.post("/users/login", ctx -> login(ctx, pool));
+        app.post("/users", ctx -> {
+            JsonObject body = jsonBody(ctx);
+            if (body == null) return;
+            write(ctx, accounts.signup(field(body, "username"), field(body, "password")));
+        });
+        app.post("/users/login", ctx -> {
+            JsonObject body = jsonBody(ctx);
+            if (body == null) return;
+            write(ctx, accounts.login(field(body, "username"), field(body, "password")));
+        });
         app.get("/users/{userId}", ctx -> getUser(ctx, pool));
 
         app.get("/prefs/{userId}", ctx -> {
@@ -61,57 +72,38 @@ public final class UserPreferenceServiceMain {
         System.out.println("[UserPrefService] listening on :" + port);
     }
 
-    private static void signup(Context ctx, JedisPool pool) {
-        JsonObject body = JsonParser.parseString(ctx.body()).getAsJsonObject();
-        String username = body.get("username").getAsString().trim().toLowerCase();
-        String password = body.get("password").getAsString();
-        if (username.isEmpty() || password.length() < 4) {
-            ctx.status(400).json(Collections.singletonMap("error", "invalid username or password"));
-            return;
+    /** The body as a JSON object, or null after answering 400. Never lets bad input become a 500. */
+    private static JsonObject jsonBody(Context ctx) {
+        try {
+            JsonElement el = JsonParser.parseString(ctx.body());
+            if (el.isJsonObject()) return el.getAsJsonObject();
+        } catch (JsonParseException ignored) {
+            // fall through
         }
-        try (Jedis jedis = pool.getResource()) {
-            String existing = jedis.get("username:" + username);
-            if (existing != null) {
-                ctx.status(409).json(Collections.singletonMap("error", "username already exists"));
-                return;
-            }
-            String userId = UUID.randomUUID().toString();
-            String hash = BCrypt.hashpw(password, BCrypt.gensalt(10));
-            User user = new User(userId, username, hash, System.currentTimeMillis());
-            jedis.set("user:" + userId, GSON.toJson(user));
-            jedis.set("username:" + username, userId);
-            JsonObject resp = new JsonObject();
-            resp.addProperty("userId", userId);
-            resp.addProperty("username", username);
-            ctx.json(resp);
-        }
+        ctx.status(400).json(Collections.singletonMap("error", "body must be a JSON object"));
+        return null;
     }
 
-    private static void login(Context ctx, JedisPool pool) {
-        JsonObject body = JsonParser.parseString(ctx.body()).getAsJsonObject();
-        String username = body.get("username").getAsString().trim().toLowerCase();
-        String password = body.get("password").getAsString();
-        try (Jedis jedis = pool.getResource()) {
-            String userId = jedis.get("username:" + username);
-            if (userId == null) { ctx.status(401).json(Collections.singletonMap("error", "invalid credentials")); return; }
-            String raw = jedis.get("user:" + userId);
-            if (raw == null) { ctx.status(401).json(Collections.singletonMap("error", "invalid credentials")); return; }
-            User user = GSON.fromJson(raw, User.class);
-            if (!BCrypt.checkpw(password, user.getPasswordHash())) {
-                ctx.status(401).json(Collections.singletonMap("error", "invalid credentials"));
-                return;
-            }
-            JsonObject resp = new JsonObject();
-            resp.addProperty("userId", user.getUserId());
-            resp.addProperty("username", user.getUsername());
-            ctx.json(resp);
+    private static String field(JsonObject body, String name) {
+        JsonElement el = body.get(name);
+        return el != null && el.isJsonPrimitive() ? el.getAsString() : null;
+    }
+
+    private static void write(Context ctx, AccountService.Result r) {
+        if (r.status() != 200) {
+            ctx.status(r.status()).json(Collections.singletonMap("error", r.error()));
+            return;
         }
+        JsonObject resp = new JsonObject();
+        resp.addProperty("userId", r.userId());
+        resp.addProperty("username", r.username());
+        ctx.json(resp);
     }
 
     private static void getUser(Context ctx, JedisPool pool) {
         String userId = ctx.pathParam("userId");
         try (Jedis jedis = pool.getResource()) {
-            String raw = jedis.get("user:" + userId);
+            String raw = jedis.get(RedisKeys.USER_PREFIX + userId);
             if (raw == null) { ctx.status(404).result("{}"); return; }
             User u = GSON.fromJson(raw, User.class);
             JsonObject resp = new JsonObject();

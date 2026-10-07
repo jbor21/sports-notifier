@@ -1,0 +1,48 @@
+{
+ "events": [
+  {
+   "id": "401902644",
+   "date": "2026-10-03T23:00Z",
+   "shortName": "MIA @ TOR",
+   "competitions": [
+    {
+     "status": {
+      "clock": 0.0,
+      "displayClock": "0.0",
+      "period": 0,
+      "type": {
+       "id": "1",
+       "name": "STATUS_SCHEDULED",
+       "state": "pre",
+       "completed": false,
+       "description": "Scheduled",
+       "detail": "Sat, October 3rd at 7:00 PM EDT",
+       "shortDetail": "10/3 - 7:00 PM EDT"
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "TOR",
+        "displayName": "Toronto Raptors",
+        "logo": "https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/tor.png"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "MIA",
+        "displayName": "Miami Heat",
+        "logo": "https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/mia.png"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "_note": "captured 2026-10-02"
+}

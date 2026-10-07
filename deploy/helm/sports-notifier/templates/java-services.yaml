@@ -27,6 +27,9 @@ spec:
             - name: SERVICE
               value: {{ $name }}
             {{- include "sports-notifier.baseEnv" $ | nindent 12 }}
+            {{- if $svc.espn }}
+            {{- include "sports-notifier.espnEnv" $ | nindent 12 }}
+            {{- end }}
             - name: {{ $svc.portEnv }}
               value: {{ $svc.port | quote }}
             {{- range $k, $v := $svc.env }}

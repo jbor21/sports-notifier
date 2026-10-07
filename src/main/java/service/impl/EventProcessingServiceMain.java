@@ -1,9 +1,8 @@
 package service.impl;
 
 import io.javalin.Javalin;
-import model.GameEvent;
+import service.ProcessResult;
 import redis.clients.jedis.JedisPool;
-import util.GameEventParser;
 import util.GsonJsonMapper;
 import util.JedisPoolHolder;
 
@@ -12,19 +11,21 @@ import java.util.Collections;
 public final class EventProcessingServiceMain {
 
     public static void main(String[] args) {
+        JedisPoolHolder.awaitRedisOrExit("event-processing");
         int port = Integer.parseInt(System.getenv().getOrDefault("EVENT_PROCESSING_PORT", "8083"));
         JedisPool pool = JedisPoolHolder.create();
-        GameStateServiceImpl gameState = new GameStateServiceImpl(pool);
-        EventProcessingServiceImpl eps = new EventProcessingServiceImpl(gameState, pool);
+        EventProcessingServiceImpl eps = new EventProcessingServiceImpl(pool);
 
         Javalin app = Javalin.create(cfg -> cfg.jsonMapper(new GsonJsonMapper())).start(port);
 
         app.get("/health", ctx -> ctx.json(Collections.singletonMap("status", "ok")));
 
+        // Duplicate and stale are not errors: the sender did its job, there was just nothing new.
+        // Only INVALID is a 400. A Redis failure throws, so Javalin answers 500 and the poller retries.
         app.post("/events", ctx -> {
-            GameEvent ev = GameEventParser.parse(ctx.body());
-            eps.processEvent(ev);
-            ctx.status(202).json(Collections.singletonMap("accepted", ev != null ? ev.getEventId() : null));
+            ProcessResult result = eps.processJson(ctx.body());
+            ctx.status(result == ProcessResult.INVALID ? 400 : 200)
+               .json(Collections.singletonMap("result", result.name().toLowerCase()));
         });
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

@@ -1,5 +1,12 @@
 # Laptop settings (k3d). Phase 5 adds values-aws.yaml; the templates stay the same.
 
+services:
+  gateway:
+    env:
+      # Some browsers (Safari) and tools refuse Secure cookies on plain http://localhost.
+      # On AWS, behind HTTPS, the default (true) applies.
+      COOKIE_SECURE: "false"
+
 espnPoller:
   enabled: false   # turn on for live ESPN data
 

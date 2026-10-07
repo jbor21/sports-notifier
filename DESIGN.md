@@ -10,6 +10,8 @@ Revised 2026-09-29: decision 15, the notification catalog. Four sports, alerts a
 
 Revised 2026-09-30: decision 15 tightened. League follows get a daily summary instead of a final per game. The final is always its own push. Close-game conditions are explicit and never apply in overtime. Game-follow defaults, precedence between follows, overlap rules, NFL ties, and duplicate-proof alert ids are defined.
 
+Revised 2026-10-02: Phase 2 built (live-game check and merge pending); the fix list below says what it closed and what Phase 3 still owes. Decision 10 drops the Phase 2 provider comparison. ESPN only for now, plus a check that ESPN answers from a data-center address. The interface is named `ScoreFeed`.
+
 ---
 
 ## The full picture
@@ -285,13 +287,13 @@ The app cannot move to Cloudflare Workers, Lambda, or Cloud Run. Those run short
 
 ### 10. ESPN behind an interface, no paid feed
 
-**Chose.** A `SportsDataProvider` interface. The ESPN poller is the current adapter. Poll about every 5 seconds while games are live and about every 60 seconds when nothing is. Send a browser-like User-Agent. Back off and alert on 403s. Snapshots of the last score live in Redis, not in a `HashMap`, so a restart does not re-send "game start" for every game in progress. Play-by-play (`summary?event=<id>`) is polled only for games someone is actually following.
+**Chose.** A `ScoreFeed` interface (named `SportsDataProvider` in earlier drafts; renamed so it is not mistaken for the paid SportsDataIO). The ESPN poller is the current adapter. Poll about every 5 seconds while games are live and about every 60 seconds when nothing is. The ESPN host and User-Agent are settings, used by the poller and the gateway alike. The defaults are `site.web.api.espn.com` and an honest app User-Agent, not a browser imitation: as of 2026-10-01, ESPN refused browser-imitating agents and refused `site.api.espn.com` from a cloud address while `site.web.api` answered. ESPN's filtering changes over time, so a daily GitHub Actions check tries each host and User-Agent and fails when the default stops working. Back off and alert on 403s. Snapshots of the last score live in Redis, not in a `HashMap`, so a restart does not re-send "game start" for every game in progress. Play-by-play (`summary?event=<id>`) is polled only for games someone is actually following.
 
 **Gave up.** A licensed push feed (Sportradar, Genius, Stats Perform / Opta). Those are what the real apps pay for. Official feeds are push, not poll, and they are enterprise contracts. Cheap developer APIs are still polling and are not meaningfully faster than ESPN. Even the paid play-by-play feeds trail the television broadcast by roughly 15–20 seconds.
 
 **Why.** Almost all of the delay a user feels is the poll interval plus ESPN, not Kafka. The in-system path is tens of milliseconds. We will measure it (timestamp when the poller saw the play, record the delay at the gateway). The interface is so a push provider is one class later, and so the unofficial API is an adapter you can explain instead of a hidden dependency.
 
-**Provider test in Phase 2.** ESPN stays the v1 source for all four sports, because it covers them in one shape and carries team logos and colors. When Phase 2 builds the provider interface, it also measures the alternatives side by side: MySportsFeeds (free for non-commercial use, all four leagues, play-by-play, an API key), and the leagues' own MLB and NHL feeds (`statsapi.mlb.com`, `api-web.nhle.com`; free, keyless, play-by-play, undocumented). For each: the delay behind live play, which of decision 15's **?** fields it has, and whether it answers requests from a cloud IP. That last one matters for Phase 5: the NBA's own feed is known to block data-center IPs, and ESPN may too. The provider can then differ per sport. The API the UI talks to does not change with that choice.
+**ESPN only, for now.** ESPN stays the source for all four sports, because it covers them in one shape and carries team logos and colors. The provider comparison planned for Phase 2 (MySportsFeeds and the leagues' own MLB and NHL feeds) was dropped on 2026-10-02; a different feed is a later version's decision, and it would be one new `ScoreFeed` class plus the `seq` computation for that feed. Phase 2 instead checks one thing that matters for Phase 5: whether ESPN answers requests from a data-center address, using a GitHub Actions runner. Phase 5 repeats the request from AWS first. The API the UI talks to does not change with the source.
 
 ### 11. Hybrid fan-out, later, only if measurement says so
 
@@ -560,21 +562,30 @@ In-system speed, once a play exists: produce with no intentional batching delay 
 
 ## Security and correctness still to fix in the current code
 
-These are known bugs in the course code. They get fixed before or as the new pipeline lands. They are not optional polish.
+These were the known bugs in the course code. Phase 2 fixed the ones that survive into the new pipeline; the rest close as Phase 3 lands. Details of each fix are in `docs/superpowers/specs/2026-10-02-phase-2-correctness-security-design.md`.
 
-- The Lua script and the publish are separate steps. A crash between them marks the event processed and never publishes it. The Kafka version closes that window with the two-state claim (decision 5).
-- The ESPN poller uses a random UUID as the event id and its own clock as the timestamp (`EspnPollerMain.java`). The Lua dedup never fires on real data, and two pollers running at once, as happens during a Kubernetes rolling update, both get accepted and send duplicates. Build the id and timestamp from ESPN's data. Then an overlapping poller is harmless and no singleton lock is needed.
-- The poller saves its snapshot before the POST succeeds. A failed POST loses that play for good. Save the snapshot after.
+**Still open (Phase 3):**
+
+- The Lua script and the publish are separate steps. A crash between them marks the event processed and never publishes it. The Kafka version closes that window with the two-state claim (decision 5). Phase 2 prepared for it: the script now checks the event id before `seq`, so a retry is a "duplicate", never "stale".
 - Every gateway subscribes to `notify:*` and reads every notification (`NotificationFanOut.java`). Route to the gateway that holds the socket (decision 13).
-- Fan-out matches only the team that just scored. Following the Lakers misses Celtics baskets in a Lakers game. The same bug hits game start and final, which are tagged with the home team, so away-team followers miss them. This is the first Phase 2 task, test-first: a BOS follower must be notified when LAL scores in LAL–BOS, and must get that game's start.
-- Team ids are bare abbreviations (`sub:team:BOS`). `BOS` is the Celtics, the Red Sox, and the Bruins, so following one follows all three. Team ids become league-qualified (`nba-bos`), as the API spec already uses.
+- Team ids are bare abbreviations (`sub:team:BOS`). `BOS` is the Celtics, the Red Sox, and the Bruins, so following one follows all three. Team ids become league-qualified (`nba-bos`) in Phase 3.2, as the API spec uses, and the Redis sets with them.
 - If a worker dies before ack, the entry sits forever. Kafka's session timeout replaces the missing Redis reclaim. Per-user dedup has to exist before retries are turned on, or people get duplicates.
-- Poller memory is a `HashMap`. Restart spams game-start events. Persist snapshots in Redis.
-- Game keys never expire, and the game list scans all of them. TTL finished games. Keep a bounded set of live games.
-- Internal ports have no auth. Only the gateway is reachable from outside. On Kubernetes, network policies limit which pods can reach each internal service. Signup does get-then-set on the username and can create two users. Login is unthrottled. Password minimum is 4 characters. The session cookie is missing `Secure` and `SameSite`.
-- `GameStateService.updateGameState` is only called from tests. The script does the real write. Do not describe the unused method as defense in depth.
+- Accounts are lost when the cluster is deleted, until Postgres.
+- **One ESPN snapshot that runs ahead of reality becomes the floor.** A clock glitch showing 0:00 mid-period, or an early `completed`, gets a large `seq`; every later snapshot is stale until the game passes it, so those alerts are lost. The poller logs each such stale alert as a warning. Watch for it in the live-game check; fixing it needs detector logic (Phase 3).
 
----
+**Fixed in Phase 2:**
+
+- **Fan-out matched only the tagged team.** A follower of either team now gets every event in the game. Redis builds the audience with `SUNIONSTORE` and `SINTERSTORE` instead of one `SISMEMBER` per subscriber; with millions of followers that one command would pause Redis briefly, which Phase 4's load test should measure.
+- **Poller ids and timestamps.** Events are ordered by `seq`, a 14-digit number built from game progress (phase, period, half, clock, outs, stage, score total), and the event id is `<gameId>:<seq>`. An overlapping poller's events are duplicates or stale, so no singleton lock is needed. The 50-event burst test from the course (43 → 48 → 50) now runs on every push.
+- **Poller memory and the snapshot-before-POST bug.** The poller keeps no memory: it compares ESPN with the game record the Lua script saved, which only changes when an event is accepted. A restart re-sends nothing, and a failed POST is retried by the next poll with the same id. `GAME_SYNC` records games seen for the first time without alerting anyone.
+- **Game keys never expired.** A record expires a day after a final, or after 8 idle days. The game list reads a bounded `games:recent` set instead of scanning every key.
+- **Signup race.** The username is claimed with `SET NX`, after the user record is written. Before the fix, 20 of 20 simultaneous signups for one name succeeded; now exactly one does.
+- **Passwords** are 8 to 72 bytes (bcrypt ignores anything past 72).
+- **Login throttling.** 5 attempts per username or 20 per client address in 15 minutes, then `429`. Each attempt is counted *before* the password check: the first version counted failures afterwards, and the final review showed 50 simultaneous guesses all got through (the same check-then-act bug as the score race). The address is the one Traefik saw, never the client-written first `X-Forwarded-For` entry.
+- **Session cookie** is `SameSite=Lax`, and `Secure` everywhere except the laptop (`COOKIE_SECURE=false` in `values-local.yaml`).
+- **Internal ports.** Network policies: only Traefik reaches the gateway, only the gateway reaches user-pref, game-state, and notification, only the poller and simulator reach event-processing, only our pods reach Redis. The smoke test proves a stranger pod is refused.
+- **`GameStateService.updateGameState`** was dead code and is deleted. The Lua script is the only writer of game state.
+- **Startup crash loop.** Services wait for Redis instead of crashing when they start first.
 
 ## Build order
 
@@ -582,7 +593,7 @@ We implement in this order. The system runs at the end of each step. Everything 
 
 0. **Lock the plan.** This document. Git init, and commit the course code untouched first, so the original is always there to point back to.
 1. **Foundation.** Flatten `com3810/`. One Dockerfile, `SERVICE` picks the main. A Helm chart running the current services and Redis on k3d. Tests in GitHub Actions. **Done.**
-2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data.
+2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data. **Built** 2026-10-02 on branch `phase-2-correctness`; done when a live game has been checked by hand and the PR is merged.
 3. **The new pipeline.** Postgres for accounts, preferences, and history, with Redis subscriber sets rebuilt on startup. Kafka through Strimzi with one broker. The two topics, the script-then-produce path with the two-state claim, consumer groups, per-user dedup. Gateway routing (decision 13). The notification catalog's first wave: per-follow preferences in Postgres resolved into Redis sets, the detector framework, and wave 1 alerts (decision 15).
 3b. **New UI.** A full redesign of the web UI, frontend only: it calls the gateway's API and WebSocket and has no database, auth, or server code of its own. The code lives in `web/` and ships as static files in the same Helm chart. It is built against the API spec in `docs/api/`, written before Phase 3 and implemented by Phase 3, so the UI can start early against a mock server. Built as an installable web app (PWA) so Phase 7's Web Push can reach a phone. Screens can be designed any time; the build lands after Phase 3.
 4. **Proof tools.** Recorded-game replay, the correctness checker, OpenTelemetry traces, Prometheus and Grafana for lag and latency. Alert waves 2 and 3, each detector tested against recorded games.

@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-09-28.
+asks. Last updated 2026-10-02.
 
 ---
 
@@ -67,7 +67,7 @@ Browser ◄── WebSocket ◄── Gateway (8080) ◄── PSUBSCRIBE notify
 | Simulator / ESPN Poller | — | `simulator.*` | Event sources |
 
 **Stack:** Java 17 · Maven · Javalin 6.1.6 · Jedis 4.4.7 · Gson · jbcrypt
-**Size:** ~2,400 lines Java · one 1,851-line `index.html` (vanilla JS, no framework, no build step) · 31 tests
+**Size:** ~3,000 lines Java · one 1,851-line `index.html` (vanilla JS, no framework, no build step) · 125 tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -93,9 +93,9 @@ than what's on disk. Verified against the source:
 
 | Deduction | Status in current code |
 |---|---|
-| TOCTOU race | **Fixed** — `EventProcessingServiceImpl.java:40` is a single Lua script doing staleness + dedup + state write atomically. Exactly the fix suggested. README documents 43 → 48 → 50. |
+| TOCTOU race | **Fixed** — `EventProcessingServiceImpl` runs one Lua script: id check, `seq` check, then claim + state write, atomically. Exactly the fix suggested. `EventProcessingBurstTest` (50 concurrent events → 50) runs on every push. |
 | `GatewayMain` monolith | **Fixed** — now 157 lines; `EspnProxyHandler` (103) and `GameListingHandler` (54) extracted. |
-| Inline Redis key strings | **Fixed** — `util/RedisKeys.java` centralizes them. (Leftover: `user:` / `username:` in `UserPreferenceServiceMain` are still inline.) |
+| Inline Redis key strings | **Fixed** — `util/RedisKeys.java` centralizes them (the last inline `user:` / `username:` keys moved there in Phase 2). |
 | Model field Javadoc | **Fixed** — e.g. `model/GameEvent.java` documents every field. |
 
 Earlier-stage feedback also addressed: Stage 2's "Event Processing querying User
@@ -109,41 +109,23 @@ fan-out and cache preferences" is handled by the Redis Streams fan-out plus the
 
 ## Open problems (found by review, not by the professor)
 
-These are still true of the code on disk. They are not the architecture plan.
-The target fixes, and a few more, are in `DESIGN.md` under "Security and
-correctness still to fix." Do not re-solve them by keeping Redis as the only
-database or Redis Streams as the log.
+Phase 2 fixed most of the review's list (see `DESIGN.md`, "Security and
+correctness still to fix"). Still true of the code on disk, all closed by
+Phase 3's pipeline. Do not re-solve them by keeping Redis as the only database
+or Redis Streams as the log.
 
-These are live and unaddressed:
-
-1. **Signup TOCTOU** — `UserPreferenceServiceMain.java:73-82` does
-   `GET username:<name>` then `SET`. Two concurrent signups for the same
-   username both pass. Needs `SETNX`. Same bug class the professor flagged
-   elsewhere.
-2. **Fan-out is N+1** — `PubSubWorkerImpl.java:119-123` calls `SISMEMBER` in a
-   Java loop, one round trip per subscriber. This is the actual bottleneck for
-   the "millions of users" story. Pipeline it or intersect in Redis.
-3. **Dead code** — `GameStateServiceImpl.updateGameState()` is called *only from
-   tests*; the Lua script does the real write. The `gameStateService` field in
-   `EventProcessingServiceImpl.java:17` is assigned and never read. The README
-   calls this "defense-in-depth," which describes intent, not behavior.
-4. **No pending-entry recovery** — if a worker dies mid-event, `xack` never
-   fires and the entry sits in `XPENDING` forever. Needs `XCLAIM` + dead-letter.
-5. **No service-to-service auth** — `user-pref:8081` serves `/prefs/<anyUserId>`
-   to anything that can reach the port. Fine on localhost, **a real hole in
-   cloud** without a private network.
-6. **Cookie lacks `Secure` / `SameSite`** — `SessionAuth.java:26-29`. Must fix
-   before HTTPS.
-7. Password minimum is 4 characters.
-8. **Poller defeats dedup** — `EspnPollerMain.java:187` uses a random UUID as
-   the event id and line 114 uses the poller's wall clock as the timestamp. The
-   Lua dedup never fires on real ESPN data, and two overlapping pollers (a
-   Kubernetes rolling update) both get accepted. Derive both from ESPN's data.
-   Also, line 118 saves the snapshot before the POST succeeds, so a failed POST
-   loses the play.
-9. **Gateway broadcast** — `NotificationFanOut.java` does `PSUBSCRIBE notify:*`,
+1. **Script-then-publish window** — a crash after the Lua script accepts an
+   event and before `XADD` loses that event. Phase 3's two-state claim
+   (decision 5). The script already checks the id before `seq`, so a retry
+   is reported as `duplicate`.
+2. **No pending-entry recovery** — if a worker dies mid-event, `xack` never
+   fires and the entry sits in `XPENDING`. Kafka's rebalance replaces this.
+3. **Gateway broadcast** — `NotificationFanOut.java` does `PSUBSCRIBE notify:*`,
    so every gateway reads every notification. Target is per-gateway routing
    (`DESIGN.md` decision 13).
+4. **Accounts live in Redis** — `make down` deletes them. Postgres, Phase 3.
+5. **Network policies need an engine on EKS** — k3s enforces them; EKS ignores
+   them unless a policy engine is enabled (Phase 5).
 
 ---
 
@@ -164,11 +146,21 @@ These are live and unaddressed:
   `make down` deletes the cluster and every account with it until Phase 3.
 - **CI:** GitHub Actions runs the tests, then `make cluster up smoke` on a
   throwaway k3d cluster, on every push and pull request.
-- **Next step:** Phase 1 is done and the notification catalog is decided
-  (`DESIGN.md` decision 15). Next: the API spec in `docs/api/` (for the new
-  UI, phase 3b), and Phase 2. See "Deferred to Phase 2" in
-  `docs/superpowers/specs/2026-09-29-phase-1-foundation-design.md`; where it
-  disagrees with decision 15, decision 15 wins.
+- **Phase 2 (Correctness and security) is merged** (PR #2, 2026-10-02): spec
+  `docs/superpowers/specs/2026-10-02-phase-2-correctness-security-design.md`,
+  plan `docs/superpowers/plans/2026-10-02-phase-2-correctness-security.md`.
+  Its live-game check is still open as issue #3; ESPN recordings for it are in
+  `~/sportsnotifier-recordings/` on the laptop (outside the repo).
+- **Next step: Phase 3** (Postgres, Kafka, gateway routing, decision 15 wave 1),
+  starting with its brainstorm, which also reviews the API spec parked on
+  branch `api-spec` (worktree `.worktrees/api-spec`).
+- **New in Phase 2:** events carry `seq` (game progress as one number;
+  `feed/Seq.java`); the poller is `feed/Poller.java` behind `feed/ScoreFeed`
+  (ESPN adapter `EspnScoreFeed`, HTTP in `EspnClient`); `GAME_SYNC` saves
+  state without alerting; `make up HELM_ARGS="--set espnPoller.enabled=true"`
+  turns the poller on; `scripts/espn-check.sh` checks ESPN reachability.
+- **Study quizzes:** `docs/study/phase-<N>-quiz.md`, one per phase. Write it
+  at the end of each phase; quiz the user only when they ask.
 
 ---
 
@@ -213,9 +205,9 @@ not a new product. Full rationale is in `DESIGN.md`. Locked:
   push per moment, but the final is always its own push; deterministic ids; v1 is scoreboard-only,
   play-by-play and player alerts later. It replaces `GAME_START` /
   `SCORE_UPDATE` / `GAME_END`. Do not reopen the tables unless the user asks.
-- **ESPN** stays behind a provider interface for v1. No paid feed. Phase 2
-  measures MySportsFeeds and the MLB/NHL league feeds against it (delay,
-  fields, cloud-IP blocking); the provider may differ per sport.
+- **ESPN** is the only source for now, behind the `ScoreFeed` interface. No
+  paid feed, no provider comparison (dropped 2026-10-02). Phase 2 checks
+  whether ESPN answers from a data-center IP; another feed is a later version.
 - **New UI is phase 3b**, frontend only, in `web/`, built against the API
   spec in `docs/api/`. It must not add its own database, auth, or server.
 - Hybrid fan-out (deliver small audiences inside Stage 1) and Kafka

@@ -11,8 +11,20 @@ public final class RedisKeys {
     /** Hash storing live game state: {@code game:<gameId>} */
     public static final String GAME_PREFIX = "game:";
 
+    /** Sorted set of recently updated game ids, scored by Redis time in seconds: {@code games:recent} */
+    public static final String GAMES_RECENT = "games:recent";
+
     /** SET NX dedup guard per event: {@code processed:<eventId>} */
     public static final String PROCESSED_PREFIX = "processed:";
+
+    /** Account record JSON (id, username, bcrypt hash): {@code user:<userId>} */
+    public static final String USER_PREFIX = "user:";
+
+    /** Username → userId, claimed with SET NX at signup: {@code username:<name>} */
+    public static final String USERNAME_PREFIX = "username:";
+
+    /** Failed-login counters: {@code login:fail:user:<name>} and {@code login:fail:ip:<address>} */
+    public static final String LOGIN_FAIL_PREFIX = "login:fail:";
 
     /** User preferences JSON blob: {@code prefs:<userId>} */
     public static final String PREFS_PREFIX = "prefs:";
@@ -31,6 +43,9 @@ public final class RedisKeys {
 
     /** Inverted index — users who enabled a notification type: {@code sub:notif:<type>} */
     public static final String SUB_NOTIF_PREFIX = "sub:notif:";
+
+    /** Temporary audience set built during one event's fan-out: {@code fanout:<eventId>} */
+    public static final String FANOUT_PREFIX = "fanout:";
 
     /** Per-user notification history list: {@code notifications:<userId>} */
     public static final String NOTIFICATIONS_PREFIX = "notifications:";

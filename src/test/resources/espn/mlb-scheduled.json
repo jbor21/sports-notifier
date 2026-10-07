@@ -1,0 +1,48 @@
+{
+ "events": [
+  {
+   "id": "401907990",
+   "date": "2026-10-03T17:00Z",
+   "shortName": "CHW @ CLE",
+   "competitions": [
+    {
+     "status": {
+      "clock": 0.0,
+      "displayClock": "0:00",
+      "period": 1,
+      "type": {
+       "id": "1",
+       "name": "STATUS_SCHEDULED",
+       "state": "pre",
+       "completed": false,
+       "description": "Scheduled",
+       "detail": "Scheduled",
+       "shortDetail": "10/3 - 1:00 PM EDT"
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "CLE",
+        "displayName": "Cleveland Guardians",
+        "logo": "https://a.espncdn.com/i/teamlogos/mlb/500/scoreboard/cle.png"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "CHW",
+        "displayName": "Chicago White Sox",
+        "logo": "https://a.espncdn.com/i/teamlogos/mlb/500/scoreboard/chw.png"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "_note": "captured 2026-10-02"
+}

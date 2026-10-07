@@ -1,19 +1,11 @@
 package service;
 
-import model.GameEvent;
 import model.GameState;
 
 /**
- * Manages current game state and serves game information to clients.
+ * Serves current game state to clients. The Lua script in EventProcessingServiceImpl is the only writer.
  */
 public interface GameStateService {
-
-    /**
-     * Updates the stored state of a game based on an incoming event.
-     *
-     * @param event the event that changes the game state
-     */
-    void updateGameState(GameEvent event);
 
     /**
      * Retrieves the current state of a game.

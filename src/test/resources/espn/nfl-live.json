@@ -1,0 +1,49 @@
+{
+ "events": [
+  {
+   "id": "401872964",
+   "date": "2026-10-02T00:15Z",
+   "shortName": "PIT @ CLE",
+   "competitions": [
+    {
+     "status": {
+      "clock": 120.0,
+      "displayClock": "2:00",
+      "period": 4,
+      "type": {
+       "id": "3",
+       "name": "STATUS_IN_PROGRESS",
+       "state": "in",
+       "completed": false,
+       "description": "Final",
+       "detail": "2:00 - 4th",
+       "shortDetail": "2:00 - 4th"
+      },
+      "isTBDFlex": false
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "24",
+       "team": {
+        "abbreviation": "CLE",
+        "displayName": "Cleveland Browns",
+        "logo": "https://a.espncdn.com/i/teamlogos/nfl/500/scoreboard/cle.png"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "21",
+       "team": {
+        "abbreviation": "PIT",
+        "displayName": "Pittsburgh Steelers",
+        "logo": "https://a.espncdn.com/i/teamlogos/nfl/500/scoreboard/pit.png"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "_note": "derived 2026-10-02 from a captured file by editing status fields; replace with a live capture"
+}

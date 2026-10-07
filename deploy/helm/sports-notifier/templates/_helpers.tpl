@@ -36,3 +36,11 @@ livenessProbe:
   periodSeconds: {{ .probes.liveness.periodSeconds }}
   failureThreshold: {{ .probes.liveness.failureThreshold }}
 {{- end }}
+
+{{/* ESPN host and User-Agent, for every workload that calls ESPN. Arg: root context. */}}
+{{- define "sports-notifier.espnEnv" -}}
+- name: ESPN_HOST
+  value: {{ .Values.espn.host | quote }}
+- name: ESPN_USER_AGENT
+  value: {{ .Values.espn.userAgent | quote }}
+{{- end }}

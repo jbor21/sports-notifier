@@ -5,7 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.javalin.http.Context;
-import util.SimpleHttp;
+import feed.EspnClient;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -15,19 +15,21 @@ import java.util.Map;
 /**
  * Handles the {@code GET /api/upcoming} endpoint.
  *
- * Proxies requests to the ESPN public scoreboard API for NBA, NFL, MLB, and NHL,
+ * Fetches the ESPN public scoreboard (through {@link EspnClient}) for NBA, NFL, MLB, and NHL,
  * filters to only scheduled (not yet started) games, and returns a normalised JSON
  * array. The proxy exists to avoid browser CORS restrictions when the UI calls ESPN
  * directly.
  */
 public final class EspnProxyHandler {
 
-    private static final String[][] LEAGUES = {
-        {"basketball", "nba", "NBA"},
-        {"football",   "nfl", "NFL"},
-        {"baseball",   "mlb", "MLB"},
-        {"hockey",     "nhl", "NHL"},
-    };
+    private static final String[] LEAGUES = {"NBA", "NFL", "MLB", "NHL"};
+
+    private final EspnClient espn;
+
+    /** Shares the poller's ESPN host and User-Agent settings, so the two can't drift apart. */
+    public EspnProxyHandler(EspnClient espn) {
+        this.espn = espn;
+    }
 
     /**
      * Fetches upcoming games from ESPN for all four leagues and returns them as a
@@ -39,16 +41,14 @@ public final class EspnProxyHandler {
      */
     public void handleUpcoming(Context ctx) {
         List<Map<String, Object>> upcoming = new ArrayList<>();
-        for (String[] lg : LEAGUES) {
+        for (String league : LEAGUES) {
             try {
-                String url = "https://site.api.espn.com/apis/site/v2/sports/"
-                    + lg[0] + "/" + lg[1] + "/scoreboard";
-                String body = SimpleHttp.get(url).body();
+                String body = espn.scoreboard(league);
                 JsonObject root = JsonParser.parseString(body).getAsJsonObject();
                 JsonArray events = root.getAsJsonArray("events");
                 if (events == null) continue;
                 for (JsonElement elem : events) {
-                    Map<String, Object> game = parseScheduledGame(elem.getAsJsonObject(), lg[2]);
+                    Map<String, Object> game = parseScheduledGame(elem.getAsJsonObject(), league);
                     if (game != null) upcoming.add(game);
                 }
             } catch (Exception ignored) {}
