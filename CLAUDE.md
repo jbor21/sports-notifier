@@ -152,7 +152,7 @@ Phase 2 and Phase 3.1 fixed most of the review's list (see `DESIGN.md`,
   from 60 hours of recorded ESPN data are in PR #4. The by-hand live-game
   check is still issue #3.
 - **Phase 3 is split into 3.1–3.4** (`DESIGN.md` build order). **3.1 Kafka
-  pipeline is built** on branch `phase-3-1-kafka` (PR #6): spec
+  pipeline is merged** (PR #6, 2026-10-07): spec
   `docs/superpowers/specs/2026-10-06-phase-3-1-kafka-pipeline-design.md`, plan
   `docs/superpowers/plans/2026-10-06-phase-3-1-kafka-pipeline.md`. The API spec
   for the new UI is final and on main (`docs/api/`, PR #5).
