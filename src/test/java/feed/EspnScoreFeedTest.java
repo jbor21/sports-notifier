@@ -32,12 +32,12 @@ class EspnScoreFeedTest {
     @Test
     void nflLiveParsesPositionAndScore() throws IOException {
         GameSnapshot g = only("nfl-live.json", "NFL");
-        assertEquals("espn-401872964", g.gameId());
+        assertEquals("espn-401872965", g.gameId());
         assertEquals("NFL", g.league());
-        assertEquals("CLE", g.homeTeam());
-        assertEquals("PIT", g.awayTeam());
-        assertEquals(24, g.homeScore());
-        assertEquals(21, g.awayScore());
+        assertEquals("WSH", g.homeTeam());
+        assertEquals("IND", g.awayTeam());
+        assertEquals(13, g.homeScore());
+        assertEquals(30, g.awayScore());
         assertEquals(Phase.LIVE, g.phase());
         assertEquals(4, g.period());
         assertEquals(1200, g.clockTenths());
@@ -90,6 +90,17 @@ class EspnScoreFeedTest {
         assertEquals(Phase.LIVE, suspended.phase());
         assertEquals(Stage.DELAYED, suspended.stage());
         assertEquals("SUSPENDED", suspended.status());
+    }
+
+    @Test
+    void preGameDelayHasNotStarted() throws IOException {
+        // ESPN sends a delay before puck drop with state "in" but period 0. Reading it as live sent
+        // "has started" for DAL-STL on 2026-10-03 while nobody was playing.
+        GameSnapshot g = only("nhl-delayed-pregame.json", "NHL");
+        assertEquals(0, g.period());
+        assertEquals(Phase.PRE, g.phase());
+        assertEquals(Stage.DELAYED, g.stage());
+        assertEquals("DELAYED", g.status());
     }
 
     @Test

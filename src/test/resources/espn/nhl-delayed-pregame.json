@@ -1,0 +1,54 @@
+{
+ "events": [
+  {
+   "id": "401891782",
+   "date": "2026-10-03T01:00Z",
+   "shortName": "STL @ DAL",
+   "competitions": [
+    {
+     "status": {
+      "clock": 0.0,
+      "displayClock": "0:00",
+      "period": 0,
+      "type": {
+       "id": "7",
+       "name": "STATUS_DELAYED",
+       "state": "in",
+       "completed": false,
+       "description": "Delayed",
+       "detail": "Delayed",
+       "shortDetail": "Delayed"
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "DAL",
+        "displayName": "Dallas Stars",
+        "logo": "https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/dal.png"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "STL",
+        "displayName": "St. Louis Blues",
+        "logo": "https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/stl.png"
+       }
+      }
+     ],
+     "situation": {
+      "outs": null,
+      "lastPlay": {
+       "text": null
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "_note": "captured live: recording nhl/20261003T011153Z.json.gz, trimmed to one game by scripts/trim-espn-fixture.py"
+}

@@ -21,13 +21,16 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Reads ESPN's scoreboard into {@link GameSnapshot}s.
  *
- * What ESPN's JSON looked like on 2026-10-02 (site.web.api.espn.com):
- * - status.type.name: STATUS_SCHEDULED, STATUS_FINAL seen live; STATUS_IN_PROGRESS,
- *   STATUS_HALFTIME, STATUS_END_PERIOD, STATUS_RAIN_DELAY, STATUS_DELAYED, STATUS_POSTPONED,
- *   STATUS_SUSPENDED, STATUS_CANCELED are ESPN's other names, not yet seen in a capture.
+ * What ESPN's JSON looked like in 60 hours of recordings, 2026-10-02 to 10-05 (site.web.api.espn.com,
+ * 49 games across all four leagues):
+ * - status.type.name: STATUS_SCHEDULED, STATUS_IN_PROGRESS, STATUS_HALFTIME, STATUS_END_PERIOD,
+ *   STATUS_DELAYED, STATUS_FINAL seen live. STATUS_RAIN_DELAY, STATUS_POSTPONED, STATUS_SUSPENDED,
+ *   and STATUS_CANCELED are ESPN's other names, not yet seen.
+ * - A delay before the start arrives with state "in" and period 0.
  * - status.clock is seconds left in the period, status.period the quarter/period/inning.
- * - MLB half-inning is assumed from status.type.shortDetail ("Top 4th", "Mid 4th", "Bot 4th",
- *   "End 4th") and outs from competitions[0].situation.outs. Confirm against a live capture.
+ * - MLB half-inning is in status.type.shortDetail ("Top 4th", "Mid 4th", "Bot 4th", "End 4th")
+ *   and outs in competitions[0].situation.outs. At the third out ESPN shows "Top 1st" with 0 outs
+ *   for one poll before "Mid 1st"; that snapshot is rejected as stale and the next one heals it.
  */
 public final class EspnScoreFeed implements ScoreFeed {
 
@@ -83,8 +86,9 @@ public final class EspnScoreFeed implements ScoreFeed {
         }
         if (home == null || away == null) return null;
 
+        int period = status.has("period") ? status.get("period").getAsInt() : 0;
         Mapped m = mapStatus(str(type, "name"), str(type, "state"),
-            type.has("completed") && type.get("completed").getAsBoolean(), league);
+            type.has("completed") && type.get("completed").getAsBoolean(), period, league);
         // Before the start a missing score is 0-0. During or after the game it is unknown: treating
         // it as 0 would record 0-0 and make the next good snapshot look like a score (a false alert).
         if (homeScore == null || awayScore == null) {
@@ -95,7 +99,6 @@ public final class EspnScoreFeed implements ScoreFeed {
             homeScore = homeScore == null ? 0 : homeScore;
             awayScore = awayScore == null ? 0 : awayScore;
         }
-        int period = status.has("period") ? status.get("period").getAsInt() : 0;
         double clockSeconds = status.has("clock") ? status.get("clock").getAsDouble() : 0.0;
 
         boolean mlb = "MLB".equals(league);
@@ -111,7 +114,7 @@ public final class EspnScoreFeed implements ScoreFeed {
 
     private record Mapped(String status, Phase phase, Stage stage) {}
 
-    private static Mapped mapStatus(String name, String state, boolean completed, String league) {
+    private static Mapped mapStatus(String name, String state, boolean completed, int period, String league) {
         if ("STATUS_CANCELED".equals(name)) return new Mapped("CANCELED", Phase.FINAL, Stage.IN_PLAY);
         if (completed) return new Mapped("FINAL", Phase.FINAL, Stage.IN_PLAY);
         if (name != null) {
@@ -120,9 +123,10 @@ public final class EspnScoreFeed implements ScoreFeed {
                 case "STATUS_IN_PROGRESS": return new Mapped("IN_PROGRESS", Phase.LIVE, Stage.IN_PLAY);
                 case "STATUS_END_PERIOD":  return new Mapped("END_PERIOD", Phase.LIVE, Stage.END_PERIOD);
                 case "STATUS_HALFTIME":    return new Mapped("HALFTIME", Phase.LIVE, Stage.HALFTIME);
+                // A delay before the start also arrives with state "in", but at period 0.
                 case "STATUS_DELAYED":
                 case "STATUS_RAIN_DELAY":
-                    return new Mapped("DELAYED", "in".equals(state) ? Phase.LIVE : Phase.PRE, Stage.DELAYED);
+                    return new Mapped("DELAYED", "in".equals(state) && period > 0 ? Phase.LIVE : Phase.PRE, Stage.DELAYED);
                 // Postponed and suspended are "delayed at the current position", never final:
                 // a suspended game that resumes days later must keep getting bigger seq values.
                 case "STATUS_POSTPONED":   return new Mapped("POSTPONED", Phase.PRE, Stage.DELAYED);
