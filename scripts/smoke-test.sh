@@ -38,13 +38,20 @@ signup() {  # $1 = username, $2 = cookie jar; prints the response body
   local body code
   body=$(mktemp)
   code=$(curl -s -o "$body" -w '%{http_code}' -c "$2" -H 'Content-Type: application/json' \
-    -d "{\"username\":\"$1\",\"password\":\"smoke-password-1\"}" "$BASE_URL/api/signup")
-  [[ "$code" == 200 ]] || fail "signup $1 returned HTTP $code: $(cat "$body")"
+    -d "{\"username\":\"$1\",\"password\":\"smoke-password-1\"}" "$BASE_URL/api/v1/auth/signup")
+  [[ "$code" == 201 ]] || fail "signup $1 returned HTTP $code: $(cat "$body")"
   cat "$body"; rm -f "$body"
 }
-suffix="$(date +%s)-$RANDOM"
-bob_id=$(signup "bob-$suffix" "$bob_jar" | jq -r .userId)
-signup "alice-$suffix" "$alice_jar" >/dev/null
+# Usernames are 3-20 characters of a-z, 0-9, and _.
+suffix="$(printf '%08d' $((RANDOM * 32768 + RANDOM)))"
+bob_id=$(signup "bob_$suffix" "$bob_jar" | jq -r .id)
+signup "alice_$suffix" "$alice_jar" >/dev/null
+
+# 2b. Log in again with the password just set: the account is in Postgres, not only in the session.
+code=$(curl -s -o /dev/null -w '%{http_code}' -c "$bob_jar" -H 'Content-Type: application/json' \
+  -d "{\"username\":\"bob_$suffix\",\"password\":\"smoke-password-1\"}" "$BASE_URL/api/v1/auth/login")
+[[ "$code" == 200 ]] || fail "login returned HTTP $code"
+[[ "$(curl -fsS -b "$bob_jar" "$BASE_URL/api/v1/me" | jq -r .id)" == "$bob_id" ]] || fail "/api/v1/me is not Bob"
 
 # 3. Bob follows BOS, the AWAY team in game-LAL-BOS. Game start is tagged with the home team
 #    and scores with whoever scored, so Bob getting both proves fan-out covers both teams.

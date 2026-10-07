@@ -7,15 +7,15 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
-import model.User;
 import model.UserPreferences;
-import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import com.zaxxer.hikari.HikariDataSource;
+import util.ApiError;
+import util.ApiJson;
+import util.ApiResult;
 import util.Db;
 import util.GsonJsonMapper;
 import util.JedisPoolHolder;
-import util.RedisKeys;
 
 import java.util.Collections;
 
@@ -27,11 +27,10 @@ public final class UserPreferenceServiceMain {
         JedisPoolHolder.awaitRedisOrExit("user-pref");
         int port = Integer.parseInt(System.getenv().getOrDefault("USER_PREF_PORT", "8081"));
         JedisPool pool = JedisPoolHolder.create();
-        // Accounts still live in Redis until they move to Postgres; for now this only creates the schema.
         HikariDataSource db = Db.fromEnv("user-pref");
         Db.migrate(db);
         UserPreferenceServiceImpl prefSvc = new UserPreferenceServiceImpl(pool);
-        AccountService accounts = new AccountService(pool);
+        AccountService accounts = new AccountService(db);
 
         Javalin app = Javalin.create(cfg -> cfg.jsonMapper(new GsonJsonMapper())).start(port);
 
@@ -40,14 +39,19 @@ public final class UserPreferenceServiceMain {
         app.post("/users", ctx -> {
             JsonObject body = jsonBody(ctx);
             if (body == null) return;
-            write(ctx, accounts.signup(field(body, "username"), field(body, "password")));
+            ApiJson.write(ctx, accounts.signup(field(body, "username"), field(body, "password"), field(body, "timezone")));
         });
         app.post("/users/login", ctx -> {
             JsonObject body = jsonBody(ctx);
             if (body == null) return;
-            write(ctx, accounts.login(field(body, "username"), field(body, "password")));
+            ApiJson.write(ctx, accounts.login(field(body, "username"), field(body, "password")));
         });
-        app.get("/users/{userId}", ctx -> getUser(ctx, pool));
+        app.get("/users/{userId}", ctx -> ApiJson.write(ctx, accounts.get(ctx.pathParam("userId"))));
+        app.patch("/users/{userId}", ctx -> {
+            JsonObject body = jsonBody(ctx);
+            if (body == null) return;
+            ApiJson.write(ctx, accounts.updateTimezone(ctx.pathParam("userId"), field(body, "timezone")));
+        });
 
         app.get("/prefs/{userId}", ctx -> {
             UserPreferences prefs = prefSvc.getPreferences(ctx.pathParam("userId"));
@@ -86,37 +90,12 @@ public final class UserPreferenceServiceMain {
         } catch (JsonParseException ignored) {
             // fall through
         }
-        ctx.status(400).json(Collections.singletonMap("error", "body must be a JSON object"));
+        ApiJson.write(ctx, ApiResult.fail(ApiError.of(422, "validation_failed", "The body must be a JSON object.")));
         return null;
     }
 
     private static String field(JsonObject body, String name) {
         JsonElement el = body.get(name);
         return el != null && el.isJsonPrimitive() ? el.getAsString() : null;
-    }
-
-    private static void write(Context ctx, AccountService.Result r) {
-        if (r.status() != 200) {
-            ctx.status(r.status()).json(Collections.singletonMap("error", r.error()));
-            return;
-        }
-        JsonObject resp = new JsonObject();
-        resp.addProperty("userId", r.userId());
-        resp.addProperty("username", r.username());
-        ctx.json(resp);
-    }
-
-    private static void getUser(Context ctx, JedisPool pool) {
-        String userId = ctx.pathParam("userId");
-        try (Jedis jedis = pool.getResource()) {
-            String raw = jedis.get(RedisKeys.USER_PREFIX + userId);
-            if (raw == null) { ctx.status(404).result("{}"); return; }
-            User u = GSON.fromJson(raw, User.class);
-            JsonObject resp = new JsonObject();
-            resp.addProperty("userId", u.getUserId());
-            resp.addProperty("username", u.getUsername());
-            resp.addProperty("createdAt", u.getCreatedAt());
-            ctx.json(resp);
-        }
     }
 }

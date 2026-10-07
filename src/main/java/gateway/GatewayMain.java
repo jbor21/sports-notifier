@@ -1,10 +1,7 @@
 package gateway;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonParser;
 import feed.EspnClient;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
@@ -73,42 +70,7 @@ public final class GatewayMain {
 
         app.get("/health", ctx -> ctx.json(Collections.singletonMap("status", "ok")));
 
-        // --- Auth ---
-        app.post("/api/signup", ctx -> {
-            HttpResponse<String> r = SimpleHttp.postJson(USER_PREF_URL + "/users", ctx.body());
-            if (r.statusCode() >= 400) { ctx.status(r.statusCode()).result(r.body()); return; }
-            String userId = JsonParser.parseString(r.body()).getAsJsonObject().get("userId").getAsString();
-            SessionAuth.createSession(pool, ctx, userId);
-            ctx.json(JsonParser.parseString(r.body()));
-        });
-
-        app.post("/api/login", ctx -> {
-            String username = usernameIn(ctx.body());
-            String ip = ClientAddress.of(ctx.header("X-Real-Ip"), ctx.header("X-Forwarded-For"), ctx.ip());
-            // Count the attempt before checking the password; see LoginThrottle for why.
-            if (!loginThrottle.admit(username, ip)) {
-                ctx.status(429).json(Map.of("error", "too many failed logins, try again later"));
-                return;
-            }
-            HttpResponse<String> r = SimpleHttp.postJson(USER_PREF_URL + "/users/login", ctx.body());
-            if (r.statusCode() >= 400) { ctx.status(r.statusCode()).result(r.body()); return; }
-            loginThrottle.recordSuccess(username, ip);
-            String userId = JsonParser.parseString(r.body()).getAsJsonObject().get("userId").getAsString();
-            SessionAuth.createSession(pool, ctx, userId);
-            ctx.json(JsonParser.parseString(r.body()));
-        });
-
-        app.post("/api/logout", ctx -> {
-            SessionAuth.destroySession(pool, ctx);
-            ctx.json(Collections.singletonMap("ok", true));
-        });
-
-        app.get("/api/me", ctx -> {
-            String userId = requireAuth(pool, ctx);
-            if (userId == null) return;
-            HttpResponse<String> r = SimpleHttp.get(USER_PREF_URL + "/users/" + urlEnc(userId));
-            ctx.status(r.statusCode()).result(r.body());
-        });
+        ApiV1Routes.register(app, pool, loginThrottle, USER_PREF_URL, NOTIFICATION_URL);
 
         // --- Preferences ---
         app.get("/api/preferences", ctx -> {
@@ -216,18 +178,6 @@ public final class GatewayMain {
             return null;
         }
         return userId;
-    }
-
-    /** The username in a login body, or null if the body isn't a JSON object with one. */
-    private static String usernameIn(String body) {
-        try {
-            JsonElement el = JsonParser.parseString(body);
-            if (!el.isJsonObject()) return null;
-            JsonElement u = el.getAsJsonObject().get("username");
-            return u != null && u.isJsonPrimitive() ? u.getAsString() : null;
-        } catch (JsonParseException e) {
-            return null;
-        }
     }
 
     private static String urlEnc(String s) {
