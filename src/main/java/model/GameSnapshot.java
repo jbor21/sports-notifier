@@ -3,7 +3,7 @@ package model;
 /**
  * One game at one moment, as read from a score feed, independent of which feed it came from.
  *
- * @param gameId          our game id, e.g. {@code espn-401872948}
+ * @param gameId          our game id, e.g. {@code nfl-401872948} (see {@code feed.GameIds})
  * @param league          {@code NBA}, {@code NFL}, {@code MLB}, or {@code NHL}
  * @param homeTeam        home team abbreviation
  * @param awayTeam        away team abbreviation

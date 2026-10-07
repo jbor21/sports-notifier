@@ -93,7 +93,7 @@ public final class EspnScoreFeed implements ScoreFeed {
         // it as 0 would record 0-0 and make the next good snapshot look like a score (a false alert).
         if (homeScore == null || awayScore == null) {
             if (m.phase != Phase.PRE) {
-                System.err.println("[EspnScoreFeed " + league + "] espn-" + id + ": score missing, skipped this poll");
+                System.err.println("[EspnScoreFeed " + league + "] " + GameIds.of(league, id) + ": score missing, skipped this poll");
                 return null;
             }
             homeScore = homeScore == null ? 0 : homeScore;
@@ -107,7 +107,7 @@ public final class EspnScoreFeed implements ScoreFeed {
         int outs = mlb && situation != null && situation.has("outs") ? situation.get("outs").getAsInt() : 0;
         String date = str(event, "date");
 
-        return new GameSnapshot("espn-" + id, league, home, away, homeScore, awayScore,
+        return new GameSnapshot(GameIds.of(league, id), league, home, away, homeScore, awayScore,
             m.phase, period, half, mlb ? 0 : (int) Math.round(clockSeconds * 10), outs, m.stage, m.status,
             startMillis(date));
     }
