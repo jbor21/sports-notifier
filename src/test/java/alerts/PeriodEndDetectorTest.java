@@ -124,4 +124,16 @@ class PeriodEndDetectorTest {
         Alert a = seq().play(b, b.next().half("END")).alerts().get(0);
         assertEquals(List.of("END_OF_INNING", "END_OF_INNING:4"), a.switches());
     }
+
+    @Test
+    void halftimeWithPeriodAlreadyThreeIsEndOfQ2() {
+        // nfl-401872965 (recording 20261004T151503Z): ESPN showed STATUS_HALFTIME with period 3 and 15:00.
+        PlayBuilder q2 = PlayBuilder.nfl("g").period(2).clock(100).score(6, 10);
+        PlayBuilder half = q2.next().period(3).clock(9000).stage("HALFTIME");
+        PlayBuilder q3 = half.next().stage("IN_PLAY").clock(8000);
+        PlayBuilder q4 = q3.next().period(4).clock(9000).score(13, 20);
+        Sequence s = seq().play(q2, half, q3, q4);
+        assertEquals(List.of("g:HALFTIME", "g:END_OF_PERIOD:3"), s.ids());
+        assertEquals("End of Q3: Raiders 20, Bears 13", s.texts().get(1));
+    }
 }

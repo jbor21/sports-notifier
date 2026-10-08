@@ -44,6 +44,9 @@ public final class PeriodEndDetector implements Detector {
     /** The last period (or inning) that is over. */
     private static int completed(Play p) {
         if ("MLB".equals(p.league())) return "END".equals(p.half()) ? p.period() : p.period() - 1;
+        // Halftime ends the 2nd quarter whatever the period says: ESPN can show HALFTIME with period 3
+        // already (nfl-401872965), and reading that as "Q3 is over" sent End of Q3 at the half.
+        if ("HALFTIME".equals(p.stage())) return 2;
         return p.betweenPeriods() ? p.period() : p.period() - 1;
     }
 
