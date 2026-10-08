@@ -88,7 +88,13 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      * ARGV[13] = now millis (from Java, so tests can move time)   ARGV[14] = the play as JSON
      * ARGV[15] = no-score heal window millis   ARGV[16] = version key TTL seconds
      *
-     * Returns: 0 duplicate | -1 stale | -2 pending | the game's new version (1, 2, ...) when accepted
+     * Returns: 0 duplicate | -1 stale | -2 pending | the game's new version when accepted
+     *
+     * A missing counter starts from now in milliseconds, not 0: Postgres outlives Redis, and history
+     * is keyed by <gameId>:v<version>, so after a Redis reset (or the counter's TTL) a counter that
+     * restarted at 1 would reuse old ids and history would drop the new notifications; an open UI
+     * would also ignore the new versions as stale. Milliseconds (13 digits) stay exact through
+     * Lua's number-to-text conversion, which keeps 14 significant digits.
      */
     private static final String PROCESS_EVENT_SCRIPT =
         "if redis.call('EXISTS', KEYS[2]) == 1 then return 0 end\n" +
@@ -115,6 +121,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         "  if not heal then return -1 end\n" +
         "end\n" +
         "redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])\n" +
+        "if redis.call('EXISTS', KEYS[6]) == 0 then redis.call('SET', KEYS[6], ARGV[13]) end\n" +
         "local version = redis.call('INCR', KEYS[6])\n" +
         "redis.call('EXPIRE', KEYS[6], ARGV[16])\n" +
         "redis.call('HSET', KEYS[1], 'version', version)\n" +

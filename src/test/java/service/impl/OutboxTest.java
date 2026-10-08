@@ -42,6 +42,9 @@ class OutboxTest {
             "LAL", "BOS", home, 0, "IN_PROGRESS", "NBA", seq);
     }
 
+    /** The counter starts from the clock (5000 ms here), so the first accept is version 5001. */
+    private static final long V1 = 5_001L;
+
     private EventProcessingServiceImpl service(PlayPublisher publisher) {
         return new EventProcessingServiceImpl(pool, publisher, () -> 5_000L);
     }
@@ -52,7 +55,7 @@ class OutboxTest {
         assertEquals(ProcessResult.ACCEPTED, eps.processEvent(play("e10", 10, 2)));
         assertEquals(ProcessResult.PENDING, eps.processEvent(play("e11", 11, 4)));
         assertEquals("2", jedis.hget("game:g1", "homeScore"));
-        assertEquals("1", jedis.hget("game:g1", "version"));
+        assertEquals(String.valueOf(V1), jedis.hget("game:g1", "version"));
         assertFalse(jedis.exists("processed:e11"), "a pending play must not burn its id");
     }
 
@@ -60,7 +63,7 @@ class OutboxTest {
     void acceptWritesPlayWithVersionToOutbox() {
         service(new TestPublisher(false)).processEvent(play("e10", 10, 2));
         GameEvent waiting = outbox.play("g1").orElseThrow();
-        assertEquals(1L, waiting.getVersion());
+        assertEquals(V1, waiting.getVersion());
         assertEquals("e10", waiting.getEventId());
         assertEquals(10L, waiting.getSeq());
         assertEquals(5_000.0, jedis.zscore("outbox:pending", "g1"));
@@ -70,7 +73,7 @@ class OutboxTest {
     void confirmedPublishClearsOutbox() {
         TestPublisher pub = new TestPublisher(true);
         service(pub).processEvent(play("e10", 10, 2));
-        assertEquals(1L, pub.plays.get(0).getVersion());
+        assertEquals(V1, pub.plays.get(0).getVersion());
         assertFalse(jedis.exists("outbox:g1"));
         assertNull(jedis.zscore("outbox:pending", "g1"));
     }
@@ -80,11 +83,11 @@ class OutboxTest {
         TestPublisher pub = new TestPublisher(false);
         EventProcessingServiceImpl eps = service(pub);
         eps.processEvent(play("e10", 10, 2));
-        assertTrue(outbox.clear("g1", 1));
-        eps.processEvent(play("e11", 11, 4));                       // version 2 now waits
-        assertFalse(outbox.clear("g1", 1), "a late confirmation of v1 must not clear v2");
+        assertTrue(outbox.clear("g1", V1));
+        eps.processEvent(play("e11", 11, 4));                       // the next version now waits
+        assertFalse(outbox.clear("g1", V1), "a late confirmation of v1 must not clear v2");
         assertTrue(jedis.exists("outbox:g1"));
-        assertTrue(outbox.clear("g1", 2));
+        assertTrue(outbox.clear("g1", V1 + 1));
         assertFalse(jedis.exists("outbox:g1"));
         assertNull(jedis.zscore("outbox:pending", "g1"));
     }

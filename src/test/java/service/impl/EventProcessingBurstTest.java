@@ -79,17 +79,18 @@ class EventProcessingBurstTest {
 
                 assertEquals("50", jedis.hget("game:" + gameId, "homeScore"), "run " + run);
                 assertEquals("50", jedis.hget("game:" + gameId, "lastSeq"), "run " + run);
-                // version counts accepted plays only; the stale ones are not counted.
-                assertEquals(String.valueOf(accepted.get()), jedis.hget("game:" + gameId, "version"), "run " + run);
-
-                // Published in version order 1..N, and seq rises with it: no heal fired, nothing reordered.
+                // Published in version order, one step per accept, and seq rises with it: no heal fired,
+                // nothing reordered. The counter starts from the clock, so steps are checked, not raw numbers.
                 List<GameEvent> published = new ArrayList<>();
                 synchronized (sent) {
                     for (GameEvent p : sent.plays) if (gameId.equals(p.getGameId())) published.add(p);
                 }
                 assertEquals(accepted.get(), published.size(), "run " + run);
+                long first = published.get(0).getVersion();
+                // version counts accepted plays only; the stale ones are not counted.
+                assertEquals(String.valueOf(first + accepted.get() - 1), jedis.hget("game:" + gameId, "version"), "run " + run);
                 for (int k = 0; k < published.size(); k++) {
-                    assertEquals(k + 1, published.get(k).getVersion(), "run " + run);
+                    assertEquals(first + k, published.get(k).getVersion(), "run " + run);
                     if (k > 0) assertTrue(published.get(k).getSeq() > published.get(k - 1).getSeq(), "run " + run);
                 }
             }
