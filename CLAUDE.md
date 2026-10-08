@@ -82,7 +82,7 @@ Browser ◄── WebSocket ◄── Gateway (8080) ◄── SUBSCRIBE gw:<its
 **Stack:** Java 17 · Maven · Javalin 6.1.6 · Jedis 4.4.7 · Gson · jbcrypt ·
 kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · PostgreSQL 17 · HikariCP ·
 Flyway · Testcontainers 2.0.5
-**Size:** ~6,000 lines Java · the course's 1,851-line `index.html` (broken since 3.2; the new UI is 3b) · 275 tests
+**Size:** ~6,000 lines Java · the course's 1,851-line `index.html` (broken since 3.2; the new UI is 3b) · 276 tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -148,11 +148,13 @@ Phases 2, 3.1, and 3.2 fixed most of the review's list (see `DESIGN.md`,
   One shaded JAR; `app.Launcher` reads `SERVICE` and runs that service's main.
 - **Test:** `make test`. It starts a throwaway Redis on `localhost:6379` (the
   tests use DB 1 and flush it) and removes it afterwards. Kafka tests start a
-  broker through Testcontainers, so Docker must be running. Stop or let the
-  laptop cluster settle before `make test` (`k3d cluster stop sports-notifier`):
-  with the cluster busy, `Stage1WorkerTest.twoThousandFollowersGetOneMessageEach`
-  can time out on the test broker. A failed Kafka test saves the broker's log and
-  `docker stats` to `target/kafka-diagnostics/`. CI runs the tests without a cluster.
+  broker through Testcontainers, so Docker must be running; stopping the laptop
+  cluster first (`k3d cluster stop sports-notifier`) keeps the run fast.
+  `KafkaTestSupport.createTopic` returns only when every partition's leader
+  answers: writing to a just-created topic used to need retries, which could
+  deadlock the idempotent producer (`OutOfOrderSequenceException`, CI on PR #13).
+  A failed Kafka test saves the broker's log and `docker stats` to
+  `target/kafka-diagnostics/`; CI uploads them.
 - **Run locally (k3d):** `make cluster` once, then `make up` (build image,
   import into k3d, Helm install). Open `http://localhost:8080`. Also
   `make simulate`, `make smoke` (end-to-end check), `make logs`, `make down`.
