@@ -32,17 +32,19 @@ still counts. Where it reflects **course scope**, ignore it.
 ## What the system does
 
 A real-time sports notification platform. Users create accounts, follow teams /
-leagues / specific games, choose which event types they care about
-(`GAME_START`, `SCORE_UPDATE`, `GAME_END`), and receive live push notifications
-over WebSocket as those events occur.
+leagues / specific games, turn alert switches on or off per follow (the catalog of
+`DESIGN.md` decision 15), and receive live push notifications over WebSocket as
+those moments occur. Until Phase 3.3's detectors, the pipeline still produces the
+three 3.1 play types (`GAME_START`, `SCORE_UPDATE`, `GAME_END`), which Stage 1 maps
+onto catalog switches.
 
 ## Architecture
 
 Separate JVM processes, one Docker image (`SERVICE` picks the main), deployed
 by one Helm chart on k3d. **Kafka** (Strimzi, one broker locally) is the event
-log; **Redis** holds the live score, the outbox, sessions, accounts and
-preferences (until Phase 3.2's Postgres), the `sub:*` index, and pub/sub to
-gateways.
+log; **Postgres** (one pod) holds accounts, follows, and notification history;
+**Redis** holds the live score, the outbox, sessions, the `sub:*` sets (rebuilt
+from Postgres), and pub/sub to gateways.
 
 ```
 Simulator / ESPN Poller
@@ -53,11 +55,14 @@ Event Processing (8083) ──► atomic Lua: duplicate · pending · newer (seq
       │ produce game-events (key = gameId, 12 lanes); confirmation clears the outbox;
       │ a retry loop re-sends leftovers
       ▼
-Stage 1 (8085, group stage1) ──► version dedup, audience from sub:* sets
+Stage 1 (8085, group stage1) ──► version dedup; waits while sub:built is missing;
+      │                          audience = union of sub:<target>:<ALERT> sets
       │ produce notifications (key = userId, 48 lanes), one message per user
-      ▼
-Stage 2 (8086, group stage2) ──► one Lua script: notif:<msg>:<user> claim
-      │                          + history + PUBLISH gw:<gatewayId> per conn:<userId>
+      ├──────────────────────────────────────────────┐
+      ▼                                              ▼
+Stage 2 (8086, group stage2) ──► one Lua script:   History (8088, group history)
+      │   notif:<msg>:<user> claim + PUBLISH        ──► batched INSERT into Postgres
+      │   gw:<gatewayId> per conn:<userId>              (created_at = Kafka timestamp)
       ▼
 Browser ◄── WebSocket ◄── Gateway (8080) ◄── SUBSCRIBE gw:<its pod name>
 ```
@@ -65,17 +70,19 @@ Browser ◄── WebSocket ◄── Gateway (8080) ◄── SUBSCRIBE gw:<its
 | Service | Port | Entry point | Role |
 |---|---|---|---|
 | Gateway | 8080 | `gateway.GatewayMain` | HTTP API, WebSocket push, sessions, `conn:` registry |
-| User Preference | 8081 | `service.impl.UserPreferenceServiceMain` | Accounts, prefs, subscription index |
+| User Preference | 8081 | `service.impl.UserPreferenceServiceMain` | Accounts and follows (Postgres), the `sub:*` sets, their rebuild, game-follow expiry |
 | Game State | 8082 | `service.impl.GameStateServiceMain` | Game state reads **only** |
 | Event Processing | 8083 | `service.impl.EventProcessingServiceMain` | Validate, Lua accept, outbox, produce, retry loop |
 | Stage 1 | 8085 | `service.impl.Stage1WorkerMain` | game-events → one message per user |
-| Stage 2 | 8086 | `service.impl.Stage2WorkerMain` | notifications → history + the user's gateways |
-| Notification | 8087 | `service.impl.NotificationServiceMain` | History reads |
+| Stage 2 | 8086 | `service.impl.Stage2WorkerMain` | notifications → the user's gateways |
+| Notification | 8087 | `service.impl.NotificationServiceMain` | History reads, seen, clear, 30-day cleanup (Postgres) |
+| History | 8088 | `service.impl.HistoryWriterMain` | notifications → Postgres history, batched |
 | Simulator / ESPN Poller | — | `simulator.*` | Event sources |
 
 **Stack:** Java 17 · Maven · Javalin 6.1.6 · Jedis 4.4.7 · Gson · jbcrypt ·
-kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · Testcontainers 2.0.5
-**Size:** ~4,000 lines Java · one 1,851-line `index.html` (vanilla JS, no framework, no build step) · 202 tests
+kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · PostgreSQL 17 · HikariCP ·
+Flyway · Testcontainers 2.0.5
+**Size:** ~6,000 lines Java · the course's 1,851-line `index.html` (broken since 3.2; the new UI is 3b) · 272 tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -117,15 +124,15 @@ finds the audience, Stage 2 delivers) plus the `sub:*` inverted index.
 
 ## Open problems (found by review, not by the professor)
 
-Phase 2 and Phase 3.1 fixed most of the review's list (see `DESIGN.md`,
+Phases 2, 3.1, and 3.2 fixed most of the review's list (see `DESIGN.md`,
 "Security and correctness still to fix"). Still true of the code on disk:
 
-1. **Accounts live in Redis** — `make down` deletes them. Postgres, Phase 3.2.
-2. **Team ids are bare abbreviations** — `sub:team:BOS` is the Celtics, the Red
-   Sox, and the Bruins. League-qualified ids in 3.2.
-3. **An early "final" from ESPN** becomes the bar for the rest of the game; the
+1. **Interim alerts until 3.3** — Stage 1 maps the three 3.1 play types onto
+   catalog switches: an NFL touchdown and field goal look alike (headline
+   `SCORE`), and "most specific follow wins" is not implemented yet.
+2. **An early "final" from ESPN** becomes the bar for the rest of the game; the
    clock heals cover only the same period. Never observed.
-4. **Network policies need an engine on EKS** — k3s enforces them; EKS ignores
+3. **Network policies need an engine on EKS** — k3s enforces them; EKS ignores
    them unless a policy engine is enabled (Phase 5).
 
 ---
@@ -149,7 +156,10 @@ Phase 2 and Phase 3.1 fixed most of the review's list (see `DESIGN.md`,
 - **Run locally (k3d):** `make cluster` once, then `make up` (build image,
   import into k3d, Helm install). Open `http://localhost:8080`. Also
   `make simulate`, `make smoke` (end-to-end check), `make logs`, `make down`.
-  `make down` deletes the cluster and every account with it until Phase 3.2.
+  `make down` deletes the cluster but not accounts: Postgres keeps its data in
+  `~/.sportsnotifier/postgres` on the Mac, mounted into k3d by `make cluster`
+  (laptop password fixed in `values-local.yaml`). `scripts/persistence-check.sh`
+  proves it.
 - **CI:** GitHub Actions runs the tests, then `make cluster up smoke` on a
   throwaway k3d cluster, on every push and pull request.
 - **Phase 2 (Correctness and security) is merged** (PR #2, 2026-10-02). Fixes
@@ -161,10 +171,19 @@ Phase 2 and Phase 3.1 fixed most of the review's list (see `DESIGN.md`,
   `docs/superpowers/specs/2026-10-06-phase-3-1-kafka-pipeline-design.md`, plan
   `docs/superpowers/plans/2026-10-06-phase-3-1-kafka-pipeline.md`. The API spec
   for the new UI is final and on main (`docs/api/`, PR #5).
-- **Phase 3.2 (Postgres) is in progress** on branch `phase-3-2-postgres`: spec
+- **Phase 3.2 (Postgres) is built** on branch `phase-3-2-postgres`: spec
   `docs/superpowers/specs/2026-10-07-phase-3-2-postgres-design.md`, plan
-  `docs/superpowers/plans/2026-10-07-phase-3-2-postgres.md`. The course UI
-  breaks here (no adapter endpoints); the new UI is 3b.
+  `docs/superpowers/plans/2026-10-07-phase-3-2-postgres.md`. The course UI is
+  broken from here (no adapter endpoints); the new UI is 3b.
+- **Next step: Phase 3.3 (alerts, wave 1)**, starting with its brainstorm.
+- **New in Phase 3.2:** `/api/v1/auth`, `/me`, `/follows`, `/notifications`
+  (`gateway/ApiV1Routes`). Follows carry decision-15 switches (catalog in
+  `src/main/resources/catalog/alerts.json`, teams in `teams.json`, team ids
+  `<league>-<abbr>` via `feed/TeamIds`). A follow save commits to Postgres, then
+  writes `sub:<kind>:<target>:<ALERT>`; a failed Redis write deletes `sub:built`,
+  and user-pref rebuilds the sets (every 30 s check, and daily). Stage 1 pauses
+  (not stops) while `sub:built` is missing. History is its own consumer group
+  (`history`). Schema migrations are Flyway files in `src/main/resources/db/migration/`.
 - **New in Phase 3.1:** Strimzi is installed by `make cluster`; the broker and
   topics are resources in the chart (`templates/kafka*.yaml`). The accept
   script answers `pending` while a game has an unsent play in `outbox:<gameId>`.

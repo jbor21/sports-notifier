@@ -2,7 +2,7 @@
 
 This is the map of the project: what it does today, what we are changing it into, and every decision we made on the way. It is written so you can explain the system without reading the code line by line.
 
-Last updated 2026-10-07. Phases 1, 2, and 3.1 are built (see "Build order"). "What exists today" describes the course version as it was before the redesign.
+Last updated 2026-10-07. Phases 1, 2, 3.1, and 3.2 are built (see "Build order"). "What exists today" describes the course version as it was before the redesign.
 
 Revised 2026-09-28: hosting moved from one always-on Hetzner VM to Kubernetes, run on your laptop (k3d) and on AWS (EKS) only when you want it up. Kafka gets three brokers in the cloud. The evidence step became a correctness checker plus a chaos suite. Decisions 2, 6, 7, and 9 changed; 12 through 14 are new.
 
@@ -572,14 +572,17 @@ In-system speed, once a play exists: produce with no intentional batching delay 
 
 ## Security and correctness still to fix in the current code
 
-These were the known bugs in the course code. Phase 2 fixed the ones that survive into the new pipeline, Phase 3.1 closed the pipeline ones, and the rest close as Phase 3 lands. Details of each fix are in `docs/superpowers/specs/2026-10-02-phase-2-correctness-security-design.md`.
+These were the known bugs in the course code. Phase 2 fixed the ones that survive into the new pipeline, Phase 3.1 closed the pipeline ones, Phase 3.2 the account and team-id ones, and the rest close as Phase 3 lands. Details of each fix are in `docs/superpowers/specs/2026-10-02-phase-2-correctness-security-design.md`.
 
-**Still open (Phase 3.2 onward):**
+**Still open (Phase 3.3 onward):**
 
-- Team ids are bare abbreviations (`sub:team:BOS`). `BOS` is the Celtics, the Red Sox, and the Bruins, so following one follows all three. Team ids become league-qualified (`nba-bos`) in Phase 3.2, as the API spec uses, and the Redis sets with them.
-- Accounts are lost when the cluster is deleted, until Postgres (3.2).
 - An early "final" from ESPN still becomes the bar for the rest of the game. Never observed; the clock heals below cover only the same period.
 - Clock-based alerts (close game late at 5:00) could fire early during a clock glitch. 3.3's detectors.
+
+**Fixed in Phase 3.2** (details in `docs/superpowers/specs/2026-10-07-phase-3-2-postgres-design.md`):
+
+- **Team ids were bare abbreviations.** `sub:team:BOS` was the Celtics, the Red Sox, and the Bruins at once. Team ids are league-qualified (`nba-bos`), and so are the Redis sets (`sub:team:nba-bos:GAME_START`). The smoke test proves an `nhl-bos` follower hears nothing from two Boston games in other leagues.
+- **Accounts were lost when the cluster was deleted.** Accounts, follows, and history live in Postgres, whose data on the laptop is a folder on the Mac. `scripts/persistence-check.sh` deletes and recreates the cluster and checks that the account logs in, keeps its follow, and still gets alerts.
 
 **Fixed in Phase 3.1** (details in `docs/superpowers/specs/2026-10-06-phase-3-1-kafka-pipeline-design.md`):
 
@@ -611,7 +614,7 @@ We implement in this order. The system runs at the end of each step. Everything 
 2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data. **Done** (PR #2, 2026-10-02). Fixes from 60 hours of recorded ESPN data followed in PR #4. Issue #3, the by-hand live-game check, was closed 2026-10-07 as covered by those recordings and the smoke test's WebSocket check; the full live check happens with the new UI.
 3. **The new pipeline**, split into four sub-phases, each with its own spec, plan, and PR:
    - **3.1 Kafka pipeline.** Kafka through Strimzi with one broker, the two topics, script-then-produce with the outbox, Stage 1 and Stage 2 consumer groups, per-user dedup, gateway routing (decision 13). **Built** 2026-10-07 (spec and plan `2026-10-06-phase-3-1-kafka-pipeline`).
-   - **3.2 Postgres.** Accounts, follows shaped for decision 15, notification history, Redis subscriber sets rebuilt on startup, the `/auth`, `/me`, `/follows`, `/notifications` endpoints of `docs/api/`. The course UI stops working here; the new UI arrives in 3b. Spec `2026-10-07-phase-3-2-postgres` (history writers as their own consumer group; follow saves commit to Postgres before Redis).
+   - **3.2 Postgres.** Accounts, follows shaped for decision 15, notification history, Redis subscriber sets rebuilt on startup, the `/auth`, `/me`, `/follows`, `/notifications` endpoints of `docs/api/`. The course UI stops working here; the new UI arrives in 3b. **Built** 2026-10-07 (spec and plan `2026-10-07-phase-3-2-postgres`; history writers are their own consumer group; follow saves commit to Postgres before Redis).
    - **3.3 Alerts, wave 1.** The detector framework and wave 1 detectors in Stage 1, most-specific-follow set math, combining, deterministic alert ids (decision 15).
    - **3.4 Live API.** `/games`, `/leagues`, the alert catalog, and live `game_update` over the WebSocket through a per-game channel.
 3b. **New UI.** A full redesign of the web UI, frontend only: it calls the gateway's API and WebSocket and has no database, auth, or server code of its own. The code lives in `web/` and ships as static files in the same Helm chart. It is built against the API spec in `docs/api/`, written before Phase 3 and implemented by Phase 3, so the UI can start early against a mock server. Built as an installable web app (PWA) so Phase 7's Web Push can reach a phone. Screens can be designed any time; the build lands after Phase 3.

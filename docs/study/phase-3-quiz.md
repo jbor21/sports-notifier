@@ -236,3 +236,200 @@ For a test user following three leagues, I compared the distinct notification me
 **Model answer:** "Three kills, each user's history matched what Stage 1 sent exactly. But the kills fell between batches, so the mid-batch crash is proven by tests, not by that run; the Phase 4 checker is what makes this systematic."
 
 </details>
+
+## 3.2 Postgres
+
+| # | Topic | First run |
+|---|---|---|
+| 1 | Why Postgres, when Redis worked in the course | **Not yet taken** |
+| 2 | Commit to Postgres first, then Redis | **Not yet taken** |
+| 3 | The two locks on a follow save | **Not yet taken** |
+| 4 | Writing the follow's whole state, not a diff | **Not yet taken** |
+| 5 | The `sub:built` marker | **Not yet taken** |
+| 6 | Why Stage 1 pauses instead of stopping | **Not yet taken** |
+| 7 | Rebuilding with a temporary key and RENAME | **Not yet taken** |
+| 8 | Why history is its own consumer group | **Not yet taken** |
+| 9 | `created_at` from Kafka, and `cleared_at` | **Not yet taken** |
+| 10 | The BOS bug | **Not yet taken** |
+| 11 | Why the laptop's Postgres password is fixed | **Not yet taken** |
+| 12 | A frozen Postgres and the socket timeout | **Not yet taken** |
+
+---
+
+### 3.2-1. Why Postgres, when Redis worked in the course
+
+> The course kept accounts, preferences, and history in Redis, and it worked. Why add a database?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** Redis was the only copy of a person's account. In the course that was fine; here, `make down` deleted every account, and on AWS the whole environment is destroyed on purpose (decision 9). **Fix:** Postgres is the source of truth for accounts, follows, and history; Redis keeps what is fast and rebuildable: sessions, the live score, the `sub:*` sets, pub/sub. **Why this direction:** Redis can be rebuilt from Postgres; Postgres can't be rebuilt from Redis. And the data is now relational: a user has follows, a follow has switches, history is paged and filtered, which is what SQL is for.
+
+**Model answer:** "Redis was the only copy of accounts, so deleting the cluster deleted users. Now Postgres is the truth and Redis is a cache I can throw away and rebuild."
+
+</details>
+
+---
+
+### 3.2-2. Commit to Postgres first, then Redis
+
+> A follow save writes Postgres and the Redis sets. Why that order, and what happens when the Redis write fails?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** two stores can't be updated atomically. **Fix:** commit Postgres first; then write Redis; if Redis fails, delete the `sub:built` marker so the sets are rebuilt from Postgres. **Why not the other order, or "undo Postgres if Redis fails":** if Redis were written first and the commit then failed, Redis would hold a follow that doesn't exist, and undoing a Redis write can fail too. With Postgres first, the only bad state is "Postgres has it, Redis doesn't", and one action, a rebuild, repairs it. If even the marker delete fails (Redis unreachable), user-pref remembers it owes one and retries every 30 s; a daily rebuild bounds the worst case.
+
+**Model answer:** "The truth is written first. Any failure after that leaves Redis behind Postgres, never ahead of it, and 'behind' is fixed by rebuilding."
+
+</details>
+
+---
+
+### 3.2-3. The two locks on a follow save
+
+> Each save takes two Postgres advisory locks. What does each one prevent?
+
+<details>
+<summary>Model answer</summary>
+
+**The rebuild lock, held shared by saves and exclusive by a rebuild.** Without it: the rebuild reads Bob's follow, Bob unfollows (commit, `SREM`), then the rebuild renames its copy over the live set and Bob is back. **The user's lock.** Without it: two tabs save the same follow; tab A commits, tab B commits, B's Redis write lands, then A's, so Redis matches A while Postgres matches B. Holding the user's lock from before the transaction until the Redis write finishes makes one user's saves happen one at a time, in commit order. Both are always taken in the same order (rebuild lock, then user lock), so two saves can't deadlock. They are session-level locks: they outlive the transaction, so they still cover the Redis write after the commit. A test replaced the user lock with a no-op and the two-tabs test failed.
+
+**Model answer:** "One lock keeps a rebuild from resurrecting an unfollow; the other keeps one user's two tabs from reaching Redis in the opposite order of their commits."
+
+</details>
+
+---
+
+### 3.2-4. Writing the follow's whole state, not a diff
+
+> After a PATCH, why does Redis get every switch's state instead of just the switches that changed?
+
+<details>
+<summary>Model answer</summary>
+
+Because the whole state is **idempotent**: writing it twice gives the same sets, so a retry, a duplicate, or a rebuild never conflicts with it, and Redis never depends on what it held before. A diff ("add to LEAD_CHANGE") is only right if applied exactly once, on top of exactly the state it was computed from. The PATCH merge itself happens in SQL (`alerts = alerts || patch`), so there is no read-modify-write in Java either.
+
+**Model answer:** "The state can be applied any number of times and the result is the same. A diff can't."
+
+</details>
+
+---
+
+### 3.2-5. The `sub:built` marker
+
+> What is `sub:built`, who deletes it, and who reacts when it's missing?
+
+<details>
+<summary>Model answer</summary>
+
+It says "the sets match Postgres". It goes missing when Redis comes back empty (the marker is gone with the sets), when a save's Redis write fails (the save deletes it), or when someone flushes Redis. Two things react: **user-pref** checks every 30 s and rebuilds the sets from Postgres, then sets the marker; **Stage 1** checks it once per batch and waits while it's missing, because an audience built from empty sets would silently lose alerts. One signal, three causes, one repair.
+
+**Model answer:** "It's the 'the cache is trustworthy' flag. Missing means user-pref rebuilds and Stage 1 holds plays until it's back."
+
+</details>
+
+---
+
+### 3.2-6. Why Stage 1 pauses instead of stopping
+
+> While the marker is missing, Stage 1 doesn't handle plays. Why not just stop polling Kafka?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** a consumer that stops calling `poll()` for longer than `max.poll.interval.ms` is thrown out of the group, and its lanes move (a rebalance); a loop that stops beating fails `/health` and Kubernetes restarts the pod. A long rebuild would cause both. **Fix:** rewind the batch (nothing committed), `pause()` every assigned lane, and keep polling and beating. A paused consumer's `poll()` returns nothing but keeps it in the group. When the marker is back, `resume()` and carry on from the rewound position. Lanes gained in a rebalance are paused too. A test held the marker away for twice `max.poll.interval.ms`: no rebalance, healthy, and the play arrived exactly once afterwards.
+
+**Model answer:** "Paused, not stopped: the consumer stays in the group and healthy, it just doesn't take records. Alerts are late, not lost."
+
+</details>
+
+---
+
+### 3.2-7. Rebuilding with a temporary key and RENAME
+
+> Why doesn't the rebuild just delete the sets and refill them?
+
+<details>
+<summary>Model answer</summary>
+
+Between the delete and the refill, Stage 1 could read an empty set and send an alert to nobody. The rebuild writes each set under `sub:tmp:<buildId>:…` and `RENAME`s it over the live name; `RENAME` is atomic, so a reader sees the old set or the new one, never half of one. A test read a followed set's size in a tight loop through 20 rebuilds and never saw zero. Leftover temporary keys from a crashed build are deleted at the end of the next one.
+
+**Model answer:** "Build beside, swap in one step. Readers never see a half-built set."
+
+</details>
+
+---
+
+### 3.2-8. Why history is its own consumer group
+
+> In the course, the worker that delivered a notification also wrote history. Why split them?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** if Stage 2 pushes and also inserts into Postgres, a slow or stopped Postgres stops it from finishing a batch, so it can't commit, so pushes stop too: a history outage silences alerts. **Fix:** history writers are a second consumer group on the same `notifications` topic. Each group has its own bookmark, so Stage 2 pushes at full speed while history falls behind and catches up. The insert is one statement per batch with `ON CONFLICT (user_id, message_id) DO NOTHING`, so a re-read batch inserts nothing new. Decision 3 anticipated this: each delivery channel can be its own group.
+
+**Model answer:** "Two groups, two bookmarks: pushes never wait for Postgres, and history catches up after an outage without duplicates."
+
+</details>
+
+---
+
+### 3.2-9. `created_at` from Kafka, and `cleared_at`
+
+> Why isn't a history row's time just the insert time? And why does clearing history record a time?
+
+<details>
+<summary>Model answer</summary>
+
+**`created_at`:** after a Postgres outage, the writer inserts an hour of history at once. With insert time, those rows would jump ahead of newer ones and count as unread. The Kafka timestamp is when Stage 1 sent the message, so catch-up keeps the real order; if Stage 1 sends a message twice, the first copy (and its time) wins. **`cleared_at`:** "clear all" deletes the rows, but the writer may still be catching up and insert older rows afterwards. Reads hide rows older than `cleared_at`, so cleared alerts don't come back. A test also found that clear must delete *all* the user's rows, not only those before Postgres's `now()`: `created_at` is Stage 1's clock, which can run slightly ahead.
+
+**Model answer:** "Time comes from when the alert happened, not when it was saved, and 'cleared' is a moment, not just a delete, because history can arrive late."
+
+</details>
+
+---
+
+### 3.2-10. The BOS bug
+
+> What was wrong with `sub:team:BOS`, and how does the smoke test prove it's fixed?
+
+<details>
+<summary>Model answer</summary>
+
+Team ids were bare abbreviations, so `BOS` was the Celtics, the Red Sox, and the Bruins: following one followed all three. Team ids are now league-qualified (`nba-bos`, `mlb-bos`, `nhl-bos`), built in one place (`TeamIds.of`), and the sets with them (`sub:team:nhl-bos:GOAL`). In the smoke test, Alice follows `nhl-bos` while the simulator plays two Boston games in other leagues (`game-LAL-BOS`, NBA; `game-BOS-HOU`, MLB). Under the old ids she'd hear both; her history must stay empty.
+
+**Model answer:** "An abbreviation isn't an id across leagues. Ids are league-qualified, and a test follows the Bruins during a Celtics and a Red Sox game and expects silence."
+
+</details>
+
+---
+
+### 3.2-11. Why the laptop's Postgres password is fixed
+
+> On AWS the chart generates the Postgres password. Why not on the laptop?
+
+<details>
+<summary>Model answer</summary>
+
+Postgres reads its password only when it first creates its data folder. On the laptop that folder is on the Mac and survives `make down`; the Kubernetes Secret doesn't. A generated password would change with every new cluster, while the folder kept the old one, and no service could log in. So the laptop uses a fixed password in `values-local.yaml`. Postgres is only reachable inside the cluster, behind a network policy, so a known laptop password costs nothing. On AWS the chart generates one and keeps it across upgrades with Helm's `lookup`.
+
+**Model answer:** "The data outlives the cluster but the Secret doesn't, and Postgres only reads the password once. The persistence check caught exactly that kind of mismatch."
+
+</details>
+
+---
+
+### 3.2-12. A frozen Postgres and the socket timeout
+
+> The history writer's test froze Postgres (`docker pause`). What did that reveal?
+
+<details>
+<summary>Model answer</summary>
+
+A query against a frozen database never returns: the TCP connection stays open and nothing answers. The writer's loop would hang instead of failing the batch and retrying, and its `/health` would eventually fail and restart the pod, with the same hang waiting. **Fix:** a JDBC socket timeout (30 s by default) on every pool, so a stuck query fails, the batch is rewound, and the loop retries. After unpausing, every message was in history exactly once, in lane order.
+
+**Model answer:** "Timeouts turn 'stuck forever' into 'failed, retry'. Without one, a frozen dependency freezes you too."
+
+</details>

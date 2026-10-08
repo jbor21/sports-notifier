@@ -7,7 +7,7 @@ The contract between the new web UI (phase 3b, in `web/`) and the backend. It wa
 | `openapi.yaml` | Every HTTP endpoint: paths, inputs, outputs, errors, examples. The standard format UI tools, code generators, and mock servers read. |
 | `websocket.md` | The live connection: notifications, live scores, keepalive, reconnecting. |
 
-Status: **final for Phase 3, 2026-10-06.** Reviewed against the backend design in the Phase 3 brainstorm. The backend implements it slice by slice: 3.2 (`/auth`, `/me`, `/follows`, `/notifications`), 3.3 (the alert catalog's behavior), 3.4 (`/games`, `/leagues`, live `game_update`). Until a slice lands, only the mock serves it.
+Status: **final for Phase 3, 2026-10-06.** Reviewed against the backend design in the Phase 3 brainstorm. The backend implements it slice by slice: 3.2 (`/auth`, `/me`, `/follows`, `/notifications`), 3.3 (the alert catalog's behavior), 3.4 (`/games`, `/leagues`, live `game_update`). Until a slice lands, only the mock serves it. **Served by the backend since 3.2:** `/auth`, `/me`, `/follows`, `/notifications` (alert switches are stored and validated; until 3.3, only game start, the sport's scoring alerts, and the final fire).
 
 ## Screens and the calls behind them
 
