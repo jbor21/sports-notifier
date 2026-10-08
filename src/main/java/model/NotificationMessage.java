@@ -1,5 +1,6 @@
 package model;
 
+import alerts.Play;
 import com.google.gson.JsonObject;
 
 /**
@@ -8,8 +9,9 @@ import com.google.gson.JsonObject;
  */
 public class NotificationMessage {
 
-    /** The play's id after the script, {@code <gameId>:v<version>}; the same for every user. With
-     *  {@code userId} it is Stage 2's dedup key, so a re-sent message is delivered once. */
+    /** The push's id: its headline alert's id, e.g. {@code nfl-1:SCORE:away:2} (3.1-style messages:
+     *  {@code <gameId>:v<version>}). With {@code userId} it is Stage 2's dedup key, so a re-sent or
+     *  re-detected message is delivered once. */
     private String messageId;
     /** Who receives it; also the Kafka key, so one user's messages stay in one lane, in order. */
     private String userId;
@@ -42,6 +44,26 @@ public class NotificationMessage {
     public static NotificationMessage of(GameEvent play, String userId, JsonObject notification) {
         NotificationMessage m = of(play, userId);
         m.notification = notification;
+        return m;
+    }
+
+    /** {@code userId}'s push about a moment: {@code body} is a {@link NotificationBody}, its id the message id. */
+    public static NotificationMessage of(Play play, String userId, JsonObject body) {
+        NotificationMessage m = new NotificationMessage();
+        JsonObject headline = body.getAsJsonObject("headline");
+        m.messageId = body.get("id").getAsString();
+        m.userId = userId;
+        m.gameId = play.gameId();
+        m.eventType = headline.get("type").getAsString();
+        m.message = headline.get("text").getAsString();
+        m.league = play.league();
+        m.homeTeam = play.homeTeam();
+        m.awayTeam = play.awayTeam();
+        m.homeScore = play.homeScore();
+        m.awayScore = play.awayScore();
+        m.status = play.status();
+        m.detectedAt = play.detectedAtMillis();
+        m.notification = body;
         return m;
     }
 

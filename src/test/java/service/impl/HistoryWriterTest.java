@@ -182,4 +182,16 @@ class HistoryWriterTest {
         drain(writer(), 3);
         assertEquals(1, rows().size());
     }
+
+    @Test
+    void gameNotAnObjectIsSkipped() throws Exception {
+        // PR #13 minor 2: a body whose "game" isn't an object threw outside the batch's guard.
+        String bob = UUID.randomUUID().toString();
+        NotificationMessage bad = message(bob, 1);
+        bad.getNotification().addProperty("game", "not an object");
+        send(bad);
+        send(message(bob, 2));
+        drain(writer(), 2);
+        assertEquals(1, rows().size());
+    }
 }

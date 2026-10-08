@@ -1,6 +1,7 @@
 package service.impl;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import model.NotificationMessage;
@@ -78,7 +79,10 @@ public final class HistoryWriter implements AutoCloseable {
             return null;
         }
         if (m == null || m.getMessageId() == null || m.getNotification() == null || !isUuid(m.getUserId())) return null;
-        JsonObject game = m.getNotification().getAsJsonObject("game");
+        // A wrong shape is unreadable like bad JSON: skip it. Thrown here, it escaped the batch and stalled the lane.
+        JsonElement g = m.getNotification().get("game");
+        if (g != null && !g.isJsonNull() && !g.isJsonObject()) return null;
+        JsonObject game = g == null || g.isJsonNull() ? null : g.getAsJsonObject();
         return new HistoryStore.HistoryRow(m.getUserId(), m.getMessageId(), Instant.ofEpochMilli(r.timestamp()),
                 m.getLeague(), m.getGameId(), teamId(game, "home"), teamId(game, "away"), m.getNotification().toString());
     }

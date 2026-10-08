@@ -12,6 +12,10 @@ public final class GameLabels {
         this.teams = teams;
     }
 
+    public Teams teams() {
+        return teams;
+    }
+
     /** {@code Q4}, {@code Half}, {@code 2OT}, {@code 3rd}, {@code SO}, {@code Bot 7th}; null unless the game is live. */
     public static String periodLabel(Play p) {
         if (!p.live() || p.period() <= 0) return null;
