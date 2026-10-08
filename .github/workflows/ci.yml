@@ -36,6 +36,14 @@ jobs:
           java-version: "17"
           cache: maven
       - run: mvn -B test
+      # A failed Kafka test leaves the broker's log and a docker stats snapshot here (testsupport.KafkaDiagnostics).
+      - name: Save Kafka diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kafka-diagnostics
+          path: target/kafka-diagnostics/
+          if-no-files-found: ignore
 
   # Deploy to a throwaway k3d cluster with the same make targets used on the laptop.
   deploy-check:

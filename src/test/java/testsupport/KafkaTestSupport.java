@@ -82,6 +82,16 @@ public final class KafkaTestSupport {
         return out;
     }
 
+    /** Whether this JVM has started the broker (diagnostics only look at a broker that exists). */
+    public static synchronized boolean started() {
+        return broker != null;
+    }
+
+    /** The broker container's own log, for {@link KafkaDiagnostics}. */
+    public static synchronized String brokerLogs() {
+        return broker == null ? "" : broker.getLogs();
+    }
+
     /** Freezes the broker's process (docker pause): connections stay open but nothing answers. */
     public static void pause() {
         bootstrap();
