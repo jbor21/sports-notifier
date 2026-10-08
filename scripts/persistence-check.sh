@@ -4,6 +4,9 @@
 # Checks: the image can own the mounted folder, the schema exists, a marker row survives a rebuild,
 # and an account made before the rebuild logs in after it with the same password, still has its
 # follow, and gets a simulated play: the sub:* sets were rebuilt from Postgres into the new, empty Redis.
+# The same user replays the same simulated game before and after: the new Redis starts the game's
+# version counter again, and the new notifications must reach history instead of colliding with the
+# old ones (<gameId>:v<version> is history's key; the counter starts from the clock, not 0).
 set -euo pipefail
 
 KUBE_CONTEXT=${KUBE_CONTEXT:-k3d-sports-notifier}
@@ -52,6 +55,25 @@ password="persist-$RANDOM-$RANDOM"
 [ "$(curl -s -o /dev/null -w '%{http_code}' -b "$jar" -H 'Content-Type: application/json' \
   -d '{"target":{"kind":"team","id":"mlb-hou"}}' "$BASE_URL/api/v1/follows")" = 201 ] || fail "follow before the rebuild failed"
 
+# Game starts for game-BOS-HOU in the user's history.
+starts() {
+  curl -fsS -b "$jar" "$BASE_URL/api/v1/notifications?game=game-BOS-HOU&limit=100" \
+    | jq '[.items[] | select(.headline.type == "GAME_START")] | length'
+}
+# Runs one simulator wave and waits until the user's history has more than $1 game starts.
+replay() {  # $1 = game starts before
+  local job got=0
+  job=$(scripts/simulate.sh SIM_WAVES=1)
+  for _ in $(seq 1 90); do
+    if (( $(starts) > $1 )); then got=1; break; fi
+    sleep 1
+  done
+  [ "$got" = 1 ] || fail "no new game start reached $user's history (simulator job $job)"
+  k wait "job/$job" --for=condition=complete --timeout=180s >/dev/null
+}
+replay 0
+before_rebuild=$(starts)
+
 rebuild
 
 [ "$(psql_ -c "SELECT count(*) FROM persistence_marker WHERE v = '$marker'")" = 1 ] \
@@ -61,13 +83,8 @@ psql_ -c "DROP TABLE persistence_marker" >/dev/null
 [ "$(curl -fsS -b "$jar" "$BASE_URL/api/v1/follows" | jq -r '.items[0].target.id')" = mlb-hou ] \
   || fail "$user's follow is gone after the rebuild"
 
-# Redis is new and empty; user-pref rebuilt the sets from Postgres, so a play reaches the follower.
-job=$(scripts/simulate.sh SIM_WAVES=1)
-got=0
-for _ in $(seq 1 90); do
-  if curl -fsS -b "$jar" "$BASE_URL/api/v1/notifications?game=game-BOS-HOU" \
-      | jq -e 'any(.items[]; .headline.type == "GAME_START")' >/dev/null; then got=1; break; fi
-  sleep 1
-done
-[ "$got" = 1 ] || fail "no game start reached $user after the rebuild (simulator job $job): were the sets rebuilt?"
-echo "PERSISTENCE OK"
+# Redis is new and empty; user-pref rebuilt the sets from Postgres, so the replayed game reaches the
+# follower, and its history rows are new rows, not collisions with the first run's.
+[ "$(starts)" = "$before_rebuild" ] || fail "history changed across the rebuild: $before_rebuild game starts before, $(starts) after"
+replay "$before_rebuild"
+echo "PERSISTENCE OK ($before_rebuild game start(s) before the rebuild, $(starts) after the replay)"

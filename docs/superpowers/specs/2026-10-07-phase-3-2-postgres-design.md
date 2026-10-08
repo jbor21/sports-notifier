@@ -208,6 +208,7 @@ A new main, `service.impl.HistoryWriterMain` (`SERVICE=history`, port 8088), con
 - **One statement per batch.** A multi-row `INSERT … ON CONFLICT (user_id, message_id) DO NOTHING` in one transaction, then `commitSync`. A crash after the insert and before the commit re-reads the batch, and the primary key makes the re-insert a no-op.
 - **`created_at` is the Kafka timestamp of the `notifications` record**, which Kafka stamps when Stage 1 sends it. Not the insert time. A catch-up after a Postgres outage then does not reorder history or show old alerts as unread. If Stage 1 is redelivered and sends a message again, the copy has a later timestamp, but the original comes first in its lane, so `ON CONFLICT DO NOTHING` keeps the original's time.
 - **Postgres down.** The insert fails, the batch is rewound and retried after a second, and the lag grows. Pushes are unaffected (Stage 2 is a separate group). When Postgres returns, the writer catches up in order.
+- **History ids must not repeat after a Redis reset.** `message_id` is `<gameId>:v<version>`, and `version` is a per-game counter in Redis (`version:<gameId>`). Postgres outlives Redis (`make down`, an AWS teardown), and the counter also has a TTL. A counter that restarted at 1 would reuse old ids: the replayed game's notifications would hit `ON CONFLICT DO NOTHING` and silently miss history. So the accept script starts a missing counter from the current time in milliseconds instead of 0, and versions only ever go up. It also keeps the API's `version` rising across a reset, so an open UI tab doesn't ignore new `game_update` messages as stale (3.4). Milliseconds (13 digits) stay exact through Lua's number-to-text conversion, which keeps 14 significant digits; a reseeded counter is lower than the old one only if a game had more accepted plays than milliseconds passed since its first, which a real game can't. Found by the final review; `persistence-check.sh` replays the same user's game before and after a rebuild.
 - **Retention bounds the gap.** The `notifications` topic keeps 1 day (3.1), so a Postgres outage longer than a day loses the history older than that. Pushes are not affected. Accepted; raising `retentionMs` is the knob, and the Stage 2 dedup TTL must stay longer than it.
 
 ### 7.3 The notification service
@@ -216,8 +217,8 @@ Reads only. Behind the gateway:
 
 - `GET /notifications?league&team&game&cursor&limit`: newest first, `created_at > cleared_at`, keyset paging on `(created_at, message_id)` so new rows never shift a page. The cursor is that pair, base64-encoded.
 - `GET /notifications/unread-count`: rows with `created_at > max(last_seen_at, cleared_at)`, counted up to 1000 (the badge shows "999+").
-- `POST /notifications/seen`: `last_seen_at = now()`.
-- `DELETE /notifications`: deletes the user's rows and sets `cleared_at = now()`. The `cleared_at` filter matters because the history writer may still insert older rows after a clear (a catch-up); without it, cleared alerts would reappear.
+- `POST /notifications/seen`: `last_seen_at = GREATEST(now(), the user's newest created_at)`. `created_at` is Stage 1's clock, which can run a little ahead of Postgres's; with plain `now()`, a row stamped ahead would stay unread after "seen".
+- `DELETE /notifications`: sets `cleared_at` the same way and deletes all the user's rows (not only those before `now()`, for the same reason). The `cleared_at` filter matters because the history writer may still insert older rows after a clear (a catch-up); without it, cleared alerts would reappear.
 - Every hour, deletes rows older than 30 days, in batches of 10,000, so one delete never holds a big lock.
 
 ## 8. Gateway routes
@@ -281,7 +282,10 @@ Each task keeps CI green, keeping the old path until its replacement lands, as i
 - **Interim alert mapping** (section 6): NFL scores are not told apart, no most-specific-follow rule. 3.3.
 - **A Postgres outage longer than the `notifications` topic's retention (1 day)** loses the history older than that.
 - **A missed Redis update can last up to a day** if Redis is unreachable during a save and user-pref then dies before the marker delete succeeds. The daily rebuild bounds it.
-- **Redis flushed in the middle of a Stage 1 batch**, after the marker check, can still lose that batch's alerts. The check is per batch, not per play.
+- **Redis flushed in the middle of a Stage 1 batch**, after the marker check, can still lose that batch's alerts. The check is per batch, not per play. (A Redis *failure* at the check rewinds the batch; only an empty-but-answering Redis mid-batch is the gap.)
+- **A save whose commit outcome is unknown, or a user-pref that dies between commit and the Redis write**, leaves Redis behind Postgres with the marker still present, until the daily rebuild: a deleted follow can keep alerting for up to a day.
+- **Redis's append-only file syncs every second**, so a crash can restore the marker without the last second of set changes; the daily rebuild bounds it.
+- **Saves wait for a rebuild while holding a pool connection** (pool 5): during a long rebuild, other Postgres calls on that pod can time out.
 - **Any marker loss pauses all alerts** until the rebuild finishes, including a single save's failed Redis update (section 6).
 - **Saves wait during a rebuild** (seconds at this scale). At millions of follows the rebuild would need to run per target instead of under one lock.
 - **No account deletion endpoint.** Not in the API.
