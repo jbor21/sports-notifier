@@ -12,6 +12,7 @@ import service.ProcessResult;
 import testsupport.TestPublisher;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -138,6 +139,21 @@ class EventProcessingServiceImplTest {
         service.processEvent(ev("e1", 10, 3, 1, "GAME_START"));
         assertEquals("3", jedis.hget("game:g1", "homeScore"));
         assertEquals("1", jedis.hget("game:g1", "awayScore"));
+    }
+
+    @Test
+    void acceptedPlaySavesPosition() {
+        GameEvent e = ev("e1", 10, 2, 0, "GAME_SYNC").withPosition("LIVE", 4, 2520, "TOP", 0, "IN_PLAY", 3, "4:12 - 4th");
+        assertEquals(ProcessResult.ACCEPTED, service.processEvent(e));
+        Map<String, String> g = jedis.hgetAll("game:g1");
+        assertEquals("LIVE", g.get("phase"));
+        assertEquals("4", g.get("period"));
+        assertEquals("2520", g.get("clockTenths"));
+        assertEquals("TOP", g.get("half"));
+        assertEquals("0", g.get("outs"));
+        assertEquals("IN_PLAY", g.get("stage"));
+        assertEquals("3", g.get("seasonType"));
+        assertEquals("4:12 - 4th", g.get("detail"));
     }
 
     @Test

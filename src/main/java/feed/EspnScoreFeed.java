@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *   and STATUS_CANCELED are ESPN's other names, not yet seen.
  * - A delay before the start arrives with state "in" and period 0.
  * - status.clock is seconds left in the period, status.period the quarter/period/inning.
+ * - event.season.type is 1 preseason, 2 regular season, 3 postseason.
  * - MLB half-inning is in status.type.shortDetail ("Top 4th", "Mid 4th", "Bot 4th", "End 4th")
  *   and outs in competitions[0].situation.outs. At the third out ESPN shows "Top 1st" with 0 outs
  *   for one poll before "Mid 1st"; that snapshot is rejected as stale and the next one heals it.
@@ -48,7 +49,7 @@ public final class EspnScoreFeed implements ScoreFeed {
     }
 
     /** One bad game is logged and skipped; it never costs the rest of the league. */
-    static List<GameSnapshot> parse(String json, String league) {
+    public static List<GameSnapshot> parse(String json, String league) {
         List<GameSnapshot> games = new ArrayList<>();
         JsonElement root = JsonParser.parseString(json);
         if (!root.isJsonObject()) return games;
@@ -99,7 +100,10 @@ public final class EspnScoreFeed implements ScoreFeed {
             homeScore = homeScore == null ? 0 : homeScore;
             awayScore = awayScore == null ? 0 : awayScore;
         }
-        double clockSeconds = status.has("clock") ? status.get("clock").getAsDouble() : 0.0;
+        // No clock is "unknown" (-1), not 0:00: a zero would make a 4th quarter look like its last second.
+        int clockTenths = status.has("clock") && !status.get("clock").isJsonNull()
+            ? (int) Math.round(status.get("clock").getAsDouble() * 10)
+            : (m.phase == Phase.PRE ? 0 : -1);
 
         boolean mlb = "MLB".equals(league);
         Half half = mlb ? halfFrom(str(type, "shortDetail")) : Half.TOP;
@@ -108,8 +112,8 @@ public final class EspnScoreFeed implements ScoreFeed {
         String date = str(event, "date");
 
         return new GameSnapshot(GameIds.of(league, id), league, home, away, homeScore, awayScore,
-            m.phase, period, half, mlb ? 0 : (int) Math.round(clockSeconds * 10), outs, m.stage, m.status,
-            startMillis(date));
+            m.phase, period, half, mlb ? 0 : clockTenths, outs, m.stage, m.status,
+            startMillis(date), seasonType(event), str(type, "shortDetail"));
     }
 
     private record Mapped(String status, Phase phase, Stage stage) {}
@@ -140,6 +144,12 @@ public final class EspnScoreFeed implements ScoreFeed {
         if ("pre".equals(state)) return new Mapped("SCHEDULED", Phase.PRE, Stage.IN_PLAY);
         if ("post".equals(state)) return new Mapped("SUSPENDED", Phase.LIVE, Stage.DELAYED);
         return new Mapped("IN_PROGRESS", Phase.LIVE, Stage.IN_PLAY);
+    }
+
+    /** 1 preseason, 2 regular season, 3 postseason; 2 when ESPN leaves it out. */
+    private static int seasonType(JsonObject event) {
+        JsonObject season = obj(event, "season");
+        return season != null && season.has("type") && season.get("type").isJsonPrimitive() ? season.get("type").getAsInt() : 2;
     }
 
     /** ESPN writes "2026-10-03T17:00Z", without seconds, which Instant.parse rejects. 0 if unreadable. */

@@ -16,7 +16,8 @@ import model.GameSnapshot;
  * </pre>
  *
  * <ul>
- *   <li>clock is 36000 minus tenths of a second left, so less time left is bigger (0 for MLB).</li>
+ *   <li>clock is 36000 minus tenths of a second left, so less time left is bigger (0 for MLB).
+ *       An unknown clock (-1) clamps to 0 and counts like 0:00, as it did before it had a value.</li>
  *   <li>half and outs are MLB only. Outs count only during a half: in "Mid" and "End" ESPN's
  *       outs are leftovers that flip between 2 and 0.</li>
  *   <li>score total comes last: it only breaks ties at a stopped clock (a touchdown, then the

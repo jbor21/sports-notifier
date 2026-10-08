@@ -87,6 +87,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      * ARGV[10] = gameId    ARGV[11] = finished TTL seconds   ARGV[12] = idle TTL / recent window seconds
      * ARGV[13] = now millis (from Java, so tests can move time)   ARGV[14] = the play as JSON
      * ARGV[15] = no-score heal window millis   ARGV[16] = version key TTL seconds
+     * ARGV[17..24] = phase, period, clockTenths, half, outs, stage, seasonType, detail (the position,
+     *                saved with the score for the live game API)
      *
      * Returns: 0 duplicate | -1 stale | -2 pending | the game's new version when accepted
      *
@@ -129,7 +131,9 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         "redis.call('HSET', KEYS[1],\n" +
         "  'homeTeam', ARGV[3], 'awayTeam', ARGV[4], 'league', ARGV[5],\n" +
         "  'homeScore', ARGV[6], 'awayScore', ARGV[7], 'status', ARGV[8],\n" +
-        "  'lastSeq', ARGV[1], 'lastTimestamp', ARGV[9])\n" +
+        "  'lastSeq', ARGV[1], 'lastTimestamp', ARGV[9],\n" +
+        "  'phase', ARGV[17], 'period', ARGV[18], 'clockTenths', ARGV[19], 'half', ARGV[20],\n" +
+        "  'outs', ARGV[21], 'stage', ARGV[22], 'seasonType', ARGV[23], 'detail', ARGV[24])\n" +
         "if ARGV[8] == 'FINAL' or ARGV[8] == 'CANCELED' then\n" +
         "  redis.call('EXPIRE', KEYS[1], ARGV[11])\n" +
         "else\n" +
@@ -194,7 +198,15 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                 String.valueOf(nowMillis.getAsLong()),
                 GameEventParser.toJson(event),
                 String.valueOf(NO_SCORE_HEAL_MILLIS),
-                String.valueOf(VERSION_TTL_SECONDS)
+                String.valueOf(VERSION_TTL_SECONDS),
+                orEmpty(event.getPhase()),
+                String.valueOf(event.getPeriod()),
+                String.valueOf(event.getClockTenths()),
+                orEmpty(event.getHalf()),
+                String.valueOf(event.getOuts()),
+                orEmpty(event.getStage()),
+                String.valueOf(event.getSeasonType()),
+                orEmpty(event.getDetail())
             );
             result = (Long) jedis.eval(PROCESS_EVENT_SCRIPT, keys, args);
         }

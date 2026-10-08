@@ -64,6 +64,11 @@ public final class PollDecision {
         if (!status.equals(snap.status()) || homeRise != 0 || awayRise != 0) {
             return Optional.of(event(GAME_SYNC, snap.homeTeam(), syncText(snap), snap, now));
         }
+        // Any other move (the clock, the period, outs) is a play too: Stage 1's detectors need it for
+        // close game late, a failed NFL try, and a period end whose short status fell between polls.
+        if (Seq.of(snap) != longOf(record.get("lastSeq"))) {
+            return Optional.of(event(GAME_SYNC, snap.homeTeam(), syncText(snap), snap, now));
+        }
         return Optional.empty();
     }
 
@@ -71,7 +76,9 @@ public final class PollDecision {
         long seq = Seq.of(snap);
         return new GameEvent(snap.gameId(), snap.gameId() + ":" + seq, type, team, now, description,
             snap.homeTeam(), snap.awayTeam(), snap.homeScore(), snap.awayScore(),
-            snap.status(), snap.league(), seq);
+            snap.status(), snap.league(), seq)
+            .withPosition(snap.phase().name(), snap.period(), snap.clockTenths(), snap.half().name(), snap.outs(),
+                snap.stage().name(), snap.seasonType(), snap.detail());
     }
 
     private static String scoreLine(GameSnapshot s) {
