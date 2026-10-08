@@ -433,3 +433,202 @@ A query against a frozen database never returns: the TCP connection stays open a
 **Model answer:** "Timeouts turn 'stuck forever' into 'failed, retry'. Without one, a frozen dependency freezes you too."
 
 </details>
+
+---
+
+## 3.3 Alerts, wave 1
+
+| # | Topic | First run |
+|---|---|---|
+| 1 | Why the detectors run in Stage 1 | **Not yet taken** |
+| 2 | Why every position change is a play | **Not yet taken** |
+| 3 | `det:<gameId>`: written last, set if higher | **Not yet taken** |
+| 4 | The baseline: why a game's first play alerts nobody | **Not yet taken** |
+| 5 | Alert ids: a counter, not the score, not the version | **Not yet taken** |
+| 6 | The most specific follow wins | **Not yet taken** |
+| 7 | One push per moment | **Not yet taken** |
+| 8 | Why the final is its own push, and arrives last | **Not yet taken** |
+| 9 | The NFL try, and the two-play clock rule | **Not yet taken** |
+| 10 | Overturns versus ESPN glitches | **Not yet taken** |
+| 11 | What replaying the recordings caught | **Not yet taken** |
+| 12 | Why the simulator gets new game ids every run | **Not yet taken** |
+
+---
+
+### 3.3-1. Why the detectors run in Stage 1
+
+> "Close game late" isn't in ESPN's feed. Where is it worked out, and why there?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** ESPN gives facts (score, clock, status); moments like a lead change come from comparing this snapshot with the last one, so something must remember each game. **Fix:** Stage 1 runs small detectors, each a pure function of (memory, play) → (alerts, new memory). **Why there:** `game-events` is keyed by game id, so one Stage 1 worker owns a game's lane and sees its plays in order (decision 4); that ordering is exactly what a "compare with the previous play" detector needs. The poller stays dumb, and the Lua script stays the score authority only.
+
+**Model answer:** "Detection needs every play of a game, in order, in one place. Kafka's per-game lanes give Stage 1 exactly that, so the detectors live there as pure functions I can unit-test."
+
+</details>
+
+---
+
+### 3.3-2. Why every position change is a play
+
+> Before 3.3 the poller only sent starts, scores, finals, and status changes. What broke, and what was the fix?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** "Close game late" needs the clock crossing 5:00; a failed NFL try needs the clock running again; a period end whose short status fell between polls needs the period number. None of those reached Stage 1 until the next score. **Fix:** the poller sends a `GAME_SYNC` whenever the snapshot's `seq` changed, about one play per game per 5-second poll. **Why it's fine:** ~10 plays a second at a busy peak is nothing for Kafka, the poller still knows nothing about alerts, and the topic becomes the game's full history (useful for Phase 4's replay and 3.4's live updates).
+
+**Model answer:** "Detectors can only see what arrives. Sending every position change costs a few plays a second and keeps the poller ignorant of alert rules."
+
+</details>
+
+---
+
+### 3.3-3. `det:<gameId>`: written last, set if higher
+
+> When does Stage 1 save a game's detector memory, and why not earlier?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** If the memory were saved before the notifications were confirmed and the worker crashed, the re-read would compare against memory that already includes the goal, and the goal alert would be lost. **Fix:** read memory, detect, send, wait for every confirmation, then write `det:<gameId>` (version + memory) with a script that only writes a higher version. **Why:** a crash before the write means the play is re-read against the same memory, so the same alerts with the same ids, and Stage 2 drops the copies. Set-if-higher stops a stalled old worker from putting older memory back after the lane moved.
+
+**Model answer:** "Memory is written after the sends are confirmed, so a crash replays the same detection with the same ids, and dedup absorbs the copies."
+
+</details>
+
+---
+
+### 3.3-4. The baseline: why a game's first play alerts nobody
+
+> Stage 1 has no memory for a game. What does the first play do?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** With no previous state there's nothing to compare: a game first seen at 0–3 would look like three goals, and a game seen mid-4th like a game start. **Fix:** the first play only becomes the baseline: every once-per-game condition already true (started, periods ended, close game late holding) is marked fired. **Why:** losing memory (expiry, a Redis wipe) then costs at most one moment and never sends stale ones.
+
+**Model answer:** "No memory means no comparison, so the first play just sets the baseline. A lost memory can miss a moment, never invent one."
+
+</details>
+
+---
+
+### 3.3-5. Alert ids: a counter, not the score, not the version
+
+> A score alert's id is `nhl-1:SCORE:home:3`. What is the 3, and why not the score or the play's version?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** Built from the score, an overturned goal (3 → 2) followed by a real goal makes "the 3rd goal" twice, and dedup drops the real one. Built from the version, a re-detection after a Redis rollback arrives on a newer play with a new id, so the user gets it twice. **Fix:** the number is the team's count of scoring alerts fired, kept in the detector memory, never lowered. **Why:** it's unique per real alert, and it rolls back together with the memory, so a re-detection gets the same id and Stage 2's `notif:<alertId>:<user>` drops it.
+
+**Model answer:** "The id counts alerts fired, which never goes down. That survives overturns, and it rolls back with the memory, so re-detections keep their ids."
+
+</details>
+
+---
+
+### 3.3-6. The most specific follow wins
+
+> A user follows the Bears with touchdowns on, and this Bears game with touchdowns off. Do they get the touchdown, and how is that computed?
+
+<details>
+<summary>Model answer</summary>
+
+**No.** The game follow decides. Per alert, inside Redis: game:s ∪ ((teamH:s ∪ teamA:s) − game:ANY) ∪ (league:s − game:ANY − teamH:ANY − teamA:ANY). **Why `:ANY`:** "follows this game" must include users with the alert off, and the per-alert sets don't hold them; `sub:<kind>:<target>:ANY` does. **Why in Redis:** a handful of SUNIONSTORE/SDIFFSTORE per alert instead of one lookup per follower, and the union de-duplicates users reached through several follows.
+
+**Model answer:** "Set math in Redis: game followers decide for themselves, team followers next, league followers only if they follow neither. The ANY sets say who follows a target at all."
+
+</details>
+
+---
+
+### 3.3-7. One push per moment
+
+> A touchdown also gives the lead. How does a user get one push, and how does that scale to a huge audience?
+
+<details>
+<summary>Model answer</summary>
+
+**Fix:** one audience set per alert; the union is paged with SSCAN (1,000 at a time); per page, one SMISMEMBER per alert says which alerts each user gets. Their highest-priority alert is the headline, the rest are extras, and the push id is the headline's alert id. **Why:** memory stays one page however big the audience, and bodies are built once per distinct alert combination, not per user.
+
+**Model answer:** "Page the union, ask Redis which alerts each user is in, headline the most important, attach the rest. One page in memory at a time."
+
+</details>
+
+---
+
+### 3.3-8. Why the final is its own push, and arrives last
+
+> An overtime goal ends the game. What does the user get, and in what order?
+
+<details>
+<summary>Model answer</summary>
+
+Two pushes: the goal, then "Final (OT)". The final is never merged (decision 15). **Order:** Stage 1 sends every moment message before any final message; both are keyed by user id, so they land in the same `notifications` lane in that order, and Stage 2 handles a lane one message at a time. Tested end to end through Kafka, Stage 2, and a gateway channel.
+
+**Model answer:** "Same user, same lane; the moment is produced first, so it is delivered first."
+
+</details>
+
+---
+
+### 3.3-9. The NFL try, and the two-play clock rule
+
+> After a touchdown, when is the extra point "no good"?
+
+<details>
+<summary>Model answer</summary>
+
+The try is pending after +6. +1 or +2 from the scorer: good (a +2 is a conversion, not a safety). No good when the other team scores, the period ends, or the clock has been below the touchdown's clock for **two plays in a row**. **Why two:** one snapshot can carry a wrong clock (the recordings show 0:00 mid-period), and ESPN can post the point a few seconds after the clock restarts. The same rule guards "close game late". A try pending when the game ends says nothing: it wasn't attempted.
+
+**Model answer:** "A small state machine in the memory; the clock must stay below the touchdown's time for two plays, because single snapshots lie."
+
+</details>
+
+---
+
+### 3.3-10. Overturns versus ESPN glitches
+
+> The score goes down. Overturn or glitch, and what does the user get?
+
+<details>
+<summary>Model answer</summary>
+
+**Evidence:** in the recordings, real overturns drop at the stopped clock of the review and stay down; glitches drop while the clock runs and come back within 27 s. **Fix:** alerts count from the last believed score. A drop is believed after 60 s of game clock (MLB: two more plays), a new period, or the final; then "Rangers goal overturned" goes out with the corrected score, under the scoring switch, with the next counter id. A drop that comes back first sends nothing, and the goal is not announced again.
+
+**Model answer:** "Don't believe a drop until it has held for a minute of game clock; glitches come back in under 30 s, real overturns stay."
+
+</details>
+
+---
+
+### 3.3-11. What replaying the recordings caught
+
+> The unit tests passed. What did running 60 hours of real ESPN data through the detectors find?
+
+<details>
+<summary>Model answer</summary>
+
+Three real bugs: ESPN shows HALFTIME with the period already at 3, which sent "End of Q3" at the half; ESPN glitches that dropped a goal and restored it sent the goal twice; and the NHL scoreboard calls Utah `UTA` while the team list says `UTAH`, so Utah followers never got alerts. **Why it matters:** each came from data no hand-written test imagined; four golden timelines now pin the behavior on real games.
+
+**Model answer:** "Real data finds the cases you didn't think of. Replay is cheap because the detectors are pure functions."
+
+</details>
+
+---
+
+### 3.3-12. Why the simulator gets new game ids every run
+
+> The old simulator reused `game-BOS-HOU`. Why did that have to change?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** alert ids no longer contain the play's version, so a second run of the same id would find last run's detector memory (start and final already fired), Stage 2's dedup keys, and history's primary key, and alert nobody. **Fix:** `<league>-sim<run start>-<slot>`, and the simulator now drives the real poller through a scripted `ScoreFeed`. **Test:** two runs in a row reach the same user twice.
+
+**Model answer:** "Deterministic ids mean a reused game id is the same game. Each simulator run is a new game, so it gets a new id."
+
+</details>

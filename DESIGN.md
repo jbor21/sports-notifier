@@ -2,7 +2,7 @@
 
 This is the map of the project: what it does today, what we are changing it into, and every decision we made on the way. It is written so you can explain the system without reading the code line by line.
 
-Last updated 2026-10-07. Phases 1, 2, 3.1, and 3.2 are merged (see "Build order"). "What exists today" describes the course version as it was before the redesign.
+Last updated 2026-10-08. Phases 1, 2, 3.1, and 3.2 are merged; 3.3 is built (see "Build order"). "What exists today" describes the course version as it was before the redesign.
 
 Revised 2026-09-28: hosting moved from one always-on Hetzner VM to Kubernetes, run on your laptop (k3d) and on AWS (EKS) only when you want it up. Kafka gets three brokers in the cloud. The evidence step became a correctness checker plus a chaos suite. Decisions 2, 6, 7, and 9 changed; 12 through 14 are new.
 
@@ -619,7 +619,7 @@ We implement in this order. The system runs at the end of each step. Everything 
 3. **The new pipeline**, split into four sub-phases, each with its own spec, plan, and PR:
    - **3.1 Kafka pipeline.** Kafka through Strimzi with one broker, the two topics, script-then-produce with the outbox, Stage 1 and Stage 2 consumer groups, per-user dedup, gateway routing (decision 13). **Merged** (PR #6, 2026-10-07; spec and plan `2026-10-06-phase-3-1-kafka-pipeline`).
    - **3.2 Postgres.** Accounts, follows shaped for decision 15, notification history, Redis subscriber sets rebuilt on startup, the `/auth`, `/me`, `/follows`, `/notifications` endpoints of `docs/api/`. The course UI stops working here; the new UI arrives in 3b. **Merged** (PR #13, 2026-10-07; spec and plan `2026-10-07-phase-3-2-postgres`; history writers are their own consumer group; follow saves commit to Postgres before Redis).
-   - **3.3 Alerts, wave 1.** The detector framework and wave 1 detectors in Stage 1, most-specific-follow set math, combining, deterministic alert ids (decision 15). Spec `2026-10-07-phase-3-3-alerts-wave-1`.
+   - **3.3 Alerts, wave 1.** The detector framework and wave 1 detectors in Stage 1, most-specific-follow set math, combining, deterministic alert ids (decision 15). **Built** 2026-10-08 (spec and plan `2026-10-07-phase-3-3-alerts-wave-1`; detectors replayed against the ESPN recordings; overturns alert once they hold).
    - **3.4 Live API.** `/games`, `/leagues`, the alert catalog, and live `game_update` over the WebSocket through a per-game channel.
 3b. **New UI.** A full redesign of the web UI, frontend only: it calls the gateway's API and WebSocket and has no database, auth, or server code of its own. The code lives in `web/` and ships as static files in the same Helm chart. It is built against the API spec in `docs/api/`, written before Phase 3 and implemented by Phase 3, so the UI can start early against a mock server. Built as an installable web app (PWA) so Phase 7's Web Push can reach a phone. Screens can be designed any time; the build lands after Phase 3.
 4. **Proof tools.** Recorded-game replay, the correctness checker, OpenTelemetry traces, Prometheus and Grafana for lag and latency. Alert waves 2 and 3, each detector tested against recorded games.
