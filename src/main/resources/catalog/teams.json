@@ -5,868 +5,1736 @@
       "league": "MLB",
       "abbreviation": "ARI",
       "displayName": "Arizona Diamondbacks",
-      "shortName": "Diamondbacks"
+      "shortName": "Diamondbacks",
+      "location": "Arizona",
+      "name": "Diamondbacks",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/ari.png",
+      "colors": {
+        "primary": "#aa182c",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "mlb-ath",
       "league": "MLB",
       "abbreviation": "ATH",
       "displayName": "Athletics",
-      "shortName": "Athletics"
+      "shortName": "Athletics",
+      "location": "Athletics",
+      "name": "Athletics",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/ath.png",
+      "colors": {
+        "primary": "#003831",
+        "secondary": "#efb21e"
+      }
     },
     {
       "id": "mlb-atl",
       "league": "MLB",
       "abbreviation": "ATL",
       "displayName": "Atlanta Braves",
-      "shortName": "Braves"
+      "shortName": "Braves",
+      "location": "Atlanta",
+      "name": "Braves",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/atl.png",
+      "colors": {
+        "primary": "#0c2340",
+        "secondary": "#ba0c2f"
+      }
     },
     {
       "id": "mlb-bal",
       "league": "MLB",
       "abbreviation": "BAL",
       "displayName": "Baltimore Orioles",
-      "shortName": "Orioles"
+      "shortName": "Orioles",
+      "location": "Baltimore",
+      "name": "Orioles",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/bal.png",
+      "colors": {
+        "primary": "#df4601",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "mlb-bos",
       "league": "MLB",
       "abbreviation": "BOS",
       "displayName": "Boston Red Sox",
-      "shortName": "Red Sox"
+      "shortName": "Red Sox",
+      "location": "Boston",
+      "name": "Red Sox",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/bos.png",
+      "colors": {
+        "primary": "#0d2b56",
+        "secondary": "#bd3039"
+      }
     },
     {
       "id": "mlb-chc",
       "league": "MLB",
       "abbreviation": "CHC",
       "displayName": "Chicago Cubs",
-      "shortName": "Cubs"
+      "shortName": "Cubs",
+      "location": "Chicago",
+      "name": "Cubs",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/chc.png",
+      "colors": {
+        "primary": "#0e3386",
+        "secondary": "#cc3433"
+      }
     },
     {
       "id": "mlb-chw",
       "league": "MLB",
       "abbreviation": "CHW",
       "displayName": "Chicago White Sox",
-      "shortName": "White Sox"
+      "shortName": "White Sox",
+      "location": "Chicago",
+      "name": "White Sox",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/chw.png",
+      "colors": {
+        "primary": "#000000",
+        "secondary": "#c4ced4"
+      }
     },
     {
       "id": "mlb-cin",
       "league": "MLB",
       "abbreviation": "CIN",
       "displayName": "Cincinnati Reds",
-      "shortName": "Reds"
+      "shortName": "Reds",
+      "location": "Cincinnati",
+      "name": "Reds",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/cin.png",
+      "colors": {
+        "primary": "#c6011f",
+        "secondary": "#ffffff"
+      }
     },
     {
       "id": "mlb-cle",
       "league": "MLB",
       "abbreviation": "CLE",
       "displayName": "Cleveland Guardians",
-      "shortName": "Guardians"
+      "shortName": "Guardians",
+      "location": "Cleveland",
+      "name": "Guardians",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/cle.png",
+      "colors": {
+        "primary": "#002b5c",
+        "secondary": "#e31937"
+      }
     },
     {
       "id": "mlb-col",
       "league": "MLB",
       "abbreviation": "COL",
       "displayName": "Colorado Rockies",
-      "shortName": "Rockies"
+      "shortName": "Rockies",
+      "location": "Colorado",
+      "name": "Rockies",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/col.png",
+      "colors": {
+        "primary": "#33006f",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "mlb-det",
       "league": "MLB",
       "abbreviation": "DET",
       "displayName": "Detroit Tigers",
-      "shortName": "Tigers"
+      "shortName": "Tigers",
+      "location": "Detroit",
+      "name": "Tigers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/det.png",
+      "colors": {
+        "primary": "#0a2240",
+        "secondary": "#ff4713"
+      }
     },
     {
       "id": "mlb-hou",
       "league": "MLB",
       "abbreviation": "HOU",
       "displayName": "Houston Astros",
-      "shortName": "Astros"
+      "shortName": "Astros",
+      "location": "Houston",
+      "name": "Astros",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/hou.png",
+      "colors": {
+        "primary": "#002d62",
+        "secondary": "#eb6e1f"
+      }
     },
     {
       "id": "mlb-kc",
       "league": "MLB",
       "abbreviation": "KC",
       "displayName": "Kansas City Royals",
-      "shortName": "Royals"
+      "shortName": "Royals",
+      "location": "Kansas City",
+      "name": "Royals",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/kc.png",
+      "colors": {
+        "primary": "#004687",
+        "secondary": "#7ab2dd"
+      }
     },
     {
       "id": "mlb-laa",
       "league": "MLB",
       "abbreviation": "LAA",
       "displayName": "Los Angeles Angels",
-      "shortName": "Angels"
+      "shortName": "Angels",
+      "location": "Los Angeles",
+      "name": "Angels",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/laa.png",
+      "colors": {
+        "primary": "#ba0021",
+        "secondary": "#c4ced4"
+      }
     },
     {
       "id": "mlb-lad",
       "league": "MLB",
       "abbreviation": "LAD",
       "displayName": "Los Angeles Dodgers",
-      "shortName": "Dodgers"
+      "shortName": "Dodgers",
+      "location": "Los Angeles",
+      "name": "Dodgers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/lad.png",
+      "colors": {
+        "primary": "#005a9c",
+        "secondary": "#ffffff"
+      }
     },
     {
       "id": "mlb-mia",
       "league": "MLB",
       "abbreviation": "MIA",
       "displayName": "Miami Marlins",
-      "shortName": "Marlins"
+      "shortName": "Marlins",
+      "location": "Miami",
+      "name": "Marlins",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/mia.png",
+      "colors": {
+        "primary": "#00a3e0",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "mlb-mil",
       "league": "MLB",
       "abbreviation": "MIL",
       "displayName": "Milwaukee Brewers",
-      "shortName": "Brewers"
+      "shortName": "Brewers",
+      "location": "Milwaukee",
+      "name": "Brewers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/mil.png",
+      "colors": {
+        "primary": "#13294b",
+        "secondary": "#ffc72c"
+      }
     },
     {
       "id": "mlb-min",
       "league": "MLB",
       "abbreviation": "MIN",
       "displayName": "Minnesota Twins",
-      "shortName": "Twins"
+      "shortName": "Twins",
+      "location": "Minnesota",
+      "name": "Twins",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/min.png",
+      "colors": {
+        "primary": "#031f40",
+        "secondary": "#e20e32"
+      }
     },
     {
       "id": "mlb-nym",
       "league": "MLB",
       "abbreviation": "NYM",
       "displayName": "New York Mets",
-      "shortName": "Mets"
+      "shortName": "Mets",
+      "location": "New York",
+      "name": "Mets",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/nym.png",
+      "colors": {
+        "primary": "#002d72",
+        "secondary": "#ff5910"
+      }
     },
     {
       "id": "mlb-nyy",
       "league": "MLB",
       "abbreviation": "NYY",
       "displayName": "New York Yankees",
-      "shortName": "Yankees"
+      "shortName": "Yankees",
+      "location": "New York",
+      "name": "Yankees",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/nyy.png",
+      "colors": {
+        "primary": "#132448",
+        "secondary": "#c4ced4"
+      }
     },
     {
       "id": "mlb-phi",
       "league": "MLB",
       "abbreviation": "PHI",
       "displayName": "Philadelphia Phillies",
-      "shortName": "Phillies"
+      "shortName": "Phillies",
+      "location": "Philadelphia",
+      "name": "Phillies",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/phi.png",
+      "colors": {
+        "primary": "#e81828",
+        "secondary": "#003278"
+      }
     },
     {
       "id": "mlb-pit",
       "league": "MLB",
       "abbreviation": "PIT",
       "displayName": "Pittsburgh Pirates",
-      "shortName": "Pirates"
+      "shortName": "Pirates",
+      "location": "Pittsburgh",
+      "name": "Pirates",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/pit.png",
+      "colors": {
+        "primary": "#000000",
+        "secondary": "#fdb827"
+      }
     },
     {
       "id": "mlb-sd",
       "league": "MLB",
       "abbreviation": "SD",
       "displayName": "San Diego Padres",
-      "shortName": "Padres"
+      "shortName": "Padres",
+      "location": "San Diego",
+      "name": "Padres",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/sd.png",
+      "colors": {
+        "primary": "#2f241d",
+        "secondary": "#ffc425"
+      }
     },
     {
       "id": "mlb-sea",
       "league": "MLB",
       "abbreviation": "SEA",
       "displayName": "Seattle Mariners",
-      "shortName": "Mariners"
+      "shortName": "Mariners",
+      "location": "Seattle",
+      "name": "Mariners",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/sea.png",
+      "colors": {
+        "primary": "#005c5c",
+        "secondary": "#0c2c56"
+      }
     },
     {
       "id": "mlb-sf",
       "league": "MLB",
       "abbreviation": "SF",
       "displayName": "San Francisco Giants",
-      "shortName": "Giants"
+      "shortName": "Giants",
+      "location": "San Francisco",
+      "name": "Giants",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/sf.png",
+      "colors": {
+        "primary": "#000000",
+        "secondary": "#fd5a1e"
+      }
     },
     {
       "id": "mlb-stl",
       "league": "MLB",
       "abbreviation": "STL",
       "displayName": "St. Louis Cardinals",
-      "shortName": "Cardinals"
+      "shortName": "Cardinals",
+      "location": "St. Louis",
+      "name": "Cardinals",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/stl.png",
+      "colors": {
+        "primary": "#be0a14",
+        "secondary": "#001541"
+      }
     },
     {
       "id": "mlb-tb",
       "league": "MLB",
       "abbreviation": "TB",
       "displayName": "Tampa Bay Rays",
-      "shortName": "Rays"
+      "shortName": "Rays",
+      "location": "Tampa Bay",
+      "name": "Rays",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/tb.png",
+      "colors": {
+        "primary": "#092c5c",
+        "secondary": "#8fbce6"
+      }
     },
     {
       "id": "mlb-tex",
       "league": "MLB",
       "abbreviation": "TEX",
       "displayName": "Texas Rangers",
-      "shortName": "Rangers"
+      "shortName": "Rangers",
+      "location": "Texas",
+      "name": "Rangers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/tex.png",
+      "colors": {
+        "primary": "#003278",
+        "secondary": "#c0111f"
+      }
     },
     {
       "id": "mlb-tor",
       "league": "MLB",
       "abbreviation": "TOR",
       "displayName": "Toronto Blue Jays",
-      "shortName": "Blue Jays"
+      "shortName": "Blue Jays",
+      "location": "Toronto",
+      "name": "Blue Jays",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/tor.png",
+      "colors": {
+        "primary": "#134a8e",
+        "secondary": "#6cace5"
+      }
     },
     {
       "id": "mlb-wsh",
       "league": "MLB",
       "abbreviation": "WSH",
       "displayName": "Washington Nationals",
-      "shortName": "Nationals"
+      "shortName": "Nationals",
+      "location": "Washington",
+      "name": "Nationals",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/mlb/500/wsh.png",
+      "colors": {
+        "primary": "#ab0003",
+        "secondary": "#11225b"
+      }
     },
     {
       "id": "nba-atl",
       "league": "NBA",
       "abbreviation": "ATL",
       "displayName": "Atlanta Hawks",
-      "shortName": "Hawks"
+      "shortName": "Hawks",
+      "location": "Atlanta",
+      "name": "Hawks",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/atl.png",
+      "colors": {
+        "primary": "#c8102e",
+        "secondary": "#fdb927"
+      }
     },
     {
       "id": "nba-bkn",
       "league": "NBA",
       "abbreviation": "BKN",
       "displayName": "Brooklyn Nets",
-      "shortName": "Nets"
+      "shortName": "Nets",
+      "location": "Brooklyn",
+      "name": "Nets",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/bkn.png",
+      "colors": {
+        "primary": "#000000",
+        "secondary": "#ffffff"
+      }
     },
     {
       "id": "nba-bos",
       "league": "NBA",
       "abbreviation": "BOS",
       "displayName": "Boston Celtics",
-      "shortName": "Celtics"
+      "shortName": "Celtics",
+      "location": "Boston",
+      "name": "Celtics",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/bos.png",
+      "colors": {
+        "primary": "#008348",
+        "secondary": "#ffffff"
+      }
     },
     {
       "id": "nba-cha",
       "league": "NBA",
       "abbreviation": "CHA",
       "displayName": "Charlotte Hornets",
-      "shortName": "Hornets"
+      "shortName": "Hornets",
+      "location": "Charlotte",
+      "name": "Hornets",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/cha.png",
+      "colors": {
+        "primary": "#008ca8",
+        "secondary": "#1d1060"
+      }
     },
     {
       "id": "nba-chi",
       "league": "NBA",
       "abbreviation": "CHI",
       "displayName": "Chicago Bulls",
-      "shortName": "Bulls"
+      "shortName": "Bulls",
+      "location": "Chicago",
+      "name": "Bulls",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/chi.png",
+      "colors": {
+        "primary": "#ce1141",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nba-cle",
       "league": "NBA",
       "abbreviation": "CLE",
       "displayName": "Cleveland Cavaliers",
-      "shortName": "Cavaliers"
+      "shortName": "Cavaliers",
+      "location": "Cleveland",
+      "name": "Cavaliers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/cle.png",
+      "colors": {
+        "primary": "#860038",
+        "secondary": "#bc945c"
+      }
     },
     {
       "id": "nba-dal",
       "league": "NBA",
       "abbreviation": "DAL",
       "displayName": "Dallas Mavericks",
-      "shortName": "Mavericks"
+      "shortName": "Mavericks",
+      "location": "Dallas",
+      "name": "Mavericks",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/dal.png",
+      "colors": {
+        "primary": "#0064b1",
+        "secondary": "#bbc4ca"
+      }
     },
     {
       "id": "nba-den",
       "league": "NBA",
       "abbreviation": "DEN",
       "displayName": "Denver Nuggets",
-      "shortName": "Nuggets"
+      "shortName": "Nuggets",
+      "location": "Denver",
+      "name": "Nuggets",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/den.png",
+      "colors": {
+        "primary": "#0e2240",
+        "secondary": "#fec524"
+      }
     },
     {
       "id": "nba-det",
       "league": "NBA",
       "abbreviation": "DET",
       "displayName": "Detroit Pistons",
-      "shortName": "Pistons"
+      "shortName": "Pistons",
+      "location": "Detroit",
+      "name": "Pistons",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/det.png",
+      "colors": {
+        "primary": "#1d428a",
+        "secondary": "#c8102e"
+      }
     },
     {
       "id": "nba-gs",
       "league": "NBA",
       "abbreviation": "GS",
       "displayName": "Golden State Warriors",
-      "shortName": "Warriors"
+      "shortName": "Warriors",
+      "location": "Golden State",
+      "name": "Warriors",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/gs.png",
+      "colors": {
+        "primary": "#fdb927",
+        "secondary": "#1d428a"
+      }
     },
     {
       "id": "nba-hou",
       "league": "NBA",
       "abbreviation": "HOU",
       "displayName": "Houston Rockets",
-      "shortName": "Rockets"
+      "shortName": "Rockets",
+      "location": "Houston",
+      "name": "Rockets",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/hou.png",
+      "colors": {
+        "primary": "#ce0e2d",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nba-ind",
       "league": "NBA",
       "abbreviation": "IND",
       "displayName": "Indiana Pacers",
-      "shortName": "Pacers"
+      "shortName": "Pacers",
+      "location": "Indiana",
+      "name": "Pacers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/ind.png",
+      "colors": {
+        "primary": "#0c2340",
+        "secondary": "#ffd520"
+      }
     },
     {
       "id": "nba-lac",
       "league": "NBA",
       "abbreviation": "LAC",
       "displayName": "LA Clippers",
-      "shortName": "Clippers"
+      "shortName": "Clippers",
+      "location": "LA",
+      "name": "Clippers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/lac.png",
+      "colors": {
+        "primary": "#12173f",
+        "secondary": "#c8102e"
+      }
     },
     {
       "id": "nba-lal",
       "league": "NBA",
       "abbreviation": "LAL",
       "displayName": "Los Angeles Lakers",
-      "shortName": "Lakers"
+      "shortName": "Lakers",
+      "location": "Los Angeles",
+      "name": "Lakers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/lal.png",
+      "colors": {
+        "primary": "#552583",
+        "secondary": "#fdb927"
+      }
     },
     {
       "id": "nba-mem",
       "league": "NBA",
       "abbreviation": "MEM",
       "displayName": "Memphis Grizzlies",
-      "shortName": "Grizzlies"
+      "shortName": "Grizzlies",
+      "location": "Memphis",
+      "name": "Grizzlies",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/mem.png",
+      "colors": {
+        "primary": "#5d76a9",
+        "secondary": "#12173f"
+      }
     },
     {
       "id": "nba-mia",
       "league": "NBA",
       "abbreviation": "MIA",
       "displayName": "Miami Heat",
-      "shortName": "Heat"
+      "shortName": "Heat",
+      "location": "Miami",
+      "name": "Heat",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/mia.png",
+      "colors": {
+        "primary": "#98002e",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nba-mil",
       "league": "NBA",
       "abbreviation": "MIL",
       "displayName": "Milwaukee Bucks",
-      "shortName": "Bucks"
+      "shortName": "Bucks",
+      "location": "Milwaukee",
+      "name": "Bucks",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/mil.png",
+      "colors": {
+        "primary": "#00471b",
+        "secondary": "#eee1c6"
+      }
     },
     {
       "id": "nba-min",
       "league": "NBA",
       "abbreviation": "MIN",
       "displayName": "Minnesota Timberwolves",
-      "shortName": "Timberwolves"
+      "shortName": "Timberwolves",
+      "location": "Minnesota",
+      "name": "Timberwolves",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/min.png",
+      "colors": {
+        "primary": "#266092",
+        "secondary": "#79bc43"
+      }
     },
     {
       "id": "nba-no",
       "league": "NBA",
       "abbreviation": "NO",
       "displayName": "New Orleans Pelicans",
-      "shortName": "Pelicans"
+      "shortName": "Pelicans",
+      "location": "New Orleans",
+      "name": "Pelicans",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/no.png",
+      "colors": {
+        "primary": "#0a2240",
+        "secondary": "#b4975a"
+      }
     },
     {
       "id": "nba-ny",
       "league": "NBA",
       "abbreviation": "NY",
       "displayName": "New York Knicks",
-      "shortName": "Knicks"
+      "shortName": "Knicks",
+      "location": "New York",
+      "name": "Knicks",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/ny.png",
+      "colors": {
+        "primary": "#1d428a",
+        "secondary": "#f58426"
+      }
     },
     {
       "id": "nba-okc",
       "league": "NBA",
       "abbreviation": "OKC",
       "displayName": "Oklahoma City Thunder",
-      "shortName": "Thunder"
+      "shortName": "Thunder",
+      "location": "Oklahoma City",
+      "name": "Thunder",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/okc.png",
+      "colors": {
+        "primary": "#007ac1",
+        "secondary": "#ef3b24"
+      }
     },
     {
       "id": "nba-orl",
       "league": "NBA",
       "abbreviation": "ORL",
       "displayName": "Orlando Magic",
-      "shortName": "Magic"
+      "shortName": "Magic",
+      "location": "Orlando",
+      "name": "Magic",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/orl.png",
+      "colors": {
+        "primary": "#0150b5",
+        "secondary": "#9ca0a3"
+      }
     },
     {
       "id": "nba-phi",
       "league": "NBA",
       "abbreviation": "PHI",
       "displayName": "Philadelphia 76ers",
-      "shortName": "76ers"
+      "shortName": "76ers",
+      "location": "Philadelphia",
+      "name": "76ers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/phi.png",
+      "colors": {
+        "primary": "#1d428a",
+        "secondary": "#e01234"
+      }
     },
     {
       "id": "nba-phx",
       "league": "NBA",
       "abbreviation": "PHX",
       "displayName": "Phoenix Suns",
-      "shortName": "Suns"
+      "shortName": "Suns",
+      "location": "Phoenix",
+      "name": "Suns",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/phx.png",
+      "colors": {
+        "primary": "#29127a",
+        "secondary": "#e56020"
+      }
     },
     {
       "id": "nba-por",
       "league": "NBA",
       "abbreviation": "POR",
       "displayName": "Portland Trail Blazers",
-      "shortName": "Trail Blazers"
+      "shortName": "Trail Blazers",
+      "location": "Portland",
+      "name": "Trail Blazers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/por.png",
+      "colors": {
+        "primary": "#e03a3e",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nba-sa",
       "league": "NBA",
       "abbreviation": "SA",
       "displayName": "San Antonio Spurs",
-      "shortName": "Spurs"
+      "shortName": "Spurs",
+      "location": "San Antonio",
+      "name": "Spurs",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/sa.png",
+      "colors": {
+        "primary": "#000000",
+        "secondary": "#c4ced4"
+      }
     },
     {
       "id": "nba-sac",
       "league": "NBA",
       "abbreviation": "SAC",
       "displayName": "Sacramento Kings",
-      "shortName": "Kings"
+      "shortName": "Kings",
+      "location": "Sacramento",
+      "name": "Kings",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/sac.png",
+      "colors": {
+        "primary": "#5a2d81",
+        "secondary": "#6a7a82"
+      }
     },
     {
       "id": "nba-tor",
       "league": "NBA",
       "abbreviation": "TOR",
       "displayName": "Toronto Raptors",
-      "shortName": "Raptors"
+      "shortName": "Raptors",
+      "location": "Toronto",
+      "name": "Raptors",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/tor.png",
+      "colors": {
+        "primary": "#d91244",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nba-utah",
       "league": "NBA",
       "abbreviation": "UTAH",
       "displayName": "Utah Jazz",
-      "shortName": "Jazz"
+      "shortName": "Jazz",
+      "location": "Utah",
+      "name": "Jazz",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/utah.png",
+      "colors": {
+        "primary": "#4e008e",
+        "secondary": "#79a3dc"
+      }
     },
     {
       "id": "nba-wsh",
       "league": "NBA",
       "abbreviation": "WSH",
       "displayName": "Washington Wizards",
-      "shortName": "Wizards"
+      "shortName": "Wizards",
+      "location": "Washington",
+      "name": "Wizards",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nba/500/wsh.png",
+      "colors": {
+        "primary": "#e31837",
+        "secondary": "#002b5c"
+      }
     },
     {
       "id": "nfl-ari",
       "league": "NFL",
       "abbreviation": "ARI",
       "displayName": "Arizona Cardinals",
-      "shortName": "Cardinals"
+      "shortName": "Cardinals",
+      "location": "Arizona",
+      "name": "Cardinals",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/ari.png",
+      "colors": {
+        "primary": "#a40227",
+        "secondary": "#ffffff"
+      }
     },
     {
       "id": "nfl-atl",
       "league": "NFL",
       "abbreviation": "ATL",
       "displayName": "Atlanta Falcons",
-      "shortName": "Falcons"
+      "shortName": "Falcons",
+      "location": "Atlanta",
+      "name": "Falcons",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/atl.png",
+      "colors": {
+        "primary": "#a71930",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nfl-bal",
       "league": "NFL",
       "abbreviation": "BAL",
       "displayName": "Baltimore Ravens",
-      "shortName": "Ravens"
+      "shortName": "Ravens",
+      "location": "Baltimore",
+      "name": "Ravens",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/bal.png",
+      "colors": {
+        "primary": "#29126f",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nfl-buf",
       "league": "NFL",
       "abbreviation": "BUF",
       "displayName": "Buffalo Bills",
-      "shortName": "Bills"
+      "shortName": "Bills",
+      "location": "Buffalo",
+      "name": "Bills",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/buf.png",
+      "colors": {
+        "primary": "#00338d",
+        "secondary": "#d50a0a"
+      }
     },
     {
       "id": "nfl-car",
       "league": "NFL",
       "abbreviation": "CAR",
       "displayName": "Carolina Panthers",
-      "shortName": "Panthers"
+      "shortName": "Panthers",
+      "location": "Carolina",
+      "name": "Panthers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/car.png",
+      "colors": {
+        "primary": "#0085ca",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nfl-chi",
       "league": "NFL",
       "abbreviation": "CHI",
       "displayName": "Chicago Bears",
-      "shortName": "Bears"
+      "shortName": "Bears",
+      "location": "Chicago",
+      "name": "Bears",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/chi.png",
+      "colors": {
+        "primary": "#0b1c3a",
+        "secondary": "#e64100"
+      }
     },
     {
       "id": "nfl-cin",
       "league": "NFL",
       "abbreviation": "CIN",
       "displayName": "Cincinnati Bengals",
-      "shortName": "Bengals"
+      "shortName": "Bengals",
+      "location": "Cincinnati",
+      "name": "Bengals",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/cin.png",
+      "colors": {
+        "primary": "#fb4f14",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nfl-cle",
       "league": "NFL",
       "abbreviation": "CLE",
       "displayName": "Cleveland Browns",
-      "shortName": "Browns"
+      "shortName": "Browns",
+      "location": "Cleveland",
+      "name": "Browns",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/cle.png",
+      "colors": {
+        "primary": "#472a08",
+        "secondary": "#ff3c00"
+      }
     },
     {
       "id": "nfl-dal",
       "league": "NFL",
       "abbreviation": "DAL",
       "displayName": "Dallas Cowboys",
-      "shortName": "Cowboys"
+      "shortName": "Cowboys",
+      "location": "Dallas",
+      "name": "Cowboys",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/dal.png",
+      "colors": {
+        "primary": "#002a5c",
+        "secondary": "#b0b7bc"
+      }
     },
     {
       "id": "nfl-den",
       "league": "NFL",
       "abbreviation": "DEN",
       "displayName": "Denver Broncos",
-      "shortName": "Broncos"
+      "shortName": "Broncos",
+      "location": "Denver",
+      "name": "Broncos",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/den.png",
+      "colors": {
+        "primary": "#0a2343",
+        "secondary": "#fc4c02"
+      }
     },
     {
       "id": "nfl-det",
       "league": "NFL",
       "abbreviation": "DET",
       "displayName": "Detroit Lions",
-      "shortName": "Lions"
+      "shortName": "Lions",
+      "location": "Detroit",
+      "name": "Lions",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/det.png",
+      "colors": {
+        "primary": "#0076b6",
+        "secondary": "#bbbbbb"
+      }
     },
     {
       "id": "nfl-gb",
       "league": "NFL",
       "abbreviation": "GB",
       "displayName": "Green Bay Packers",
-      "shortName": "Packers"
+      "shortName": "Packers",
+      "location": "Green Bay",
+      "name": "Packers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/gb.png",
+      "colors": {
+        "primary": "#204e32",
+        "secondary": "#ffb612"
+      }
     },
     {
       "id": "nfl-hou",
       "league": "NFL",
       "abbreviation": "HOU",
       "displayName": "Houston Texans",
-      "shortName": "Texans"
+      "shortName": "Texans",
+      "location": "Houston",
+      "name": "Texans",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/hou.png",
+      "colors": {
+        "primary": "#021018",
+        "secondary": "#eb0028"
+      }
     },
     {
       "id": "nfl-ind",
       "league": "NFL",
       "abbreviation": "IND",
       "displayName": "Indianapolis Colts",
-      "shortName": "Colts"
+      "shortName": "Colts",
+      "location": "Indianapolis",
+      "name": "Colts",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/ind.png",
+      "colors": {
+        "primary": "#003b75",
+        "secondary": "#ffffff"
+      }
     },
     {
       "id": "nfl-jax",
       "league": "NFL",
       "abbreviation": "JAX",
       "displayName": "Jacksonville Jaguars",
-      "shortName": "Jaguars"
+      "shortName": "Jaguars",
+      "location": "Jacksonville",
+      "name": "Jaguars",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/jax.png",
+      "colors": {
+        "primary": "#007487",
+        "secondary": "#d7a22a"
+      }
     },
     {
       "id": "nfl-kc",
       "league": "NFL",
       "abbreviation": "KC",
       "displayName": "Kansas City Chiefs",
-      "shortName": "Chiefs"
+      "shortName": "Chiefs",
+      "location": "Kansas City",
+      "name": "Chiefs",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/kc.png",
+      "colors": {
+        "primary": "#e31837",
+        "secondary": "#ffb612"
+      }
     },
     {
       "id": "nfl-lac",
       "league": "NFL",
       "abbreviation": "LAC",
       "displayName": "Los Angeles Chargers",
-      "shortName": "Chargers"
+      "shortName": "Chargers",
+      "location": "Los Angeles",
+      "name": "Chargers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/lac.png",
+      "colors": {
+        "primary": "#0080c6",
+        "secondary": "#ffc20e"
+      }
     },
     {
       "id": "nfl-lar",
       "league": "NFL",
       "abbreviation": "LAR",
       "displayName": "Los Angeles Rams",
-      "shortName": "Rams"
+      "shortName": "Rams",
+      "location": "Los Angeles",
+      "name": "Rams",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/lar.png",
+      "colors": {
+        "primary": "#003594",
+        "secondary": "#ffd100"
+      }
     },
     {
       "id": "nfl-lv",
       "league": "NFL",
       "abbreviation": "LV",
       "displayName": "Las Vegas Raiders",
-      "shortName": "Raiders"
+      "shortName": "Raiders",
+      "location": "Las Vegas",
+      "name": "Raiders",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/lv.png",
+      "colors": {
+        "primary": "#000000",
+        "secondary": "#a5acaf"
+      }
     },
     {
       "id": "nfl-mia",
       "league": "NFL",
       "abbreviation": "MIA",
       "displayName": "Miami Dolphins",
-      "shortName": "Dolphins"
+      "shortName": "Dolphins",
+      "location": "Miami",
+      "name": "Dolphins",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/mia.png",
+      "colors": {
+        "primary": "#008e97",
+        "secondary": "#fc4c02"
+      }
     },
     {
       "id": "nfl-min",
       "league": "NFL",
       "abbreviation": "MIN",
       "displayName": "Minnesota Vikings",
-      "shortName": "Vikings"
+      "shortName": "Vikings",
+      "location": "Minnesota",
+      "name": "Vikings",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/min.png",
+      "colors": {
+        "primary": "#4f2683",
+        "secondary": "#ffc62f"
+      }
     },
     {
       "id": "nfl-ne",
       "league": "NFL",
       "abbreviation": "NE",
       "displayName": "New England Patriots",
-      "shortName": "Patriots"
+      "shortName": "Patriots",
+      "location": "New England",
+      "name": "Patriots",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/ne.png",
+      "colors": {
+        "primary": "#002a5c",
+        "secondary": "#c60c30"
+      }
     },
     {
       "id": "nfl-no",
       "league": "NFL",
       "abbreviation": "NO",
       "displayName": "New Orleans Saints",
-      "shortName": "Saints"
+      "shortName": "Saints",
+      "location": "New Orleans",
+      "name": "Saints",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/no.png",
+      "colors": {
+        "primary": "#d3bc8d",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nfl-nyg",
       "league": "NFL",
       "abbreviation": "NYG",
       "displayName": "New York Giants",
-      "shortName": "Giants"
+      "shortName": "Giants",
+      "location": "New York",
+      "name": "Giants",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/nyg.png",
+      "colors": {
+        "primary": "#003c7f",
+        "secondary": "#c9243f"
+      }
     },
     {
       "id": "nfl-nyj",
       "league": "NFL",
       "abbreviation": "NYJ",
       "displayName": "New York Jets",
-      "shortName": "Jets"
+      "shortName": "Jets",
+      "location": "New York",
+      "name": "Jets",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/nyj.png",
+      "colors": {
+        "primary": "#115740",
+        "secondary": "#ffffff"
+      }
     },
     {
       "id": "nfl-phi",
       "league": "NFL",
       "abbreviation": "PHI",
       "displayName": "Philadelphia Eagles",
-      "shortName": "Eagles"
+      "shortName": "Eagles",
+      "location": "Philadelphia",
+      "name": "Eagles",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/phi.png",
+      "colors": {
+        "primary": "#06424d",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nfl-pit",
       "league": "NFL",
       "abbreviation": "PIT",
       "displayName": "Pittsburgh Steelers",
-      "shortName": "Steelers"
+      "shortName": "Steelers",
+      "location": "Pittsburgh",
+      "name": "Steelers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/pit.png",
+      "colors": {
+        "primary": "#000000",
+        "secondary": "#ffb612"
+      }
     },
     {
       "id": "nfl-sea",
       "league": "NFL",
       "abbreviation": "SEA",
       "displayName": "Seattle Seahawks",
-      "shortName": "Seahawks"
+      "shortName": "Seahawks",
+      "location": "Seattle",
+      "name": "Seahawks",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/sea.png",
+      "colors": {
+        "primary": "#002a5c",
+        "secondary": "#69be28"
+      }
     },
     {
       "id": "nfl-sf",
       "league": "NFL",
       "abbreviation": "SF",
       "displayName": "San Francisco 49ers",
-      "shortName": "49ers"
+      "shortName": "49ers",
+      "location": "San Francisco",
+      "name": "49ers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/sf.png",
+      "colors": {
+        "primary": "#aa0000",
+        "secondary": "#b3995d"
+      }
     },
     {
       "id": "nfl-tb",
       "league": "NFL",
       "abbreviation": "TB",
       "displayName": "Tampa Bay Buccaneers",
-      "shortName": "Buccaneers"
+      "shortName": "Buccaneers",
+      "location": "Tampa Bay",
+      "name": "Buccaneers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/tb.png",
+      "colors": {
+        "primary": "#bd1c36",
+        "secondary": "#3e3a35"
+      }
     },
     {
       "id": "nfl-ten",
       "league": "NFL",
       "abbreviation": "TEN",
       "displayName": "Tennessee Titans",
-      "shortName": "Titans"
+      "shortName": "Titans",
+      "location": "Tennessee",
+      "name": "Titans",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/ten.png",
+      "colors": {
+        "primary": "#4495d2",
+        "secondary": "#001532"
+      }
     },
     {
       "id": "nfl-wsh",
       "league": "NFL",
       "abbreviation": "WSH",
       "displayName": "Washington Commanders",
-      "shortName": "Commanders"
+      "shortName": "Commanders",
+      "location": "Washington",
+      "name": "Commanders",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nfl/500/wsh.png",
+      "colors": {
+        "primary": "#5a1414",
+        "secondary": "#ffb612"
+      }
     },
     {
       "id": "nhl-ana",
       "league": "NHL",
       "abbreviation": "ANA",
       "displayName": "Anaheim Ducks",
-      "shortName": "Ducks"
+      "shortName": "Ducks",
+      "location": "Anaheim",
+      "name": "Ducks",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/ana.png",
+      "colors": {
+        "primary": "#fc4c02",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nhl-bos",
       "league": "NHL",
       "abbreviation": "BOS",
       "displayName": "Boston Bruins",
-      "shortName": "Bruins"
+      "shortName": "Bruins",
+      "location": "Boston",
+      "name": "Bruins",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/bos.png",
+      "colors": {
+        "primary": "#231f20",
+        "secondary": "#fdb71a"
+      }
     },
     {
       "id": "nhl-buf",
       "league": "NHL",
       "abbreviation": "BUF",
       "displayName": "Buffalo Sabres",
-      "shortName": "Sabres"
+      "shortName": "Sabres",
+      "location": "Buffalo",
+      "name": "Sabres",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/buf.png",
+      "colors": {
+        "primary": "#00468b",
+        "secondary": "#fdb71a"
+      }
     },
     {
       "id": "nhl-car",
       "league": "NHL",
       "abbreviation": "CAR",
       "displayName": "Carolina Hurricanes",
-      "shortName": "Hurricanes"
+      "shortName": "Hurricanes",
+      "location": "Carolina",
+      "name": "Hurricanes",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/car.png",
+      "colors": {
+        "primary": "#e30426",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nhl-cbj",
       "league": "NHL",
       "abbreviation": "CBJ",
       "displayName": "Columbus Blue Jackets",
-      "shortName": "Blue Jackets"
+      "shortName": "Blue Jackets",
+      "location": "Columbus",
+      "name": "Blue Jackets",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/cbj.png",
+      "colors": {
+        "primary": "#002d62",
+        "secondary": "#e31937"
+      }
     },
     {
       "id": "nhl-cgy",
       "league": "NHL",
       "abbreviation": "CGY",
       "displayName": "Calgary Flames",
-      "shortName": "Flames"
+      "shortName": "Flames",
+      "location": "Calgary",
+      "name": "Flames",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/cgy.png",
+      "colors": {
+        "primary": "#dd1a32",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nhl-chi",
       "league": "NHL",
       "abbreviation": "CHI",
       "displayName": "Chicago Blackhawks",
-      "shortName": "Blackhawks"
+      "shortName": "Blackhawks",
+      "location": "Chicago",
+      "name": "Blackhawks",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/chi.png",
+      "colors": {
+        "primary": "#e31937",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nhl-col",
       "league": "NHL",
       "abbreviation": "COL",
       "displayName": "Colorado Avalanche",
-      "shortName": "Avalanche"
+      "shortName": "Avalanche",
+      "location": "Colorado",
+      "name": "Avalanche",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/col.png",
+      "colors": {
+        "primary": "#860038",
+        "secondary": "#005ea3"
+      }
     },
     {
       "id": "nhl-dal",
       "league": "NHL",
       "abbreviation": "DAL",
       "displayName": "Dallas Stars",
-      "shortName": "Stars"
+      "shortName": "Stars",
+      "location": "Dallas",
+      "name": "Stars",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/dal.png",
+      "colors": {
+        "primary": "#20864c",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nhl-det",
       "league": "NHL",
       "abbreviation": "DET",
       "displayName": "Detroit Red Wings",
-      "shortName": "Red Wings"
+      "shortName": "Red Wings",
+      "location": "Detroit",
+      "name": "Red Wings",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/det.png",
+      "colors": {
+        "primary": "#e30526",
+        "secondary": "#ffffff"
+      }
     },
     {
       "id": "nhl-edm",
       "league": "NHL",
       "abbreviation": "EDM",
       "displayName": "Edmonton Oilers",
-      "shortName": "Oilers"
+      "shortName": "Oilers",
+      "location": "Edmonton",
+      "name": "Oilers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/edm.png",
+      "colors": {
+        "primary": "#00205b",
+        "secondary": "#ff4c00"
+      }
     },
     {
       "id": "nhl-fla",
       "league": "NHL",
       "abbreviation": "FLA",
       "displayName": "Florida Panthers",
-      "shortName": "Panthers"
+      "shortName": "Panthers",
+      "location": "Florida",
+      "name": "Panthers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/fla.png",
+      "colors": {
+        "primary": "#e51937",
+        "secondary": "#002d62"
+      }
     },
     {
       "id": "nhl-la",
       "league": "NHL",
       "abbreviation": "LA",
       "displayName": "Los Angeles Kings",
-      "shortName": "Kings"
+      "shortName": "Kings",
+      "location": "Los Angeles",
+      "name": "Kings",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/la.png",
+      "colors": {
+        "primary": "#121212",
+        "secondary": "#a2aaad"
+      }
     },
     {
       "id": "nhl-min",
       "league": "NHL",
       "abbreviation": "MIN",
       "displayName": "Minnesota Wild",
-      "shortName": "Wild"
+      "shortName": "Wild",
+      "location": "Minnesota",
+      "name": "Wild",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/min.png",
+      "colors": {
+        "primary": "#124734",
+        "secondary": "#ae122a"
+      }
     },
     {
       "id": "nhl-mtl",
       "league": "NHL",
       "abbreviation": "MTL",
       "displayName": "Montreal Canadiens",
-      "shortName": "Canadiens"
+      "shortName": "Canadiens",
+      "location": "Montreal",
+      "name": "Canadiens",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/mtl.png",
+      "colors": {
+        "primary": "#c41230",
+        "secondary": "#013a81"
+      }
     },
     {
       "id": "nhl-nj",
       "league": "NHL",
       "abbreviation": "NJ",
       "displayName": "New Jersey Devils",
-      "shortName": "Devils"
+      "shortName": "Devils",
+      "location": "New Jersey",
+      "name": "Devils",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/nj.png",
+      "colors": {
+        "primary": "#e30b2b",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nhl-nsh",
       "league": "NHL",
       "abbreviation": "NSH",
       "displayName": "Nashville Predators",
-      "shortName": "Predators"
+      "shortName": "Predators",
+      "location": "Nashville",
+      "name": "Predators",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/nsh.png",
+      "colors": {
+        "primary": "#fdba31",
+        "secondary": "#002d62"
+      }
     },
     {
       "id": "nhl-nyi",
       "league": "NHL",
       "abbreviation": "NYI",
       "displayName": "New York Islanders",
-      "shortName": "Islanders"
+      "shortName": "Islanders",
+      "location": "New York",
+      "name": "Islanders",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/nyi.png",
+      "colors": {
+        "primary": "#00529b",
+        "secondary": "#f47d31"
+      }
     },
     {
       "id": "nhl-nyr",
       "league": "NHL",
       "abbreviation": "NYR",
       "displayName": "New York Rangers",
-      "shortName": "Rangers"
+      "shortName": "Rangers",
+      "location": "New York",
+      "name": "Rangers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/nyr.png",
+      "colors": {
+        "primary": "#0056ae",
+        "secondary": "#e51937"
+      }
     },
     {
       "id": "nhl-ott",
       "league": "NHL",
       "abbreviation": "OTT",
       "displayName": "Ottawa Senators",
-      "shortName": "Senators"
+      "shortName": "Senators",
+      "location": "Ottawa",
+      "name": "Senators",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/ott.png",
+      "colors": {
+        "primary": "#dd1a32",
+        "secondary": "#b79257"
+      }
     },
     {
       "id": "nhl-phi",
       "league": "NHL",
       "abbreviation": "PHI",
       "displayName": "Philadelphia Flyers",
-      "shortName": "Flyers"
+      "shortName": "Flyers",
+      "location": "Philadelphia",
+      "name": "Flyers",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/phi.png",
+      "colors": {
+        "primary": "#fe5823",
+        "secondary": "#000000"
+      }
     },
     {
       "id": "nhl-pit",
       "league": "NHL",
       "abbreviation": "PIT",
       "displayName": "Pittsburgh Penguins",
-      "shortName": "Penguins"
+      "shortName": "Penguins",
+      "location": "Pittsburgh",
+      "name": "Penguins",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/pit.png",
+      "colors": {
+        "primary": "#000000",
+        "secondary": "#fdb71a"
+      }
     },
     {
       "id": "nhl-sea",
       "league": "NHL",
       "abbreviation": "SEA",
       "displayName": "Seattle Kraken",
-      "shortName": "Kraken"
+      "shortName": "Kraken",
+      "location": "Seattle",
+      "name": "Kraken",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/sea.png",
+      "colors": {
+        "primary": "#000d33",
+        "secondary": "#a3dce4"
+      }
     },
     {
       "id": "nhl-sj",
       "league": "NHL",
       "abbreviation": "SJ",
       "displayName": "San Jose Sharks",
-      "shortName": "Sharks"
+      "shortName": "Sharks",
+      "location": "San Jose",
+      "name": "Sharks",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/sj.png",
+      "colors": {
+        "primary": "#00788a",
+        "secondary": "#070707"
+      }
     },
     {
       "id": "nhl-stl",
       "league": "NHL",
       "abbreviation": "STL",
       "displayName": "St. Louis Blues",
-      "shortName": "Blues"
+      "shortName": "Blues",
+      "location": "St. Louis",
+      "name": "Blues",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/stl.png",
+      "colors": {
+        "primary": "#0070b9",
+        "secondary": "#fdb71a"
+      }
     },
     {
       "id": "nhl-tb",
       "league": "NHL",
       "abbreviation": "TB",
       "displayName": "Tampa Bay Lightning",
-      "shortName": "Lightning"
+      "shortName": "Lightning",
+      "location": "Tampa Bay",
+      "name": "Lightning",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/tb.png",
+      "colors": {
+        "primary": "#003e7e",
+        "secondary": "#ffffff"
+      }
     },
     {
       "id": "nhl-tor",
       "league": "NHL",
       "abbreviation": "TOR",
       "displayName": "Toronto Maple Leafs",
-      "shortName": "Maple Leafs"
+      "shortName": "Maple Leafs",
+      "location": "Toronto",
+      "name": "Maple Leafs",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/tor.png",
+      "colors": {
+        "primary": "#003e7e",
+        "secondary": "#ffffff"
+      }
     },
     {
       "id": "nhl-utah",
       "league": "NHL",
       "abbreviation": "UTAH",
       "displayName": "Utah Mammoth",
-      "shortName": "Mammoth"
+      "shortName": "Mammoth",
+      "location": "Utah",
+      "name": "Mammoth",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/utah.png",
+      "colors": {
+        "primary": "#000000",
+        "secondary": "#7ab2e1"
+      }
     },
     {
       "id": "nhl-van",
       "league": "NHL",
       "abbreviation": "VAN",
       "displayName": "Vancouver Canucks",
-      "shortName": "Canucks"
+      "shortName": "Canucks",
+      "location": "Vancouver",
+      "name": "Canucks",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/van.png",
+      "colors": {
+        "primary": "#003e7e",
+        "secondary": "#008752"
+      }
     },
     {
       "id": "nhl-vgk",
       "league": "NHL",
       "abbreviation": "VGK",
       "displayName": "Vegas Golden Knights",
-      "shortName": "Golden Knights"
+      "shortName": "Golden Knights",
+      "location": "Vegas",
+      "name": "Golden Knights",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/vgk.png",
+      "colors": {
+        "primary": "#344043",
+        "secondary": "#b4975a"
+      }
     },
     {
       "id": "nhl-wpg",
       "league": "NHL",
       "abbreviation": "WPG",
       "displayName": "Winnipeg Jets",
-      "shortName": "Jets"
+      "shortName": "Jets",
+      "location": "Winnipeg",
+      "name": "Jets",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/wpg.png",
+      "colors": {
+        "primary": "#002d62",
+        "secondary": "#c41230"
+      }
     },
     {
       "id": "nhl-wsh",
       "league": "NHL",
       "abbreviation": "WSH",
       "displayName": "Washington Capitals",
-      "shortName": "Capitals"
+      "shortName": "Capitals",
+      "location": "Washington",
+      "name": "Capitals",
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/nhl/500/wsh.png",
+      "colors": {
+        "primary": "#d71830",
+        "secondary": "#0b1f41"
+      }
     }
   ]
 }

@@ -1,5 +1,9 @@
 package gateway;
 
+import catalog.AlertCatalog;
+import catalog.Leagues;
+import catalog.Teams;
+
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import feed.EspnClient;
@@ -71,6 +75,7 @@ public final class GatewayMain {
 
         ApiV1Routes.register(app, pool, loginThrottle, USER_PREF_URL, NOTIFICATION_URL);
         GameRoutes.register(app, pool, GAME_STATE_URL, USER_PREF_URL, Instant::now);
+        ReferenceRoutes.register(app, Leagues.load(), Teams.load(), AlertCatalog.load());
 
         // --- Game state ---
         app.get("/api/games", gameListingHandler::handleList);
