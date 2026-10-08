@@ -492,8 +492,8 @@ The catalog promises only these.
 
 **Detection that does not depend on catching a brief moment:**
 
-- **Period ends** are detected from the period number going up, not from ESPN's short "end of period" status, which a poll can miss.
-- **Clock thresholds** (5:00, 2:00) count as crossed when one snapshot is above and the next is at or below, even if no snapshot shows the exact time.
+- **Period ends** are detected from whichever comes first: ESPN's short "end of period" or halftime status, or the period number going up (the status can fall between polls). One flag per period stops the second sighting, and halftime always ends the 2nd quarter, even when ESPN already shows period 3.
+- **Clock thresholds** (5:00, 2:00) are judged on snapshots, not on an exact crossing. Close game late and a failed NFL try need the condition on two plays in a row, because a single snapshot can carry a wrong clock (seen: 0:00 mid-period).
 
 **Score corrections.** When a goal or touchdown is overturned, the score goes down. Once the lower score has held (60 seconds of game clock, MLB two more plays, a new period, or the final), the same followers get "Rangers goal overturned" with the corrected score, under the scoring switch it undoes, and its id takes the next value of the scoring counter. A drop that comes back first was an ESPN glitch: it sends nothing, and the goal is not announced twice. The recordings show both: real overturns drop at the stopped clock of the review and stay down; glitches drop while the clock runs and are back within seconds (up to 27 seen). Revised 2026-10-08 (Phase 3.3); it used to send nothing.
 
@@ -505,7 +505,7 @@ The catalog promises only these.
 - the lead change's sequence number, for a lead change;
 - nothing extra, for once-per-game alerts.
 
-Retries, repeated snapshots, and two pollers overlapping during a rolling update all produce the same id. The "already fired" flags live with the game state in Redis and are claimed atomically. A push's id is its headline alert's id, and the per-user dedup key is `notif:<alertId>:<userId>` (decision 5), so a crash and retry after a partial delivery does not notify anyone twice. When one snapshot produces a push and the final for the same user, the final is sent after it in the user's lane.
+Retries, repeated snapshots, and two pollers overlapping during a rolling update all produce the same id. The "already fired" flags and the counters live in Stage 1's per-game memory, `det:<gameId>`, written only if the play's version is higher, after the play's notifications are confirmed; a re-read finds the same alerts with the same ids. A push's id is its headline alert's id, and the per-user dedup key is `notif:<alertId>:<userId>` (decision 5), so a crash and retry after a partial delivery does not notify anyone twice. When one snapshot produces a push and the final for the same user, the final is sent after it in the user's lane.
 
 #### How alerts are detected
 
@@ -527,7 +527,7 @@ At fan-out, the audience for an alert in one game is built in a few set operatio
 
 "Anyone who follows" is a set per target, `sub:<kind>:<target>:ANY`, written with the others.
 
-The result is already filtered, and a user reached through several follows appears once. This removes the per-subscriber `SISMEMBER` loop from the fix list. The sets can be rebuilt from Postgres like the rest of Redis (decision 8). Chosen innings for MLB are checked at delivery, because they are rare and small.
+The result is already filtered, and a user reached through several follows appears once. This removes the per-subscriber `SISMEMBER` loop from the fix list. The sets can be rebuilt from Postgres like the rest of Redis (decision 8). Chosen innings for MLB are sets of their own (`…:END_OF_INNING:<n>`), written at save time, so delivery looks nothing up.
 
 #### Gave up, why, and build order
 

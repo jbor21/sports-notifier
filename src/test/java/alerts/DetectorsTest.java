@@ -84,4 +84,24 @@ class DetectorsTest {
         s.play(q3.next().stage("END_PERIOD").clock(0));
         assertEquals(List.of("g:END_OF_PERIOD:3"), s.ids());
     }
+
+    @Test
+    void catchingUpMidGameIsQuiet() {
+        // Final review, Minor 6: last seen before kickoff, next seen in Q3 (poller asleep). Nothing that
+        // happened in between is news now; the counters carry on, so later ids stay unique.
+        PlayBuilder pre = PlayBuilder.nfl("g").pre();
+        PlayBuilder delayed = pre.next().status("DELAYED").stage("DELAYED");
+        PlayBuilder q3 = PlayBuilder.nfl("g").period(3).clock(5000).score(24, 10).version(3);
+        Sequence s = Sequence.standard().play(pre, delayed, q3);
+        assertEquals(List.of("g:DELAYED:1"), s.ids());
+        s.play(q3.next().clock(4000).score(24, 13), q3.next().next().status("DELAYED").stage("DELAYED"));
+        assertEquals(List.of("g:DELAYED:1", "g:SCORE:away:1", "g:DELAYED:2"), s.ids());
+    }
+
+    @Test
+    void firstPeriodStartWithAScoreStillAlerts() {
+        PlayBuilder pre = PlayBuilder.mlb("g").pre();
+        Sequence s = Sequence.standard().play(pre, pre.next().live().period(1).half("BOTTOM").score(1, 0));
+        assertEquals(List.of("GAME_START", "RUN_SCORED"), s.alerts().stream().map(Alert::type).sorted().toList());
+    }
 }

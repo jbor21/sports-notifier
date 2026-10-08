@@ -52,8 +52,8 @@ public final class GameMemory {
     int homeLastTd;
     int awayLastTd;
 
-    /** A drop in one team's score, not yet believed: where it was first seen, and plays since. */
-    public record Drop(int period, int clockTenths, int plays) {}
+    /** A drop in one team's score, not yet believed: where it was first seen, plays since, and the lowest score seen. */
+    public record Drop(int period, int clockTenths, int plays, int low) {}
 
     /**
      * The score each team's alerts are counted from. It follows the score up at once, but down only
@@ -120,6 +120,26 @@ public final class GameMemory {
 
     void setCounted(Side side, int score) {
         if (side == Side.HOME) homeCounted = score; else awayCounted = score;
+    }
+
+    /**
+     * The score other detectors should judge by: the believed score once the score detector has run,
+     * else the play's own. A glitch that drops a goal must not flip the lead or make a game "close".
+     */
+    int believed(Side side, Play now) {
+        Integer c = side == Side.HOME ? homeCounted : awayCounted;
+        return c != null ? c : now.score(side);
+    }
+
+    /** Carries the counters into a fresh memory, so ids built from them never repeat. */
+    void keepCountersFrom(GameMemory before) {
+        homeScores = before.homeScores;
+        awayScores = before.awayScores;
+        leadChanges = before.leadChanges;
+        delays = before.delays;
+        resumes = before.resumes;
+        homeLastTd = before.homeLastTd;
+        awayLastTd = before.awayLastTd;
     }
 
     Drop drop(Side side) {

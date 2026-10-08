@@ -17,11 +17,14 @@ public final class LeadChangeDetector implements Detector {
 
     @Override
     public void detect(GameMemory before, Play now, GameMemory after, List<Alert> out) {
-        Side leader = leader(now);
+        // The believed score, not the raw one: a drop that comes back (an ESPN glitch) changes nothing.
+        int home = after.believed(Side.HOME, now);
+        int away = after.believed(Side.AWAY, now);
+        Side leader = home == away ? null : home > away ? Side.HOME : Side.AWAY;
         if (leader == null) return;
         boolean canAlert = now.live() || (now.isFinal() && "LIVE".equals(before.phase));
         boolean changed = before.lastLeader != null && leader != before.lastLeader;
-        boolean scored = now.score(leader) > before.score(leader);
+        boolean scored = (leader == Side.HOME ? home : away) > before.counted(leader);
         boolean inWindow = !"NBA".equals(now.league()) || now.period() >= 4;
         if (canAlert && changed && scored && inWindow) {
             int n = ++after.leadChanges;

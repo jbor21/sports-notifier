@@ -70,4 +70,13 @@ class LeadChangeDetectorTest {
         PlayBuilder pre = PlayBuilder.nhl("g").pre();
         assertEquals(List.of(), seq().play(pre.score(0, 1), pre.next().fin().period(3).score(3, 1)).ids());
     }
+
+    @Test
+    void glitchDoesNotFlipTheLead() {
+        // Final review, Important 2: a drop that comes back sends nothing, lead changes included.
+        PlayBuilder p = PlayBuilder.nhl("g").period(2).clock(6000).score(1, 2);
+        Sequence s = Sequence.of(new ScoreDetector(LABELS), new LeadChangeDetector(LABELS))
+            .play(p, p.next().clock(5800).score(1, 0), p.next().clock(5600).score(1, 2));
+        assertEquals(List.of(), s.ids());
+    }
 }

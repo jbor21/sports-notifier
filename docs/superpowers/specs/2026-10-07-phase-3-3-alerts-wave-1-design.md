@@ -115,6 +115,8 @@ For each play, on Stage 1's single thread:
 
 When a game has no memory, the first play is recorded as the baseline. Every once-per-game condition already true is marked fired: the game started, periods already ended, close game late already holding, overtime periods already reached, final. A Stage 1 that loses a game's memory mid-game can miss one moment, never send stale ones.
 
+**Catching up.** A game last seen before its start and next seen live past its first period (the poller or Stage 1 was down) is baselined again from that play, keeping the counters: nothing that happened in between is news (final review). A start seen in the first period, with or without a score, still alerts.
+
 ### 2.6 Labels and text
 
 `GameLabels` (shared with 3.4) builds the display parts:
@@ -136,7 +138,7 @@ The phase goes from before to live. A game delayed before its start still gets i
 
 ### 3.2 Final (`FINAL`)
 
-The status becomes FINAL (not CANCELED). Text: `Final: Bears 20, Raiders 17. Bears win.` with `(OT)` when the game went past regulation, `(SO)` after a shootout, and `Tie.` for an NFL tie. It names the winner, not "your team": the push body is built once per moment, not per user. Always its own push (section 5.4).
+The status becomes FINAL (not CANCELED). Text: `Final: Bears 20, Raiders 17. Bears win.` with `(OT)` when the game went past regulation (MLB: `(10 innings)`), `(SO)` after a shootout, and `Tie.` for an NFL tie. It names the winner, not "your team": the push body is built once per moment, not per user. Always its own push (section 5.4).
 
 ### 3.3 Delayed, postponed, canceled, resumed (`DELAYED` switch)
 
@@ -388,6 +390,8 @@ CI stays green after every task: the old path stays until its replacement lands 
 - `docs/study/phase-3-quiz.md`: a 3.3 section.
 
 ## Known gaps accepted in 3.3
+
+- **An overturned score that comes back to the same number within 60 s of game clock** (a goal-line touchdown overturned, then a touchdown on the next snap) looks exactly like an ESPN glitch: neither the overturn nor the new score is sent. A score that comes back to a different number confirms the overturn at once (final review, Important 1).
 
 - **Between snapshots:** a lead that flips twice inside one poll, or a period that starts and ends unseen, is missed or merged (decision 15's limits).
 - **Shootout rule unconfirmed** in live data (section 3.9).

@@ -33,12 +33,22 @@ public final class Detectors {
             new FinalDetector(labels)));
     }
 
+    private GameMemory baseline(Play now) {
+        GameMemory after = new GameMemory();
+        for (Detector d : chain) d.baseline(now, after);
+        after.takePosition(now);
+        return after;
+    }
+
     /** @param before the stored memory, or null when the game has none (the play becomes the baseline) */
     public Result run(GameMemory before, Play now) {
-        if (before == null) {
-            GameMemory after = new GameMemory();
-            for (Detector d : chain) d.baseline(now, after);
-            after.takePosition(now);
+        if (before == null) return new Result(List.of(), null, baseline(now));
+        if ("PRE".equals(before.phase) && now.live() && now.period() > 1) {
+            // Last seen before the game, now seen past its first period (the poller or Stage 1 was
+            // down): what happened in between is not news any more. Start over from here, keeping
+            // the counters so later ids stay unique.
+            GameMemory after = baseline(now);
+            after.keepCountersFrom(before);
             return new Result(List.of(), null, after);
         }
         GameMemory after = before.copy();

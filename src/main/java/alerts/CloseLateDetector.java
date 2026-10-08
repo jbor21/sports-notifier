@@ -19,7 +19,7 @@ public final class CloseLateDetector implements Detector {
 
     @Override
     public void detect(GameMemory before, Play now, GameMemory after, List<Alert> out) {
-        if (after.fired(FLAG) || !holds(now)) return;
+        if (after.fired(FLAG) || !holds(now, after)) return;
         if (SportRules.hasClock(now.league()) && !before.wasLate) return;
         after.fire(FLAG);
         out.add(Alert.of(AlertIds.once(now.gameId(), FLAG), FLAG, Alert.P_CLOSE, null, "Close game late: " + labels.scoreLine(now)));
@@ -27,10 +27,12 @@ public final class CloseLateDetector implements Detector {
 
     @Override
     public void baseline(Play now, GameMemory after) {
-        if (holds(now)) after.fire(FLAG);
+        if (holds(now, after)) after.fire(FLAG);
     }
 
-    private static boolean holds(Play p) {
-        return SportRules.isLate(p) && Math.abs(p.homeScore() - p.awayScore()) <= SportRules.closeGap(p.league());
+    /** Judged on the believed score: a glitch that drops a team's points must not make a game "close". */
+    private static boolean holds(Play p, GameMemory m) {
+        int gap = Math.abs(m.believed(Side.HOME, p) - m.believed(Side.AWAY, p));
+        return SportRules.isLate(p) && gap <= SportRules.closeGap(p.league());
     }
 }

@@ -87,4 +87,12 @@ class CloseLateDetectorTest {
         PlayBuilder q4 = Q4.next().clock(1800);
         assertEquals(List.of(), seq().play(q4, q4.next().clock(1700), q4.next().next().clock(1600)).ids());
     }
+
+    @Test
+    void glitchInsideTheLateWindowIsNotClose() {
+        PlayBuilder p = PlayBuilder.nfl("g").period(4).clock(2900).score(30, 10);
+        Sequence s = Sequence.of(new ScoreDetector(LABELS), new CloseLateDetector(LABELS))
+            .play(p, p.next().clock(2800), p.next().clock(2700).score(17, 10));
+        assertEquals(List.of(), s.ids());
+    }
 }

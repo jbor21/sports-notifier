@@ -141,4 +141,33 @@ class OverturnTest {
         Sequence s = seq().play(p, p.next().score(1, 1), p.next().next().clock(5500).score(1, 1), p.next().next().next().clock(5000).score(2, 1));
         assertEquals(List.of(), s.ids());
     }
+
+    @Test
+    void touchdownOverturnedThenFieldGoal() {
+        // Final review, Important 1: a goal-line review, then a field goal on the next snap, inside the 60 s.
+        PlayBuilder p = PlayBuilder.nfl("g").period(2).clock(6000).score(7, 7);
+        Sequence s = seq().play(p, p.next().clock(5000).score(13, 7), p.next().clock(5000).score(7, 7),
+            p.next().clock(4800).score(10, 7));
+        assertEquals(List.of("TOUCHDOWN", "TOUCHDOWN_OVERTURNED", "FIELD_GOAL"), s.alerts().stream().map(Alert::type).toList());
+        assertEquals(List.of("g:SCORE:home:1", "g:SCORE:home:2", "g:SCORE:home:3"), s.ids());
+        assertEquals("Field goal Bears. Bears 10, Raiders 7 · Q2 8:00", s.texts().get(2));
+        assertNull(s.memory().pending, "the touchdown's try went with it");
+    }
+
+    @Test
+    void goalOverturnedThenAnotherGoalAboveTheLow() {
+        PlayBuilder p = PlayBuilder.nhl("g").period(2).clock(9000).score(1, 0);
+        Sequence s = seq().play(p, p.next().score(3, 0), p.next().score(1, 0), p.next().clock(8800).score(2, 0));
+        assertEquals(List.of("GOAL", "GOAL_OVERTURNED", "GOAL"), s.alerts().stream().map(Alert::type).toList());
+        assertEquals("Bruins goals overturned. Bruins 1, Rangers 0 · 2nd 14:40", s.texts().get(1));
+    }
+
+    @Test
+    void tryGoodAndOtherTeamScoresInOnePlay() {
+        // Final review, Minor 4: not "Try no good" and "Extra point good after all" in one push.
+        PlayBuilder p = PlayBuilder.nfl("g").period(2).clock(6000);
+        Sequence s = seq().play(p, p.next().clock(5000).score(6, 0), p.next().clock(4000).score(7, 3));
+        assertEquals(List.of("TOUCHDOWN", "FIELD_GOAL", "TRY_RESULT"), s.alerts().stream().map(Alert::type).toList());
+        assertTrue(s.texts().get(2).startsWith("Extra point good."), s.texts().toString());
+    }
 }

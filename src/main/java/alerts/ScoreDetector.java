@@ -44,6 +44,17 @@ public final class ScoreDetector implements Detector {
         for (Side side : Side.values()) {
             int counted = after.counted(side);
             int score = now.score(side);
+            GameMemory.Drop pending = after.drop(side);
+            if (pending != null && score > pending.low() && score < counted) {
+                // Up from the low point but not back where it was: a glitch comes back to the same
+                // number, so the drop was real. Report it at the low, then this play's rise from there.
+                after.setDrop(side, null);
+                after.setCounted(side, pending.low());
+                overturned[side.ordinal()] = true;
+                Alert o = overturn(withScore(now, side, pending.low()), after, side, counted - pending.low());
+                if (o != null) out.add(o);
+                counted = pending.low();
+            }
             if (score >= counted) {
                 rise[side.ordinal()] = score - counted;
                 after.setCounted(side, score);
@@ -51,8 +62,8 @@ public final class ScoreDetector implements Detector {
                 continue;
             }
             GameMemory.Drop d = after.drop(side);
-            d = d == null ? new GameMemory.Drop(now.period(), now.clockTenths(), 0)
-                          : new GameMemory.Drop(d.period(), d.clockTenths(), d.plays() + 1);
+            d = d == null ? new GameMemory.Drop(now.period(), now.clockTenths(), 0, score)
+                          : new GameMemory.Drop(d.period(), d.clockTenths(), d.plays() + 1, Math.min(d.low(), score));
             if (!held(d, now)) {
                 after.setDrop(side, d);
                 continue;
@@ -75,6 +86,13 @@ public final class ScoreDetector implements Detector {
             }
             default -> { }
         }
+    }
+
+    private static Play withScore(Play p, Side side, int score) {
+        return new Play(p.gameId(), p.version(), p.league(), p.homeTeam(), p.awayTeam(),
+            side == Side.HOME ? score : p.homeScore(), side == Side.AWAY ? score : p.awayScore(),
+            p.phase(), p.status(), p.stage(), p.period(), p.half(), p.clockTenths(), p.outs(),
+            p.seasonType(), p.detail(), p.detectedAtMillis());
     }
 
     /** A drop is believed after 60 s of game clock (MLB: two more plays), a new period, or the final. */
@@ -145,7 +163,7 @@ public final class ScoreDetector implements Detector {
             if (overturned[s.ordinal()] || (now.isFinal() && own == 0 && theirs == 0)) {
                 // The touchdown was overturned, or it ended the game and has no try: drop it, say nothing.
                 after.pending = null;
-            } else if ((own == 1 || own == 2) && theirs == 0) {
+            } else if (own == 1 || own == 2) {
                 after.pending = null;
                 rise[s.ordinal()] = 0;
                 out.add(tryAlert(now, s, AlertIds.tryResult(now.gameId(), s, t.n()),
