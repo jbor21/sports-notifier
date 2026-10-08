@@ -4,11 +4,13 @@ import util.SimpleHttp;
 
 import java.io.IOException;
 import java.net.http.HttpResponse;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 /**
- * The one place that talks HTTP to ESPN, shared by the poller and the gateway's upcoming-games
- * proxy so both use the same host and User-Agent.
+ * The one place that talks HTTP to ESPN, shared by the poller's live and schedule loops so both use
+ * the same host and User-Agent.
  *
  * Both are settings because ESPN's filtering changes without notice. As of 2026-10-01 it refused
  * browser-imitating User-Agents, and refused site.api.espn.com from a cloud address while
@@ -40,11 +42,20 @@ public final class EspnClient {
             System.getenv().getOrDefault("ESPN_USER_AGENT", DEFAULT_USER_AGENT));
     }
 
-    /** Raw scoreboard JSON for {@code NBA}, {@code NFL}, {@code MLB}, or {@code NHL}. */
+    /** Raw scoreboard JSON for {@code NBA}, {@code NFL}, {@code MLB}, or {@code NHL}: ESPN's current day. */
     public String scoreboard(String league) throws FeedBlockedException, IOException {
+        return get(league, "");
+    }
+
+    /** The scoreboard for one date (ESPN's {@code dates=yyyyMMdd}), for the schedule. */
+    public String scoreboard(String league, LocalDate date) throws FeedBlockedException, IOException {
+        return get(league, "?dates=" + date.format(DateTimeFormatter.BASIC_ISO_DATE));
+    }
+
+    private String get(String league, String query) throws FeedBlockedException, IOException {
         String path = SPORT_PATHS.get(league);
         if (path == null) throw new IllegalArgumentException("unknown league " + league);
-        String url = "https://" + host + "/apis/site/v2/sports/" + path + "/scoreboard";
+        String url = "https://" + host + "/apis/site/v2/sports/" + path + "/scoreboard" + query;
 
         HttpResponse<String> response;
         try {

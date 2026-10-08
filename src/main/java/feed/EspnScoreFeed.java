@@ -67,6 +67,38 @@ public final class EspnScoreFeed implements ScoreFeed {
         return games;
     }
 
+    /**
+     * A {@code scoreboard?dates=} response as schedule entries: each game's snapshot plus its venue and
+     * broadcast, which only the schedule keeps. Same per-game rules as {@link #parse}.
+     */
+    public static List<ScheduleEntry> parseSchedule(String league, String json) {
+        List<ScheduleEntry> out = new ArrayList<>();
+        JsonElement root = JsonParser.parseString(json);
+        if (!root.isJsonObject()) return out;
+        JsonArray events = arr(root.getAsJsonObject(), "events");
+        if (events == null) return out;
+        for (JsonElement e : events) {
+            try {
+                JsonObject event = e.getAsJsonObject();
+                GameSnapshot g = parseGame(event, league);
+                if (g == null) continue;
+                JsonObject comp = arr(event, "competitions").get(0).getAsJsonObject();
+                out.add(new ScheduleEntry(g, str(obj(comp, "venue"), "fullName"), broadcast(comp)));
+            } catch (RuntimeException ex) {
+                System.err.println("[EspnScoreFeed " + league + "] skipped a scheduled game: " + ex);
+            }
+        }
+        return out;
+    }
+
+    /** The first network name ESPN lists, e.g. {@code ESPN}; null if none. */
+    private static String broadcast(JsonObject comp) {
+        JsonArray broadcasts = arr(comp, "broadcasts");
+        if (broadcasts == null || broadcasts.isEmpty()) return null;
+        JsonArray names = arr(broadcasts.get(0).getAsJsonObject(), "names");
+        return names == null || names.isEmpty() || names.get(0).isJsonNull() ? null : names.get(0).getAsString();
+    }
+
     private static GameSnapshot parseGame(JsonObject event, String league) {
         String id = str(event, "id");
         JsonArray comps = arr(event, "competitions");
