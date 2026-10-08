@@ -191,7 +191,8 @@ class SimulatorRunsEndToEndTest {
             .map(raw -> JsonParser.parseString(raw).getAsJsonObject())
             .filter(m -> USER.equals(m.get("userId").getAsString()))
             .map(m -> m.getAsJsonObject("payload"))
-            .filter(p -> gameId.equals(p.get("gameId").getAsString()))
+            .filter(p -> "notification".equals(p.get("type").getAsString()))
+            .filter(p -> gameId.equals(p.getAsJsonObject("notification").getAsJsonObject("game").get("id").getAsString()))
             .count();
     }
 
