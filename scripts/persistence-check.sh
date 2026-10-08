@@ -4,9 +4,9 @@
 # Checks: the image can own the mounted folder, the schema exists, a marker row survives a rebuild,
 # and an account made before the rebuild logs in after it with the same password, still has its
 # follow, and gets a simulated play: the sub:* sets were rebuilt from Postgres into the new, empty Redis.
-# The same user replays the same simulated game before and after: the new Redis starts the game's
-# version counter again, and the new notifications must reach history instead of colliding with the
-# old ones (<gameId>:v<version> is history's key; the counter starts from the clock, not 0).
+# The same user replays the simulator's matchup before and after. History is keyed by alert id
+# (<gameId>:<TYPE>:...), so the second run's notifications must not collide with the first's: each
+# simulator run has its own game ids (<league>-sim<run start>-<slot>).
 set -euo pipefail
 
 KUBE_CONTEXT=${KUBE_CONTEXT:-k3d-sports-notifier}
@@ -51,13 +51,13 @@ psql_ -c "CREATE TABLE IF NOT EXISTS persistence_marker (v text)" -c "INSERT INT
 user="persist_$(printf '%06d' $RANDOM)"
 password="persist-$RANDOM-$RANDOM"
 [ "$(auth signup)" = 201 ] || fail "signup before the rebuild failed"
-# mlb-hou is the away team in the simulator's game-BOS-HOU.
+# mlb-hou is the away team in the simulator's Red Sox–Astros game (a new game id every run).
 [ "$(curl -s -o /dev/null -w '%{http_code}' -b "$jar" -H 'Content-Type: application/json' \
   -d '{"target":{"kind":"team","id":"mlb-hou"}}' "$BASE_URL/api/v1/follows")" = 201 ] || fail "follow before the rebuild failed"
 
-# Game starts for game-BOS-HOU in the user's history.
+# Game starts in the user's history for the team's games.
 starts() {
-  curl -fsS -b "$jar" "$BASE_URL/api/v1/notifications?game=game-BOS-HOU&limit=100" \
+  curl -fsS -b "$jar" "$BASE_URL/api/v1/notifications?team=mlb-hou&limit=100" \
     | jq '[.items[] | select(.headline.type == "GAME_START")] | length'
 }
 # Runs one simulator wave and waits until the user's history has more than $1 game starts.
@@ -69,7 +69,7 @@ replay() {  # $1 = game starts before
     sleep 1
   done
   [ "$got" = 1 ] || fail "no new game start reached $user's history (simulator job $job)"
-  k wait "job/$job" --for=condition=complete --timeout=180s >/dev/null
+  k wait "job/$job" --for=condition=complete --timeout=300s >/dev/null
 }
 replay 0
 before_rebuild=$(starts)
