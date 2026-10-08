@@ -59,10 +59,20 @@ public final class GameLabels {
 
     /** {@code Raiders 20, Bears 17 · Q4 4:12}: the leader first (away first when tied), then the position. */
     public String scoreLine(Play p) {
-        Side first = p.homeScore() > p.awayScore() ? Side.HOME : Side.AWAY;
-        String line = name(p, first) + " " + p.score(first) + ", " + name(p, first.other()) + " " + p.score(first.other());
+        String line = score(p);
         String position = position(p);
         return position == null ? line : line + " · " + position;
+    }
+
+    /** {@code Raiders 20, Bears 17}: the score alone, leader first (away first when tied). */
+    public String score(Play p) {
+        Side first = p.homeScore() > p.awayScore() ? Side.HOME : Side.AWAY;
+        return name(p, first) + " " + p.score(first) + ", " + name(p, first.other()) + " " + p.score(first.other());
+    }
+
+    /** {@code Raiders at Bears}. */
+    public String matchup(Play p) {
+        return name(p, Side.AWAY) + " at " + name(p, Side.HOME);
     }
 
     /** {@code Q4 4:12}, {@code Half}; null when there is nothing to show. */

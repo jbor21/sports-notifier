@@ -21,7 +21,13 @@ public final class Detectors {
 
     /** Every wave 1 detector, in the order they run. */
     public static Detectors standard(GameLabels labels) {
-        return new Detectors(List.of());
+        return new Detectors(List.of(
+            new GameStartDetector(labels),
+            new PeriodEndDetector(labels),
+            new OvertimeDetector(labels),
+            new ShootoutDetector(labels),
+            new DelayDetector(labels),
+            new FinalDetector(labels)));
     }
 
     /** @param before the stored memory, or null when the game has none (the play becomes the baseline) */

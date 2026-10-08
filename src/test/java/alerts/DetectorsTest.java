@@ -70,4 +70,18 @@ class DetectorsTest {
         assertTrue(r.after().wasLate, "Q4 with 3:20 left is late in the NBA");
         assertEquals(0, before.period, "before is not changed");
     }
+
+    @Test
+    void baselineMarksPassedFlags() {
+        PlayBuilder q3 = PlayBuilder.nfl("g").period(3).clock(500).score(14, 10);
+        Sequence s = Sequence.standard().play(q3);
+        GameMemory m = s.memory();
+        assertTrue(m.fired("GAME_START"));
+        assertTrue(m.fired("END_OF_PERIOD:1"));
+        assertTrue(m.fired("HALFTIME"));
+        assertFalse(m.fired("END_OF_PERIOD:3"));
+        assertEquals(List.of(), s.ids());
+        s.play(q3.next().stage("END_PERIOD").clock(0));
+        assertEquals(List.of("g:END_OF_PERIOD:3"), s.ids());
+    }
 }
