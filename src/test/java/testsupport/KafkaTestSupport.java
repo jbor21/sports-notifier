@@ -3,6 +3,7 @@ package testsupport;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -14,6 +15,9 @@ import org.testcontainers.kafka.KafkaContainer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Properties;
 
 /**
@@ -39,6 +43,14 @@ public final class KafkaTestSupport {
         return broker.getBootstrapServers();
     }
 
+    /**
+     * Creates the topic and returns only when every partition's leader answers. "Created" comes back
+     * before that, and a write to a partition whose leader isn't ready gets NOT_LEADER_OR_FOLLOWER:
+     * the idempotent producer retries that batch, but a later batch may already have been accepted
+     * as the partition's first, and the retry then fails with OutOfOrderSequence until the delivery
+     * timeout (seen in CI on PR #13). Production topics are created by Strimzi long before anything
+     * writes to them; tests write within milliseconds.
+     */
     public static void createTopic(String name, int partitions) {
         Properties p = new Properties();
         p.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap());
@@ -46,6 +58,24 @@ public final class KafkaTestSupport {
             admin.createTopics(List.of(new NewTopic(name, partitions, (short) 1))).all().get();
         } catch (Exception e) {
             throw new IllegalStateException("could not create topic " + name, e);
+        }
+        awaitLeaders(name, partitions);
+    }
+
+    /**
+     * A latest-offset query is answered by each partition's leader: the readiness a write needs. The
+     * admin client retries NOT_LEADER_OR_FOLLOWER itself until every leader answers, or 30 s pass.
+     */
+    private static void awaitLeaders(String topic, int partitions) {
+        Properties p = new Properties();
+        p.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap());
+        p.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "30000");
+        Map<TopicPartition, OffsetSpec> latest = new HashMap<>();
+        for (int i = 0; i < partitions; i++) latest.put(new TopicPartition(topic, i), OffsetSpec.latest());
+        try (Admin admin = Admin.create(p)) {
+            admin.listOffsets(latest).all().get(40, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new IllegalStateException("topic " + topic + " still has partitions without a leader", e);
         }
     }
 
@@ -80,6 +110,16 @@ public final class KafkaTestSupport {
             }
         }
         return out;
+    }
+
+    /** Whether this JVM has started the broker (diagnostics only look at a broker that exists). */
+    public static synchronized boolean started() {
+        return broker != null;
+    }
+
+    /** The broker container's own log, for {@link KafkaDiagnostics}. */
+    public static synchronized String brokerLogs() {
+        return broker == null ? "" : broker.getLogs();
     }
 
     /** Freezes the broker's process (docker pause): connections stay open but nothing answers. */

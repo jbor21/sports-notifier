@@ -33,6 +33,9 @@ spec:
             {{- if $svc.kafka }}
             {{- include "sports-notifier.kafkaEnv" $ | nindent 12 }}
             {{- end }}
+            {{- if $svc.postgres }}
+            {{- include "sports-notifier.postgresEnv" $ | nindent 12 }}
+            {{- end }}
             - name: {{ $svc.portEnv }}
               value: {{ $svc.port | quote }}
             {{- range $k, $v := $svc.env }}

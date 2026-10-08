@@ -3,6 +3,7 @@ package app;
 import gateway.GatewayMain;
 import service.impl.EventProcessingServiceMain;
 import service.impl.GameStateServiceMain;
+import service.impl.HistoryWriterMain;
 import service.impl.NotificationServiceMain;
 import service.impl.Stage1WorkerMain;
 import service.impl.Stage2WorkerMain;
@@ -32,6 +33,7 @@ public final class Launcher {
         m.put("stage1-worker", Stage1WorkerMain::main);
         m.put("stage2-worker", Stage2WorkerMain::main);
         m.put("notification", NotificationServiceMain::main);
+        m.put("history", HistoryWriterMain::main);
         m.put("simulator", EventSimulatorMain::main);
         m.put("espn-poller", EspnPollerMain::main);
         SERVICES = Collections.unmodifiableMap(m);

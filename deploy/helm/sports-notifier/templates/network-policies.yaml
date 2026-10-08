@@ -83,3 +83,22 @@ spec:
             matchLabels: { app.kubernetes.io/part-of: sports-notifier }
       ports:
         - port: 6379
+---
+# Postgres: only the services that use it. (history is the Phase 3.2 history writer, added later.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-from-db-users
+  labels:
+    app.kubernetes.io/part-of: sports-notifier
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: postgres }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/name, operator: In, values: [user-pref, notification, history] }
+      ports:
+        - port: 5432

@@ -14,6 +14,7 @@ probes:
 
 # One Deployment per entry, named after the key. clusterService: false means no Service object.
 # kafka: true gives the service KAFKA_BOOTSTRAP, the broker's address.
+# postgres: true gives it PG_URL, PG_USER and PG_PASSWORD (from the postgres Secret).
 services:
   gateway:
     replicas: 1
@@ -26,10 +27,10 @@ services:
       USER_PREF_URL: http://user-pref:8081
       GAME_STATE_URL: http://game-state:8082
       NOTIFICATION_URL: http://notification:8087
-  user-pref:        { replicas: 1, port: 8081, portEnv: USER_PREF_PORT,        clusterService: true }
+  user-pref:        { replicas: 1, port: 8081, portEnv: USER_PREF_PORT,        clusterService: true, postgres: true }
   game-state:       { replicas: 1, port: 8082, portEnv: GAME_STATE_PORT,       clusterService: true }
   event-processing: { replicas: 1, port: 8083, portEnv: EVENT_PROCESSING_PORT, clusterService: true, kafka: true }
-  notification:     { replicas: 1, port: 8087, portEnv: NOTIFICATION_PORT,     clusterService: true }
+  notification:     { replicas: 1, port: 8087, portEnv: NOTIFICATION_PORT,     clusterService: true, postgres: true }
   # Stage 1: reads game-events, writes one notifications message per user.
   stage1-worker:
     replicas: 1
@@ -44,6 +45,14 @@ services:
     portEnv: STAGE2_WORKER_PORT
     clusterService: false
     kafka: true
+  # History writers: a second consumer group on notifications, saving each one to Postgres in batches.
+  history:
+    replicas: 1
+    port: 8088
+    portEnv: HISTORY_PORT
+    clusterService: false
+    kafka: true
+    postgres: true
 
 # ESPN request settings, shared by the gateway's upcoming-games proxy and the poller. ESPN's
 # filtering changes over time; the daily espn-check workflow says when these stop working.
@@ -55,6 +64,15 @@ espn:
 redis:
   image: redis:7.4
   storage: 1Gi
+
+# Always exactly one pod. On the laptop hostPath (set in values-local.yaml) puts the data in a folder on
+# the Mac; elsewhere a volume claim of `storage` is used. An empty password makes the chart generate one
+# and keep it across upgrades.
+postgres:
+  image: postgres:17
+  storage: 2Gi
+  hostPath: ""
+  password: ""
 
 # Kafka, run by the Strimzi operator that `make cluster` installs. The broker is named after the Helm
 # release; services reach it at <release>-kafka-bootstrap:9092. These are the laptop's sizes; Phase 5's

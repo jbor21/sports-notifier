@@ -47,4 +47,21 @@ public final class SimpleHttp {
             .build();
         return CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
     }
+
+    public static HttpResponse<String> patchJson(String url, String json) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            .timeout(Duration.ofSeconds(5))
+            .header("Content-Type", "application/json")
+            .method("PATCH", HttpRequest.BodyPublishers.ofString(json))
+            .build();
+        return CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
+    public static HttpResponse<String> delete(String url) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            .timeout(Duration.ofSeconds(5))
+            .DELETE()
+            .build();
+        return CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
+    }
 }

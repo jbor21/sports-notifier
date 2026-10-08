@@ -76,7 +76,7 @@ class KafkaOutageTest {
         assertEquals(ProcessResult.ACCEPTED, eps.processEvent(OutboxRelayTest.play("g1", 12, 3)));
         awaitOutboxEmpty("g1");
 
-        List<Long> versions = OutboxRelayTest.versionsOnTopic(topic, "g1", Duration.ofSeconds(2));
+        List<Long> versions = OutboxRelayTest.fromOne(OutboxRelayTest.versionsOnTopic(topic, "g1", Duration.ofSeconds(2)));
         assertTrue(versions.containsAll(List.of(1L, 2L, 3L)), versions.toString());
         for (int i = 1; i < versions.size(); i++) assertTrue(versions.get(i) >= versions.get(i - 1), versions.toString());
         assertEquals(3L, versions.get(versions.size() - 1));

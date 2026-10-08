@@ -1,5 +1,10 @@
 package service.impl;
 
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
+import util.RedisKeys;
+import redis.clients.jedis.JedisPubSub;
 import com.google.gson.Gson;
 import model.GameEvent;
 import model.NotificationMessage;
@@ -34,6 +39,11 @@ class Stage2WorkerTest {
     private KafkaProducer<String, String> producer;
     private final List<Stage2Worker> workers = new ArrayList<>();
 
+    /** Pushes this test's gateway received, in order: what a browser tab would have been sent. */
+    private final List<String> pushes = new CopyOnWriteArrayList<>();
+    private String gateway;
+    private Jedis listener;
+
     @BeforeEach
     void setUp() {
         pool = new JedisPool(new JedisPoolConfig(), "localhost", 6379, 2000, null, 1);
@@ -43,10 +53,24 @@ class Stage2WorkerTest {
         topic = "notifications-" + UUID.randomUUID();
         KafkaTestSupport.createTopic(topic, 48);
         producer = new KafkaProducer<>(KafkaSettings.fanoutProducer(KafkaTestSupport.bootstrap()));
+        gateway = "test-gw-" + UUID.randomUUID();
+        listener = new Jedis("localhost", 6379);
+        CountDownLatch subscribed = new CountDownLatch(1);
+        JedisPubSub sub = new JedisPubSub() {
+            @Override public void onMessage(String channel, String message) { pushes.add(message); }
+            @Override public void onSubscribe(String channel, int count) { subscribed.countDown(); }
+        };
+        new Thread(() -> listener.subscribe(sub, RedisKeys.GATEWAY_CHANNEL_PREFIX + gateway)).start();
+        try {
+            assertTrue(subscribed.await(5, TimeUnit.SECONDS));
+        } catch (InterruptedException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @AfterEach
     void tearDown() {
+        listener.close();
         workers.forEach(Stage2Worker::close);
         producer.close();
         jedis.close();
@@ -80,13 +104,23 @@ class Stage2WorkerTest {
         producer.send(new ProducerRecord<>(topic, m.getUserId(), GSON.toJson(m))).get();
     }
 
-    /** The user's history, oldest first, as the text of each entry. */
-    private List<String> historyOf(String userId) {
-        List<String> newestFirst = jedis.lrange("notifications:" + userId, 0, -1);
+    /** What the user's gateway received, in order, as the text of each notification. */
+    private List<String> pushedTo(String userId) throws InterruptedException {
+        Thread.sleep(300);
         List<String> texts = new ArrayList<>();
-        for (String json : newestFirst) texts.add(GSON.fromJson(json, model.Notification.class).getMessage());
-        Collections.reverse(texts);
+        for (String raw : pushes) {
+            com.google.gson.JsonObject m = com.google.gson.JsonParser.parseString(raw).getAsJsonObject();
+            if (userId.equals(m.get("userId").getAsString())) {
+                texts.add(m.getAsJsonObject("payload").get("message").getAsString());
+            }
+        }
         return texts;
+    }
+
+    /** Every user in the test holds a socket on this test's own gateway, so its channel hears every push. */
+    private void connect(String... userIds) {
+        long expires = Long.parseLong(jedis.time().get(0)) + 300;
+        for (String u : userIds) jedis.zadd("conn:" + u, expires, gateway);
     }
 
     @Test
@@ -94,6 +128,7 @@ class Stage2WorkerTest {
         // Spec 2.5 #6: a worker dies mid-batch without committing; the lane moves to another worker,
         // which re-reads from the last commit. The script's dedup key turns the re-reads into no-ops.
         int users = 20, perUser = 10;
+        for (int u = 0; u < users; u++) connect("u" + u);
         for (long v = 1; v <= perUser; v++) {
             for (int u = 0; u < users; u++) send(msg("u" + u, v));
         }
@@ -114,21 +149,23 @@ class Stage2WorkerTest {
         }
         List<String> expected = new ArrayList<>();
         for (long v = 1; v <= perUser; v++) expected.add("play " + v);
-        for (int u = 0; u < users; u++) assertEquals(expected, historyOf("u" + u), "user u" + u);
+        for (int u = 0; u < users; u++) assertEquals(expected, pushedTo("u" + u), "user u" + u);
     }
 
     @Test
     void poisonRecordIsSkippedAndCommitted() throws Exception {
+        connect("u1");
         producer.send(new ProducerRecord<>(topic, "u1", "{not json")).get();
         send(msg("u1", 1));
         pollUntilHandled(worker("s2-" + UUID.randomUUID(), new Delivery(pool)), 2);
-        assertEquals(List.of("play 1"), historyOf("u1"));
+        assertEquals(List.of("play 1"), pushedTo("u1"));
     }
 
     @Test
     void newGroupDeliversEarlierMessages() throws Exception {
+        connect("u1");
         send(msg("u1", 1));
         pollUntilHandled(worker("s2-" + UUID.randomUUID(), new Delivery(pool)), 1);
-        assertEquals(List.of("play 1"), historyOf("u1"));
+        assertEquals(List.of("play 1"), pushedTo("u1"));
     }
 }

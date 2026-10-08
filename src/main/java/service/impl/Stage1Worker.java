@@ -1,5 +1,10 @@
 package service.impl;
 
+import catalog.AlertCatalog;
+import catalog.Teams;
+import com.google.gson.JsonObject;
+import model.NotificationBody;
+
 import com.google.gson.Gson;
 import model.GameEvent;
 import model.NotificationMessage;
@@ -15,6 +20,8 @@ import util.GameEventParser;
 import util.LoopHealth;
 
 import java.time.Duration;
+import java.util.function.BooleanSupplier;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -34,6 +41,12 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * That is why the version is recorded only after every message is confirmed: recording first and
  * crashing before the sends would skip the play for good.
+ *
+ * While the sub:* sets are being rebuilt ({@code sub:built} missing), an audience built from them
+ * could be empty and the play's alerts silently lost. So Stage 1 waits: it rewinds the batch and
+ * pauses its lanes, but keeps polling (a paused consumer's poll returns nothing and keeps it in the
+ * group) and keeps beating, so a long rebuild delays alerts without failing /health or causing a
+ * rebalance (Phase 3.2 spec, section 6).
  */
 public final class Stage1Worker implements AutoCloseable {
 
@@ -43,16 +56,31 @@ public final class Stage1Worker implements AutoCloseable {
     private final Consumer<String, String> consumer;
     private final Producer<String, String> producer;
     private final String notificationsTopic;
-    private final Audience audience;
-    private volatile boolean running = true;
+    private static final long WAIT_WARN_EVERY_MILLIS = 30_000L;
 
+    private final Audience audience;
+    private final AlertMapping mapping;
+    private final Teams teams;
+    private final BooleanSupplier setsReady;
+    private volatile boolean running = true;
+    private volatile boolean waitingForSets;
+    private long lastWaitWarning;
+
+    /** {@code setsReady}: whether the sub:* sets can be trusted ({@code sub:built} exists). */
     public Stage1Worker(JedisPool pool, Stage1Progress progress, Consumer<String, String> consumer,
-                        Producer<String, String> producer, String notificationsTopic) {
+                        Producer<String, String> producer, String notificationsTopic, BooleanSupplier setsReady) {
         this.progress = progress;
         this.consumer = consumer;
         this.producer = producer;
         this.notificationsTopic = notificationsTopic;
         this.audience = new Audience(pool);
+        this.mapping = new AlertMapping(AlertCatalog.load());
+        this.teams = Teams.load();
+        this.setsReady = setsReady;
+    }
+
+    public boolean isWaitingForSets() {
+        return waitingForSets;
     }
 
     /**
@@ -63,7 +91,36 @@ public final class Stage1Worker implements AutoCloseable {
      *         of the batch first, so the next poll reads it again
      */
     public int pollOnce(Duration timeout) {
+        if (waitingForSets) {
+            if (setsReady.getAsBoolean()) {
+                consumer.resume(consumer.paused());
+                waitingForSets = false;
+                System.out.println("[Stage1] sub sets are rebuilt; handling plays again");
+            } else {
+                consumer.pause(consumer.assignment());   // a rebalance can hand us new, unpaused lanes
+                warnWaiting();
+            }
+        }
         ConsumerRecords<String, String> records = consumer.poll(timeout);
+        boolean hold;
+        try {
+            hold = !records.isEmpty() && (waitingForSets || !setsReady.getAsBoolean());
+        } catch (RuntimeException e) {
+            // The check is the first Redis call after the poll: if Redis is down, rewind so the batch
+            // is read again, or the next commit would move past it and its alerts would be lost.
+            Offsets.rewindTo(consumer, records);
+            throw e;
+        }
+        if (hold) {
+            Offsets.rewindTo(consumer, records);
+            consumer.pause(consumer.assignment());
+            if (!waitingForSets) {
+                waitingForSets = true;
+                lastWaitWarning = 0;
+                warnWaiting();
+            }
+            return 0;
+        }
         int handled = 0;
         try {
             for (ConsumerRecord<String, String> r : records) {
@@ -92,12 +149,14 @@ public final class Stage1Worker implements AutoCloseable {
         }
         if (play.getVersion() <= progress.last(play.getGameId())) return;
 
-        if (!EventProcessingServiceImpl.GAME_SYNC.equals(play.getEventType())) {
+        List<String> switches = mapping.switchesFor(play.getLeague(), play.getEventType());   // GAME_SYNC: none
+        if (!switches.isEmpty()) {
             AtomicReference<Exception> failed = new AtomicReference<>();
             final GameEvent p = play;
-            audience.forEachPage(p, page -> {
+            JsonObject body = NotificationBody.of(p, mapping.headlineType(p.getLeague(), p.getEventType()), teams);
+            audience.forEachPage(p, switches, page -> {
                 for (String userId : page) {
-                    producer.send(new ProducerRecord<>(notificationsTopic, userId, GSON.toJson(NotificationMessage.of(p, userId))),
+                    producer.send(new ProducerRecord<>(notificationsTopic, userId, GSON.toJson(NotificationMessage.of(p, userId, body))),
                         (meta, err) -> { if (err != null) failed.compareAndSet(null, err); });
                 }
             });
@@ -119,6 +178,14 @@ public final class Stage1Worker implements AutoCloseable {
                 System.err.println("[Stage1] batch failed, retrying from the last commit: " + e.getMessage());
                 try { Thread.sleep(1000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
             }
+        }
+    }
+
+    private void warnWaiting() {
+        long now = System.currentTimeMillis();
+        if (now - lastWaitWarning >= WAIT_WARN_EVERY_MILLIS) {
+            System.err.println("[Stage1] waiting: sub:built is missing, so the sub sets are being rebuilt; plays are held, not dropped");
+            lastWaitWarning = now;
         }
     }
 

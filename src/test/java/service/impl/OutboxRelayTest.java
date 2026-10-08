@@ -60,6 +60,16 @@ class OutboxRelayTest {
             "LAL", "BOS", home, 0, "IN_PROGRESS", "NBA", seq);
     }
 
+    /**
+     * Versions rebased so the game's first is 1. The counter starts from the clock, not 0, so the
+     * order and the steps between versions are what these tests check, not the raw numbers.
+     */
+    static List<Long> fromOne(List<Long> versions) {
+        if (versions.isEmpty()) return versions;
+        long base = versions.stream().mapToLong(Long::longValue).min().getAsLong() - 1;
+        return versions.stream().map(v -> v - base).toList();
+    }
+
     /** The versions of this game's plays on the topic, in log order. */
     static List<Long> versionsOnTopic(String topic, String gameId, Duration wait) {
         List<Long> versions = new ArrayList<>();
@@ -83,7 +93,7 @@ class OutboxRelayTest {
         assertEquals(ProcessResult.PENDING, b.processEvent(play("g1", 11, 2)));
         relay(kafka, 0).runOnce().get(10, TimeUnit.SECONDS);
         assertEquals(ProcessResult.ACCEPTED, b.processEvent(play("g1", 11, 2)));
-        assertEquals(List.of(1L, 2L), versionsOnTopic(topic, "g1", Duration.ofSeconds(2)));
+        assertEquals(List.of(1L, 2L), fromOne(versionsOnTopic(topic, "g1", Duration.ofSeconds(2))));
     }
 
     @Test
@@ -92,7 +102,7 @@ class OutboxRelayTest {
         relay(kafka, 0).runOnce().get(10, TimeUnit.SECONDS);
         assertFalse(jedis.exists("outbox:g1"));
         assertNull(jedis.zscore("outbox:pending", "g1"));
-        assertEquals(List.of(1L), versionsOnTopic(topic, "g1", Duration.ofSeconds(2)));
+        assertEquals(List.of(1L), fromOne(versionsOnTopic(topic, "g1", Duration.ofSeconds(2))));
     }
 
     @Test
@@ -131,7 +141,7 @@ class OutboxRelayTest {
         CompletableFuture<Void> second = relay(kafka, 0).runOnce();
         CompletableFuture.allOf(first, second).get(10, TimeUnit.SECONDS);
         assertEquals(ProcessResult.ACCEPTED, eps.processEvent(play("g1", 11, 2)));
-        List<Long> versions = versionsOnTopic(topic, "g1", Duration.ofSeconds(2));
+        List<Long> versions = fromOne(versionsOnTopic(topic, "g1", Duration.ofSeconds(2)));
         assertTrue(versions.size() == 2 || versions.size() == 3, "v1 once or twice, then v2: " + versions);
         for (int i = 1; i < versions.size(); i++) assertTrue(versions.get(i) >= versions.get(i - 1), versions.toString());
         assertEquals(2L, versions.get(versions.size() - 1));
@@ -149,7 +159,7 @@ class OutboxRelayTest {
         assertFalse(jedis.exists("outbox:g1"), "the relay's confirmed send clears the slot");
         lateConfirmation.complete(null);                         // the first send's confirmation arrives
         assertEquals(ProcessResult.ACCEPTED, eps.processEvent(play("g1", 11, 2)));
-        List<Long> versions = versionsOnTopic(topic, "g1", Duration.ofSeconds(2));
+        List<Long> versions = fromOne(versionsOnTopic(topic, "g1", Duration.ofSeconds(2)));
         assertEquals(List.of(1L, 1L, 2L), versions);
     }
 }

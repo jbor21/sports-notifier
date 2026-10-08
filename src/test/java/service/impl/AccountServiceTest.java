@@ -1,122 +1,129 @@
 package service.impl;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
+import testsupport.PostgresTestSupport;
+import util.ApiResult;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Accounts in Postgres (Phase 3.2 spec, section 4). */
 class AccountServiceTest {
 
-    private JedisPool pool;
-    private Jedis jedis;
     private AccountService accounts;
 
     @BeforeEach
     void setUp() {
-        JedisPoolConfig cfg = new JedisPoolConfig();
-        cfg.setMaxTotal(32);
-        pool = new JedisPool(cfg, "localhost", 6379, 2000, null, 1);
-        jedis = new Jedis("localhost", 6379);
-        jedis.select(1);
-        jedis.flushDB();
-        accounts = new AccountService(pool);
+        PostgresTestSupport.truncateAll();
+        accounts = new AccountService(PostgresTestSupport.dataSource());
     }
 
-    @AfterEach
-    void tearDown() {
-        jedis.close();
-        pool.close();
+    @Test
+    void signupReturns201WithUser() {
+        ApiResult<AccountService.UserView> r = accounts.signup("jacob", "correct-horse-9", "America/New_York");
+        assertEquals(201, r.status());
+        assertEquals("jacob", r.body().username());
+        assertEquals("America/New_York", r.body().timezone());
+        assertNotNull(r.body().id());
+        assertNotNull(r.body().createdAt());
     }
 
-    /** Runs every task at the same instant and returns their status codes. */
-    private List<Integer> race(List<Callable<AccountService.Result>> tasks) throws Exception {
+    @Test
+    void twentySimultaneousSignupsOneWins() throws Exception {
+        List<Callable<ApiResult<AccountService.UserView>>> tasks = new ArrayList<>();
+        for (int i = 0; i < 20; i++) tasks.add(() -> accounts.signup("bob", "password-123", null));
+        List<ApiResult<AccountService.UserView>> results = race(tasks);
+        assertEquals(1, results.stream().filter(r -> r.status() == 201).count());
+        assertEquals(19, results.stream().filter(r -> r.status() == 409 && "username_taken".equals(r.error().code())).count());
+    }
+
+    @Test
+    void passwordTooShort() {
+        ApiResult<?> r = accounts.signup("jacob", "short", null);
+        assertEquals(422, r.status());
+        assertEquals("validation_failed", r.error().code());
+        assertEquals("too_short", r.error().fields().get("password"));
+    }
+
+    @Test
+    void passwordLengthIsCountedIn72Bytes() {
+        String twentyFourThreeByteChars = "€".repeat(24);           // 72 bytes in UTF-8
+        assertEquals(201, accounts.signup("multibyte", twentyFourThreeByteChars, null).status());
+        ApiResult<?> r = accounts.signup("toolong", twentyFourThreeByteChars + "a", null);   // 73 bytes
+        assertEquals(422, r.status());
+        assertEquals("too_long", r.error().fields().get("password"));
+    }
+
+    @Test
+    void usernameRules() {
+        for (String bad : List.of("ab", "a".repeat(21), "a-b", "has space", "")) {
+            ApiResult<?> r = accounts.signup(bad, "password-123", null);
+            assertEquals(422, r.status(), bad);
+            assertTrue(r.error().fields().containsKey("username"), bad);
+        }
+        assertEquals(201, accounts.signup("a_1", "password-123", null).status());
+    }
+
+    @Test
+    void mixedCaseUsernameIsLowerCased() {
+        assertEquals("jacob", accounts.signup("Jacob", "password-123", null).body().username());
+        ApiResult<AccountService.UserView> login = accounts.login("JACOB", "password-123");
+        assertEquals(200, login.status());
+        assertEquals("jacob", login.body().username());
+        assertEquals(409, accounts.signup("jacob", "password-123", null).status());
+    }
+
+    @Test
+    void timezoneRules() {
+        assertEquals("UTC", accounts.signup("nozone", "password-123", null).body().timezone());
+        for (String bad : List.of("EST", "+05:00", "", "Mars/Olympus")) {
+            ApiResult<?> r = accounts.signup("tz" + Math.abs(bad.hashCode() % 1000), "password-123", bad);
+            assertEquals(422, r.status(), bad);
+            assertEquals("invalid", r.error().fields().get("timezone"), bad);
+        }
+        assertEquals(201, accounts.signup("chicago", "password-123", "America/Chicago").status());
+    }
+
+    @Test
+    void wrongUserAndWrongPasswordLookAlike() {
+        accounts.signup("jacob", "password-123", null);
+        ApiResult<?> wrongUser = accounts.login("nobody", "password-123");
+        ApiResult<?> wrongPassword = accounts.login("jacob", "password-999");
+        assertEquals(401, wrongUser.status());
+        assertEquals(wrongUser.status(), wrongPassword.status());
+        assertEquals(wrongUser.error().toJson(), wrongPassword.error().toJson());
+        assertEquals("invalid_credentials", wrongUser.error().code());
+    }
+
+    @Test
+    void getAndUpdateTimezone() {
+        String id = accounts.signup("jacob", "password-123", null).body().id();
+        assertEquals("jacob", accounts.get(id).body().username());
+        assertEquals(404, accounts.get("00000000-0000-0000-0000-000000000000").status());
+        assertEquals(404, accounts.get("not-a-uuid").status());
+        assertEquals("Europe/London", accounts.updateTimezone(id, "Europe/London").body().timezone());
+        assertEquals(422, accounts.updateTimezone(id, "EST").status());
+        assertEquals("Europe/London", accounts.get(id).body().timezone());
+    }
+
+    /** Runs every task at the same instant. */
+    private static <T> List<T> race(List<Callable<T>> tasks) throws Exception {
         ExecutorService threads = Executors.newFixedThreadPool(tasks.size());
         try {
             CountDownLatch gate = new CountDownLatch(1);
-            List<Future<AccountService.Result>> futures = new ArrayList<>();
-            for (Callable<AccountService.Result> t : tasks) {
-                futures.add(threads.submit(() -> { gate.await(); return t.call(); }));
-            }
+            List<Future<T>> futures = new ArrayList<>();
+            for (Callable<T> t : tasks) futures.add(threads.submit(() -> { gate.await(); return t.call(); }));
             gate.countDown();
-            List<Integer> codes = new ArrayList<>();
-            for (Future<AccountService.Result> f : futures) codes.add(f.get(10, TimeUnit.SECONDS).status());
-            return codes;
+            List<T> out = Collections.synchronizedList(new ArrayList<>());
+            for (Future<T> f : futures) out.add(f.get(30, TimeUnit.SECONDS));
+            return out;
         } finally {
             threads.shutdownNow();
         }
-    }
-
-    @Test
-    void twentyConcurrentSignupsOneWinner() throws Exception {
-        List<Callable<AccountService.Result>> tasks = new ArrayList<>();
-        for (int i = 0; i < 20; i++) tasks.add(() -> accounts.signup("bob", "password-123"));
-        List<Integer> codes = race(tasks);
-        assertEquals(1, codes.stream().filter(c -> c == 200).count());
-        assertEquals(19, codes.stream().filter(c -> c == 409).count());
-        assertEquals(1, jedis.keys("username:*").size());
-        assertEquals(1, jedis.keys("user:*").size());
-    }
-
-    @Test
-    void caseVariantsAreTheSameName() throws Exception {
-        List<Integer> codes = race(List.of(
-            () -> accounts.signup("Bob", "password-123"),
-            () -> accounts.signup("bob", "password-456")));
-        assertEquals(1, codes.stream().filter(c -> c == 200).count());
-        assertEquals(1, codes.stream().filter(c -> c == 409).count());
-    }
-
-    @Test
-    void passwordUnderEightRejected() {
-        AccountService.Result r = accounts.signup("bob", "1234567");
-        assertEquals(400, r.status());
-        assertTrue(r.error().contains("8"), r.error());
-        assertFalse(jedis.exists("username:bob"));
-    }
-
-    @Test
-    void passwordOverSeventyTwoBytesRejected() {
-        assertEquals(400, accounts.signup("bob", "a".repeat(73)).status());
-        // 19 four-byte emoji: only 38 Java chars, but 76 bytes, past what bcrypt reads.
-        assertEquals(400, accounts.signup("bob", "😀".repeat(19)).status());
-    }
-
-    @Test
-    void seventyTwoBytesAccepted() {
-        String password = "a".repeat(72);
-        assertEquals(200, accounts.signup("bob", password).status());
-        assertEquals(200, accounts.login("bob", password).status());
-    }
-
-    @Test
-    void blankUsernameRejected() {
-        assertEquals(400, accounts.signup("   ", "password-123").status());
-        assertEquals(400, accounts.signup(null, "password-123").status());
-        assertEquals(400, accounts.signup("bob", null).status());
-    }
-
-    @Test
-    void wrongPasswordIs401() {
-        accounts.signup("bob", "password-123");
-        assertEquals(401, accounts.login("bob", "password-999").status());
-        assertEquals(401, accounts.login("nobody", "password-123").status());
-        assertEquals(401, accounts.login(null, null).status());
-    }
-
-    @Test
-    void loginReturnsTheSameUserId() {
-        String id = accounts.signup("Bob", "password-123").userId();
-        AccountService.Result login = accounts.login(" BOB ", "password-123");
-        assertEquals(200, login.status());
-        assertEquals(id, login.userId());
-        assertEquals("bob", login.username());
     }
 }

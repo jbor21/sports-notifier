@@ -56,12 +56,12 @@ class EventProcessingServiceImplTest {
     void versionRisesOnlyOnAccept() {
         // version orders accepted plays for everything after the script; seq can't, because a heal can lower it.
         service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
-        assertEquals("1", jedis.hget("game:g1", "version"));
+        long first = Long.parseLong(jedis.hget("game:g1", "version"));
         service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));   // duplicate
         service.processEvent(ev("e0", 5, 1, 0, "SCORE_UPDATE"));    // stale
-        assertEquals("1", jedis.hget("game:g1", "version"));
+        assertEquals(String.valueOf(first), jedis.hget("game:g1", "version"));
         service.processEvent(ev("e2", 20, 4, 0, "SCORE_UPDATE"));
-        assertEquals("2", jedis.hget("game:g1", "version"));
+        assertEquals(String.valueOf(first + 1), jedis.hget("game:g1", "version"));
     }
 
     @Test
@@ -72,16 +72,36 @@ class EventProcessingServiceImplTest {
         service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
         jedis.del("game:g1");
         service.processEvent(ev("e2", 20, 4, 0, "SCORE_UPDATE"));
-        assertEquals(2L, sent.plays.get(1).getVersion());
+        assertEquals(sent.plays.get(0).getVersion() + 1, sent.plays.get(1).getVersion(), "the counter carried on");
         long ttl = jedis.ttl("version:g1");
         assertTrue(ttl > 8 * 86_400, "the counter outlives Stage 1's 8-day memory: " + ttl);
+    }
+
+    /**
+     * Postgres outlives Redis now (make down, an AWS teardown). If the counter restarted at 1, the
+     * replayed game's notifications would reuse old ids (<gameId>:v<version>) and history's primary
+     * key would silently drop them; an open UI would also ignore the new versions as stale. So a
+     * missing counter starts from the clock (Phase 3.2 spec, 7.2; final review, Important 2).
+     */
+    @Test
+    void counterReseededAfterARedisResetIsHigherThanBefore() {
+        long[] clock = {1_791_000_000_000L};
+        EventProcessingServiceImpl eps = new EventProcessingServiceImpl(pool, sent, () -> clock[0]);
+        for (int n = 1; n <= 50; n++) eps.processEvent(ev("e" + n, 10 + n, n, 0, "SCORE_UPDATE"));
+        long before = sent.plays.get(sent.plays.size() - 1).getVersion();
+        jedis.flushDB();                       // Redis came back empty
+        clock[0] += 1_000;                     // a second later
+        eps.processEvent(ev("again-1", 11, 1, 0, "SCORE_UPDATE"));
+        long after = sent.plays.get(sent.plays.size() - 1).getVersion();
+        assertTrue(after > before, "reseeded " + after + " must be above the old " + before);
+        assertEquals(String.valueOf(after), jedis.hget("game:g1", "version"), "stored exactly, not rounded");
     }
 
     @Test
     void publishedPlayCarriesItsVersion() {
         service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
         service.processEvent(ev("e2", 20, 4, 0, "SCORE_UPDATE"));
-        assertEquals(2L, sent.plays.get(sent.plays.size() - 1).getVersion());
+        assertEquals(sent.plays.get(0).getVersion() + 1, sent.plays.get(sent.plays.size() - 1).getVersion());
     }
 
     @Test

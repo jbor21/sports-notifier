@@ -1,6 +1,8 @@
 package service.impl;
 
+import catalog.FollowKind;
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import model.GameEvent;
 import model.NotificationMessage;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -59,10 +61,14 @@ class Stage1WorkerTest {
     }
 
     private Stage1Worker worker(String group, Stage1Progress progress) {
+        return worker(group, progress, () -> true);
+    }
+
+    private Stage1Worker worker(String group, Stage1Progress progress, java.util.function.BooleanSupplier setsReady) {
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(KafkaSettings.consumer(KafkaTestSupport.bootstrap(), group));
         consumer.subscribe(List.of(gameEvents));
         KafkaProducer<String, String> producer = new KafkaProducer<>(KafkaSettings.fanoutProducer(KafkaTestSupport.bootstrap()));
-        Stage1Worker w = new Stage1Worker(pool, progress, consumer, producer, notifications);
+        Stage1Worker w = new Stage1Worker(pool, progress, consumer, producer, notifications, setsReady);
         workers.add(w);
         return w;
     }
@@ -85,14 +91,14 @@ class Stage1WorkerTest {
         playProducer.send(new ProducerRecord<>(gameEvents, play.getGameId(), GameEventParser.toJson(play))).get();
     }
 
-    private void follow(String userId, String team, String type) {
-        jedis.sadd("sub:team:" + team, userId);
-        jedis.sadd("sub:notif:" + type, userId);
+    /** A follow of an NHL team with one switch on, as user-pref's save path writes it. */
+    private void follow(String userId, String team, String alertSwitch) {
+        jedis.sadd(FollowSets.key(FollowKind.TEAM, "nhl-" + team.toLowerCase(), alertSwitch), userId);
     }
 
     private static GameEvent play(long version, String type, int home, int away) {
-        return new GameEvent("nba-1", "nba-1:" + version, type, "LAL", 1234L, "LAL scores! LAL " + home + " - " + away + " BOS",
-            "LAL", "BOS", home, away, "IN_PROGRESS", "NBA", 10 + version).withVersion(version);
+        return new GameEvent("nhl-1", "nhl-1:" + version, type, "TOR", 1234L, "TOR scores! TOR " + home + " - " + away + " BOS",
+            "TOR", "BOS", home, away, "IN_PROGRESS", "NHL", 10 + version).withVersion(version);
     }
 
     private List<NotificationMessage> messages() {
@@ -105,9 +111,33 @@ class Stage1WorkerTest {
         return out;
     }
 
+    /** Final review, Important 1: the marker check is the first Redis call after a poll. */
+    @Test
+    void redisFailingAtTheMarkerCheckLosesNothing() throws Exception {
+        follow("bos-fan", "BOS", "GOAL");
+        send(play(1, "SCORE_UPDATE", 2, 0));
+        java.util.concurrent.atomic.AtomicInteger checks = new java.util.concurrent.atomic.AtomicInteger();
+        Stage1Worker w = worker("s1-" + UUID.randomUUID(), new Stage1Progress(pool), () -> {
+            if (checks.getAndIncrement() == 0) throw new redis.clients.jedis.exceptions.JedisConnectionException("Redis is down (test)");
+            return true;
+        });
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        boolean failed = false;
+        while (!failed) {
+            assertTrue(System.nanoTime() < deadline, "the marker check never ran");
+            try {
+                w.pollOnce(Duration.ofMillis(200));
+            } catch (redis.clients.jedis.exceptions.JedisConnectionException e) {
+                failed = true;   // what run() does next: log, wait, poll again
+            }
+        }
+        pollUntilHandled(w, 1);   // the batch was rewound, so the play comes back
+        assertEquals(1, messages().size(), "the play's alert is delivered once, not skipped");
+    }
+
     @Test
     void samePlayTwiceSendsOneMessagePerUser() throws Exception {
-        follow("bos-fan", "BOS", "SCORE_UPDATE");
+        follow("bos-fan", "BOS", "GOAL");
         send(play(1, "SCORE_UPDATE", 2, 0));
         send(play(1, "SCORE_UPDATE", 2, 0));     // the retry loop sent it twice
         pollUntilHandled(worker("s1-" + UUID.randomUUID()), 2);
@@ -116,31 +146,43 @@ class Stage1WorkerTest {
 
     @Test
     void messageCarriesVersionedIdAndScores() throws Exception {
-        follow("bos-fan", "BOS", "SCORE_UPDATE");
+        follow("bos-fan", "BOS", "GOAL");
         send(play(3, "SCORE_UPDATE", 5, 2));
         pollUntilHandled(worker("s1-" + UUID.randomUUID()), 1);
         NotificationMessage m = messages().get(0);
-        assertEquals("nba-1:v3", m.getMessageId());
+        assertEquals("nhl-1:v3", m.getMessageId());
         assertEquals("bos-fan", m.getUserId());
         assertEquals(5, m.getHomeScore());
         assertEquals(2, m.getAwayScore());
         assertEquals(1234L, m.getDetectedAt());
         assertEquals("SCORE_UPDATE", m.getEventType());
+        // The API's Notification, which history stores and the new UI reads (spec section 6).
+        JsonObject n = m.getNotification();
+        assertEquals("nhl-1:v3", n.get("id").getAsString());
+        assertEquals("game_moment", n.get("kind").getAsString());
+        assertEquals("NHL", n.get("leagueId").getAsString());
+        assertEquals("GOAL", n.getAsJsonObject("headline").get("type").getAsString());
+        assertEquals("TOR scores! TOR 5 - 2 BOS", n.getAsJsonObject("headline").get("text").getAsString());
+        JsonObject away = n.getAsJsonObject("game").getAsJsonObject("away");
+        assertEquals("nhl-bos", away.getAsJsonObject("team").get("id").getAsString());
+        assertEquals("Boston Bruins", away.getAsJsonObject("team").get("displayName").getAsString());
+        assertEquals(2, away.get("score").getAsInt());
+        assertEquals("1970-01-01T00:00:01.234Z", n.get("detectedAt").getAsString());
     }
 
     @Test
     void gameSyncSendsNothingButIsRecorded() throws Exception {
-        follow("bos-fan", "BOS", "GAME_SYNC");
+        follow("bos-fan", "BOS", "GOAL");
         send(play(1, "GAME_SYNC", 0, 0));
         pollUntilHandled(worker("s1-" + UUID.randomUUID()), 1);
         assertTrue(messages().isEmpty());
-        assertEquals(1L, new Stage1Progress(pool).last("nba-1"));
+        assertEquals(1L, new Stage1Progress(pool).last("nhl-1"));
     }
 
     @Test
     void crashBeforeRecordingResends() throws Exception {
         // First row of the crash table: messages sent, then the worker dies before recording the version.
-        follow("bos-fan", "BOS", "SCORE_UPDATE");
+        follow("bos-fan", "BOS", "GOAL");
         send(play(1, "SCORE_UPDATE", 2, 0));
         String group = "s1-" + UUID.randomUUID();
         Stage1Progress dies = new Stage1Progress(pool) {
@@ -158,9 +200,9 @@ class Stage1WorkerTest {
     @Test
     void crashAfterRecordingSkips() throws Exception {
         // Second row: the version was recorded but the offset was never committed. B re-reads and sends nothing.
-        follow("bos-fan", "BOS", "SCORE_UPDATE");
+        follow("bos-fan", "BOS", "GOAL");
         send(play(1, "SCORE_UPDATE", 2, 0));
-        new Stage1Progress(pool).recordIfHigher("nba-1", 1);
+        new Stage1Progress(pool).recordIfHigher("nhl-1", 1);
         pollUntilHandled(worker("s1-" + UUID.randomUUID()), 1);
         assertTrue(messages().isEmpty());
     }
@@ -168,16 +210,16 @@ class Stage1WorkerTest {
     @Test
     void recordIfHigherNeverLowers() {
         Stage1Progress progress = new Stage1Progress(pool);
-        assertTrue(progress.recordIfHigher("nba-1", 7));
-        assertFalse(progress.recordIfHigher("nba-1", 5), "a stalled worker finishing an older play must not lower it");
-        assertEquals(7L, progress.last("nba-1"));
-        long ttl = jedis.ttl("s1:last:nba-1");
+        assertTrue(progress.recordIfHigher("nhl-1", 7));
+        assertFalse(progress.recordIfHigher("nhl-1", 5), "a stalled worker finishing an older play must not lower it");
+        assertEquals(7L, progress.last("nhl-1"));
+        long ttl = jedis.ttl("s1:last:nhl-1");
         assertTrue(ttl > 691_000 && ttl <= 691_200, "outlives game-events' 7-day retention: " + ttl);
     }
 
     @Test
     void newGroupReadsEarlierPlays() throws Exception {
-        follow("bos-fan", "BOS", "SCORE_UPDATE");
+        follow("bos-fan", "BOS", "GOAL");
         send(play(1, "SCORE_UPDATE", 2, 0));     // sent before any Stage 1 worker exists
         pollUntilHandled(worker("s1-" + UUID.randomUUID()), 1);
         assertEquals(1, messages().size());
@@ -185,7 +227,7 @@ class Stage1WorkerTest {
 
     @Test
     void rereadFromStartSendsNothingNew() throws Exception {
-        follow("bos-fan", "BOS", "SCORE_UPDATE");
+        follow("bos-fan", "BOS", "GOAL");
         for (long v = 1; v <= 3; v++) send(play(v, "SCORE_UPDATE", (int) v, 0));
         pollUntilHandled(worker("s1-" + UUID.randomUUID()), 3);
         // A group with no bookmark starts from the beginning, like a lost or reset bookmark.
@@ -195,8 +237,8 @@ class Stage1WorkerTest {
 
     @Test
     void poisonRecordIsSkippedAndCommitted() throws Exception {
-        follow("bos-fan", "BOS", "SCORE_UPDATE");
-        playProducer.send(new ProducerRecord<>(gameEvents, "nba-1", "{not json")).get();
+        follow("bos-fan", "BOS", "GOAL");
+        playProducer.send(new ProducerRecord<>(gameEvents, "nhl-1", "{not json")).get();
         send(play(1, "SCORE_UPDATE", 2, 0));
         String group = "s1-" + UUID.randomUUID();
         pollUntilHandled(worker(group), 2);
@@ -213,7 +255,7 @@ class Stage1WorkerTest {
 
     @Test
     void twoThousandFollowersGetOneMessageEach() throws Exception {
-        for (int i = 0; i < 2000; i++) follow("u" + i, "BOS", "SCORE_UPDATE");
+        for (int i = 0; i < 2000; i++) follow("u" + i, "BOS", "GOAL");
         send(play(1, "SCORE_UPDATE", 2, 0));
         pollUntilHandled(worker("s1-" + UUID.randomUUID()), 1);
         List<NotificationMessage> msgs = messages();

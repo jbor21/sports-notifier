@@ -17,6 +17,30 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class KafkaTestSupportTest {
 
+    /**
+     * Right after createTopic, a write to any partition goes through the first time. Before the wait,
+     * a write to a partition whose leader wasn't ready got NOT_LEADER_OR_FOLLOWER; the idempotent
+     * producer retried that batch, but a later batch could already have landed first, and the retry
+     * then failed with OutOfOrderSequence until the delivery timeout (CI on PR #13). The producer's
+     * own retry counter shows whether any write had to be retried.
+     */
+    @Test
+    void freshTopicTakesWritesWithoutRetries() throws Exception {
+        for (int round = 0; round < 5; round++) {
+            String topic = "ready-" + UUID.randomUUID();
+            KafkaTestSupport.createTopic(topic, 200);
+            try (KafkaProducer<String, String> producer = new KafkaProducer<>(KafkaSettings.fanoutProducer(KafkaTestSupport.bootstrap()))) {
+                List<java.util.concurrent.Future<org.apache.kafka.clients.producer.RecordMetadata>> sent = new java.util.ArrayList<>();
+                for (int i = 0; i < 200; i++) sent.add(producer.send(new ProducerRecord<>(topic, i, "k", "v")));
+                for (var f : sent) f.get(30, TimeUnit.SECONDS);
+                double retries = producer.metrics().entrySet().stream()
+                        .filter(e -> e.getKey().name().equals("record-retry-total") && e.getKey().group().equals("producer-metrics"))
+                        .mapToDouble(e -> ((Number) e.getValue().metricValue()).doubleValue()).sum();
+                assertEquals(0.0, retries, "round " + round + ": a write to a fresh topic was retried");
+            }
+        }
+    }
+
     @Test
     void producedRecordIsReadBack() throws Exception {
         String topic = "game-events-" + UUID.randomUUID();
