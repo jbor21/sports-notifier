@@ -11,15 +11,15 @@ import java.util.List;
  *
  * A score that goes down is an overturn only once it holds (user, 2026-10-08). In the recordings a real
  * overturn drops at the stopped clock of the review and stays down as play goes on; an ESPN glitch drops
- * while the clock runs and is back within seconds. So a drop waits for 30 s of game clock (MLB: two more
- * plays), a new period, or the final, then alerts under the same scoring switch with the next counter
+ * while the clock runs and is back within seconds (up to 27 s seen). So a drop waits for 60 s of game clock
+ * (MLB: two more plays), a new period, or the final, then alerts under the same scoring switch with the next counter
  * value; one that comes back first sends nothing, and the goal is not announced twice.
  */
 public final class ScoreDetector implements Detector {
 
     private static final List<String> ANY_NFL_SCORE = List.of("TOUCHDOWN", "FIELD_GOAL", "SAFETY");
     /** How long a drop must hold, in tenths of a second of game clock. */
-    private static final int DROP_HOLD_TENTHS = 300;
+    private static final int DROP_HOLD_TENTHS = 600;
 
     private final GameLabels labels;
 
@@ -77,7 +77,7 @@ public final class ScoreDetector implements Detector {
         }
     }
 
-    /** A drop is believed after 30 s of game clock (MLB: two more plays), a new period, or the final. */
+    /** A drop is believed after 60 s of game clock (MLB: two more plays), a new period, or the final. */
     private static boolean held(GameMemory.Drop d, Play now) {
         if (now.isFinal() || now.period() != d.period()) return true;
         if ("MLB".equals(now.league())) return d.plays() >= 2;
