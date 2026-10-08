@@ -52,6 +52,19 @@ public final class GameMemory {
     int homeLastTd;
     int awayLastTd;
 
+    /** A drop in one team's score, not yet believed: where it was first seen, and plays since. */
+    public record Drop(int period, int clockTenths, int plays) {}
+
+    /**
+     * The score each team's alerts are counted from. It follows the score up at once, but down only
+     * when a drop has held (an overturn), so an ESPN glitch that comes back sends nothing. Null in a
+     * memory that has never seen a score: the last position stands in.
+     */
+    Integer homeCounted;
+    Integer awayCounted;
+    Drop homeDrop;
+    Drop awayDrop;
+
     public GameMemory copy() {
         return fromJson(toJson());
     }
@@ -98,6 +111,23 @@ public final class GameMemory {
 
     void setLastTd(Side side, int n) {
         if (side == Side.HOME) homeLastTd = n; else awayLastTd = n;
+    }
+
+    int counted(Side side) {
+        Integer c = side == Side.HOME ? homeCounted : awayCounted;
+        return c != null ? c : score(side);
+    }
+
+    void setCounted(Side side, int score) {
+        if (side == Side.HOME) homeCounted = score; else awayCounted = score;
+    }
+
+    Drop drop(Side side) {
+        return side == Side.HOME ? homeDrop : awayDrop;
+    }
+
+    void setDrop(Side side, Drop d) {
+        if (side == Side.HOME) homeDrop = d; else awayDrop = d;
     }
 
     /** Remembers the play's position. The chain calls it last, after every detector has compared. */

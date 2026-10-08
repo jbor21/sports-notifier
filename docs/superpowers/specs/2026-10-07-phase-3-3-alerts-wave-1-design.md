@@ -98,7 +98,7 @@ For each play, on Stage 1's single thread:
 
 | Alert | Id |
 |---|---|
-| Score (any sport, any kind) | `…:SCORE:<home\|away>:<n>`, n = that team's scoring-alerts-fired counter after this alert |
+| Score (any sport, any kind, and its overturn) | `…:SCORE:<home\|away>:<n>`, n = that team's scoring-alerts-fired counter after this alert |
 | NFL try result | `…:TRY_RESULT:<home\|away>:<n>`, n = its touchdown's counter value; `…:late` appended for the late follow-up |
 | Lead change | `…:LEAD_CHANGE:<n>` |
 | End of period | `…:END_OF_PERIOD:<period>` |
@@ -120,7 +120,7 @@ When a game has no memory, the first play is recorded as the baseline. Every onc
 `GameLabels` (shared with 3.4) builds the display parts:
 
 - **periodLabel.** NFL and NBA: `Q1`–`Q4`, `Half` at halftime, `OT`, `2OT`, … NHL: `1st`, `2nd`, `3rd`, `OT`, `2OT`, … and `SO` for a shootout. MLB: `Top 4th`, `Mid 4th`, `Bot 4th`, `End 4th`.
-- **clock.** `m:ss`, or `s.t` under a minute. Null for MLB and between periods (END_PERIOD, HALFTIME).
+- **clock.** `m:ss`, also under a minute (`0:42`, not ESPN's `42.3`; user, 2026-10-08). Null for MLB and between periods (END_PERIOD, HALFTIME).
 
 Every in-game alert's text ends with the score and the position: `Touchdown Raiders! Extra point pending. Raiders 20, Bears 17 · Q4 4:12`. Team names are `teams.json` short names.
 
@@ -161,7 +161,7 @@ Per team, on its score going up:
 - **NHL:** one `GOAL` per team per play; "2 goals" if two landed between polls.
 - **NBA:** no score alerts. Scores still update the memory.
 - If both teams scored in one play, each gets its own alert.
-- A score going down sends nothing; the memory takes the new score and the counters stay.
+- **A score going down** (user, 2026-10-08) is an overturn only once it holds: 30 s of game clock (MLB: two more plays), a new period, or the final. Then it alerts under the scoring switch it undoes, with the corrected score and the next scoring-counter id: NHL `GOAL_OVERTURNED` ("Rangers goal overturned."), MLB `RUN_OVERTURNED`, NFL `TOUCHDOWN_OVERTURNED` (a drop of 6–8), `FIELD_GOAL_OVERTURNED` (3), otherwise `SCORE_OVERTURNED` ("Bears score corrected.") under every NFL scoring switch. NBA: none. A drop that comes back first is an ESPN glitch and sends nothing; alerts count from the last believed score, so the goal is not announced again. A touchdown's pending try waits while its drop is unconfirmed and is dropped silently with the touchdown. Seen in the recordings: real overturns drop at the stopped clock of the review and stay down (nhl-401891803, -892432, -891782, -891822); glitches drop while the clock runs and are back within seconds (nhl-401892443).
 
 ### 3.5 Lead change (`LEAD_CHANGE`)
 

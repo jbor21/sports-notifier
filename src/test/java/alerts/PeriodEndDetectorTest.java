@@ -136,4 +136,23 @@ class PeriodEndDetectorTest {
         assertEquals(List.of("g:HALFTIME", "g:END_OF_PERIOD:3"), s.ids());
         assertEquals("End of Q3: Raiders 20, Bears 13", s.texts().get(1));
     }
+
+    @Test
+    void realHalftimeSnapshotWithPeriodThree() throws Exception {
+        // ESPN's own snapshot (recording nfl/20261004T151503Z, Colts at Commanders): HALFTIME, period 3, 15:00.
+        String json;
+        try (var in = PeriodEndDetectorTest.class.getResourceAsStream("/espn/nfl-halftime-period3.json")) {
+            json = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        model.GameSnapshot snap = feed.EspnScoreFeed.parse(json, "NFL").get(0);
+        assertEquals("HALFTIME", snap.status());
+        assertEquals(3, snap.period());
+        Play q2 = PlayBuilder.nfl(snap.gameId()).teams("WSH", "IND").period(2).clock(300).score(6, 10).build();
+        Play half = Play.of(feed.PollDecision.decide(java.util.Map.of("status", "IN_PROGRESS", "homeScore", "6",
+            "awayScore", "10", "lastSeq", "10200000000016"), snap, 0L).orElseThrow().withVersion(2));
+        Detectors chain = new Detectors(List.of(new PeriodEndDetector(LABELS)));
+        Detectors.Result r = chain.run(chain.run(null, q2).after(), half);
+        assertEquals(List.of(snap.gameId() + ":HALFTIME"), r.moment().stream().map(Alert::id).toList());
+        assertFalse(r.after().fired("END_OF_PERIOD:3"), "Q3 has not ended");
+    }
 }

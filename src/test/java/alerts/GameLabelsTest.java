@@ -42,8 +42,10 @@ class GameLabelsTest {
     void clockFormats() {
         assertEquals("4:12", GameLabels.clock(PlayBuilder.nfl("g").clock(2520).build()));
         assertEquals("1:00", GameLabels.clock(PlayBuilder.nfl("g").clock(600).build()));
-        assertEquals("42.3", GameLabels.clock(PlayBuilder.nba("g").clock(423).build()));
-        assertEquals("0.5", GameLabels.clock(PlayBuilder.nba("g").clock(5).build()));
+        // Under a minute reads like the rest, "0:42", not ESPN's "42.3" (user, 2026-10-08).
+        assertEquals("0:42", GameLabels.clock(PlayBuilder.nba("g").clock(423).build()));
+        assertEquals("0:00", GameLabels.clock(PlayBuilder.nba("g").clock(5).build()));
+        assertEquals("0:59", GameLabels.clock(PlayBuilder.nba("g").clock(599).build()));
         assertNull(GameLabels.clock(PlayBuilder.mlb("g").build()));
         assertNull(GameLabels.clock(PlayBuilder.nfl("g").stage("END_PERIOD").clock(0).build()));
         assertNull(GameLabels.clock(PlayBuilder.nfl("g").clock(-1).build()));

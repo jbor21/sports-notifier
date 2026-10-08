@@ -8,8 +8,8 @@ Q2 5:38 nfl-401872971:SCORE:away:2 Touchdown Patriots! Extra point pending. Patr
 Q2 5:38 nfl-401872971:TRY_RESULT:away:2 Extra point good. Patriots 14, Bills 7 · Q2 5:38
 Q2 1:00 nfl-401872971:SCORE:home:2 Touchdown Bills! Extra point pending. Patriots 14, Bills 13 · Q2 1:00
 Q2 1:00 nfl-401872971:TRY_RESULT:home:2 Extra point good. Patriots 14, Bills 14 · Q2 1:00
-Q2 2.0 nfl-401872971:SCORE:home:3 Field goal Bills. Bills 17, Patriots 14 · Q2 2.0
-Q2 2.0 nfl-401872971:LEAD_CHANGE:1 Bills take the lead. Bills 17, Patriots 14 · Q2 2.0
+Q2 0:02 nfl-401872971:SCORE:home:3 Field goal Bills. Bills 17, Patriots 14 · Q2 0:02
+Q2 0:02 nfl-401872971:LEAD_CHANGE:1 Bills take the lead. Bills 17, Patriots 14 · Q2 0:02
 Half - nfl-401872971:HALFTIME Halftime: Bills 17, Patriots 14
 Q3 8:15 nfl-401872971:SCORE:away:3 Touchdown Patriots! Extra point pending. Patriots 20, Bills 17 · Q3 8:15
 Q3 8:15 nfl-401872971:LEAD_CHANGE:2 Patriots take the lead. Patriots 20, Bills 17 · Q3 8:15

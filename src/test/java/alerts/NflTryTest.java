@@ -151,10 +151,5 @@ class NflTryTest {
         assertEquals(List.of("g:SCORE:home:1"), s.ids());
     }
 
-    @Test
-    void overturnedTouchdownDropsTheTry() {
-        Sequence s = touchdown().play(after(5000, 0, 0), after(4900, 0, 0), after(4800, 0, 0));
-        assertEquals(List.of("g:SCORE:home:1"), s.ids());
-        assertNull(s.memory().pending);
-    }
+    // An overturned touchdown and its try: OverturnTest.nflTouchdownOverturnedDropsTheTry.
 }

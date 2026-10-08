@@ -13,14 +13,8 @@ class ScoreDetectorTest {
         return Sequence.of(new ScoreDetector(LABELS));
     }
 
-    @Test
-    void scoreReversalScoreGivesTwoAlerts() {
-        // The user's test: an overturned goal and then a real one must not share an id, or dedup drops the real one.
-        PlayBuilder p = PlayBuilder.nhl("g").period(2).clock(12000).score(2, 0);
-        Sequence s = seq().play(p, p.next().score(3, 0), p.next().next().score(2, 0), p.next().next().next().score(3, 0));
-        assertEquals(List.of("g:SCORE:home:1", "g:SCORE:home:2"), s.ids());
-        assertEquals(List.of("GOAL", "GOAL"), s.alerts().stream().map(Alert::type).toList());
-    }
+    // The user's "score, reversal, score" test lives in OverturnTest.scoreOverturnedThenScoredAgain: a
+    // reversal now has its own alert once it holds.
 
     @Test
     void mlbOneAlertPerTeamPerPlay() {

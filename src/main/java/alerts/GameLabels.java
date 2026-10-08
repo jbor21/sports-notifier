@@ -41,15 +41,11 @@ public final class GameLabels {
         }
     }
 
-    /** {@code 4:12}, or {@code 42.3} under a minute; null for MLB, between periods, or with no clock. */
+    /** {@code 4:12}, and {@code 0:42} under a minute; null for MLB, between periods, or with no clock. */
     public static String clock(Play p) {
         if (!p.live() || "MLB".equals(p.league()) || p.betweenPeriods() || p.clockTenths() < 0) return null;
-        int t = p.clockTenths();
-        if (t >= 600) {
-            int seconds = t / 10;
-            return (seconds / 60) + ":" + String.format("%02d", seconds % 60);
-        }
-        return (t / 10) + "." + (t % 10);
+        int seconds = p.clockTenths() / 10;
+        return (seconds / 60) + ":" + String.format("%02d", seconds % 60);
     }
 
     /** "Red Sox"; the abbreviation for a team not in teams.json. */
