@@ -2,8 +2,8 @@
 1st 14:31 nhl-401891803:SCORE:away:1 Goal Rangers! Rangers 1, Red Wings 0 · 1st 14:31
 1st 12:50 nhl-401891803:SCORE:away:2 Goal Rangers! Rangers 2, Red Wings 0 · 1st 12:50
 1st 11:27 nhl-401891803:SCORE:away:3 Rangers goal overturned. Rangers 1, Red Wings 0 · 1st 11:27
-1st - nhl-401891803:END_OF_PERIOD:1 End of 1st: Rangers 1, Red Wings 0
-2nd - nhl-401891803:END_OF_PERIOD:2 End of 2nd: Rangers 1, Red Wings 0
+End 1st - nhl-401891803:END_OF_PERIOD:1 End of 1st: Rangers 1, Red Wings 0
+End 2nd - nhl-401891803:END_OF_PERIOD:2 End of 2nd: Rangers 1, Red Wings 0
 3rd 4:36 nhl-401891803:CLOSE_LATE Close game late: Rangers 1, Red Wings 0 · 3rd 4:36
 3rd 0:52 nhl-401891803:SCORE:away:4 Goal Rangers! Rangers 2, Red Wings 0 · 3rd 0:52
-- - nhl-401891803:FINAL Final: Rangers 2, Red Wings 0. Rangers win.
+Final - nhl-401891803:FINAL Final: Rangers 2, Red Wings 0. Rangers win.

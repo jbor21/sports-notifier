@@ -1,11 +1,11 @@
 1st 20:00 nhl-401892443:GAME_START Puck drop: Mammoth at Rangers.
 1st 2:42 nhl-401892443:SCORE:home:1 Goal Rangers! Rangers 1, Mammoth 0 · 1st 2:42
-1st - nhl-401892443:END_OF_PERIOD:1 End of 1st: Rangers 1, Mammoth 0
+End 1st - nhl-401892443:END_OF_PERIOD:1 End of 1st: Rangers 1, Mammoth 0
 2nd 5:16 nhl-401892443:SCORE:away:1 Goal Mammoth! Mammoth 1, Rangers 1 · 2nd 5:16
-2nd - nhl-401892443:END_OF_PERIOD:2 End of 2nd: Mammoth 1, Rangers 1
+End 2nd - nhl-401892443:END_OF_PERIOD:2 End of 2nd: Mammoth 1, Rangers 1
 3rd 16:24 nhl-401892443:SCORE:home:2 Goal Rangers! Rangers 2, Mammoth 1 · 3rd 16:24
 3rd 7:13 nhl-401892443:SCORE:home:3 Goal Rangers! Rangers 3, Mammoth 1 · 3rd 7:13
 3rd 4:47 nhl-401892443:SCORE:away:2 Goal Mammoth! Rangers 3, Mammoth 2 · 3rd 4:47
 3rd 4:46 nhl-401892443:CLOSE_LATE Close game late: Rangers 3, Mammoth 2 · 3rd 4:46
 3rd 1:15 nhl-401892443:SCORE:home:4 Goal Rangers! Rangers 4, Mammoth 2 · 3rd 1:15
-- - nhl-401892443:FINAL Final: Rangers 4, Mammoth 2. Rangers win.
+Final - nhl-401892443:FINAL Final: Rangers 4, Mammoth 2. Rangers win.
