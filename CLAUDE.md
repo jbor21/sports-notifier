@@ -173,7 +173,7 @@ Phases 2, 3.1, and 3.2 fixed most of the review's list (see `DESIGN.md`,
   `docs/superpowers/specs/2026-10-06-phase-3-1-kafka-pipeline-design.md`, plan
   `docs/superpowers/plans/2026-10-06-phase-3-1-kafka-pipeline.md`. The API spec
   for the new UI is final and on main (`docs/api/`, PR #5).
-- **Phase 3.2 (Postgres) is built** on branch `phase-3-2-postgres`: spec
+- **Phase 3.2 (Postgres) is merged** (PR #13, 2026-10-07): spec
   `docs/superpowers/specs/2026-10-07-phase-3-2-postgres-design.md`, plan
   `docs/superpowers/plans/2026-10-07-phase-3-2-postgres.md`. The course UI is
   broken from here (no adapter endpoints); the new UI is 3b.
