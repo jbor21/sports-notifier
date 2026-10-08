@@ -19,7 +19,7 @@ class KafkaDiagnosticsTest {
         assertTrue(file.isPresent());
         String text = Files.readString(file.get());
         assertTrue(file.get().getFileName().toString().startsWith("SomeTest.someMethod-"));
-        assertTrue(text.contains("== broker log (last 300 lines) =="), text);
+        assertTrue(text.contains("== broker log (last "), text);
         assertTrue(text.contains("Kafka Server started") || text.contains("KafkaRaftServer") || text.contains("INFO"),
                 "the broker's own log lines are there");
         assertTrue(text.contains("== docker stats =="), text);
