@@ -59,7 +59,8 @@ class KafkaPlayPublisherTest {
         List<ConsumerRecord<String, String>> records = KafkaTestSupport.readAll(topic, Duration.ofSeconds(2));
         assertEquals(1, records.size());
         assertEquals("g1", records.get(0).key());
-        assertEquals(1L, GameEventParser.parse(records.get(0).value()).getVersion());
+        // The version the script assigned (the counter starts from the clock, not 0).
+        assertEquals(Long.parseLong(jedis.hget("game:g1", "version")), GameEventParser.parse(records.get(0).value()).getVersion());
     }
 
     @Test
@@ -103,8 +104,9 @@ class KafkaPlayPublisherTest {
             plays.add(GameEventParser.parse(r.value()));
         }
         assertEquals(accepted.get(), plays.size());
+        long first = plays.get(0).getVersion();
         for (int k = 0; k < plays.size(); k++) {
-            assertEquals(k + 1, plays.get(k).getVersion());
+            assertEquals(first + k, plays.get(k).getVersion());
             if (k > 0) assertTrue(plays.get(k).getSeq() > plays.get(k - 1).getSeq());
         }
     }
