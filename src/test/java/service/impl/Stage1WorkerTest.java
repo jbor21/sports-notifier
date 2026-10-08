@@ -61,10 +61,14 @@ class Stage1WorkerTest {
     }
 
     private Stage1Worker worker(String group, Stage1Progress progress) {
+        return worker(group, progress, () -> true);
+    }
+
+    private Stage1Worker worker(String group, Stage1Progress progress, java.util.function.BooleanSupplier setsReady) {
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(KafkaSettings.consumer(KafkaTestSupport.bootstrap(), group));
         consumer.subscribe(List.of(gameEvents));
         KafkaProducer<String, String> producer = new KafkaProducer<>(KafkaSettings.fanoutProducer(KafkaTestSupport.bootstrap()));
-        Stage1Worker w = new Stage1Worker(pool, progress, consumer, producer, notifications, () -> true);
+        Stage1Worker w = new Stage1Worker(pool, progress, consumer, producer, notifications, setsReady);
         workers.add(w);
         return w;
     }
@@ -105,6 +109,30 @@ class Stage1WorkerTest {
             out.add(m);
         }
         return out;
+    }
+
+    /** Final review, Important 1: the marker check is the first Redis call after a poll. */
+    @Test
+    void redisFailingAtTheMarkerCheckLosesNothing() throws Exception {
+        follow("bos-fan", "BOS", "GOAL");
+        send(play(1, "SCORE_UPDATE", 2, 0));
+        java.util.concurrent.atomic.AtomicInteger checks = new java.util.concurrent.atomic.AtomicInteger();
+        Stage1Worker w = worker("s1-" + UUID.randomUUID(), new Stage1Progress(pool), () -> {
+            if (checks.getAndIncrement() == 0) throw new redis.clients.jedis.exceptions.JedisConnectionException("Redis is down (test)");
+            return true;
+        });
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        boolean failed = false;
+        while (!failed) {
+            assertTrue(System.nanoTime() < deadline, "the marker check never ran");
+            try {
+                w.pollOnce(Duration.ofMillis(200));
+            } catch (redis.clients.jedis.exceptions.JedisConnectionException e) {
+                failed = true;   // what run() does next: log, wait, poll again
+            }
+        }
+        pollUntilHandled(w, 1);   // the batch was rewound, so the play comes back
+        assertEquals(1, messages().size(), "the play's alert is delivered once, not skipped");
     }
 
     @Test

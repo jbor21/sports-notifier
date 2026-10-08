@@ -102,7 +102,16 @@ public final class Stage1Worker implements AutoCloseable {
             }
         }
         ConsumerRecords<String, String> records = consumer.poll(timeout);
-        if (!records.isEmpty() && (waitingForSets || !setsReady.getAsBoolean())) {
+        boolean hold;
+        try {
+            hold = !records.isEmpty() && (waitingForSets || !setsReady.getAsBoolean());
+        } catch (RuntimeException e) {
+            // The check is the first Redis call after the poll: if Redis is down, rewind so the batch
+            // is read again, or the next commit would move past it and its alerts would be lost.
+            Offsets.rewindTo(consumer, records);
+            throw e;
+        }
+        if (hold) {
             Offsets.rewindTo(consumer, records);
             consumer.pause(consumer.assignment());
             if (!waitingForSets) {
