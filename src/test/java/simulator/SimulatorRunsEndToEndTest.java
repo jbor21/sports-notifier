@@ -22,7 +22,12 @@ import service.impl.EventProcessingServiceImpl;
 import service.impl.Follow;
 import service.impl.FollowSets;
 import service.impl.KafkaPlayPublisher;
-import service.impl.Stage1Progress;
+import service.impl.DetectorMemory;
+import service.impl.MomentFanout;
+import service.impl.AlertAudience;
+import alerts.Detectors;
+import alerts.GameLabels;
+import catalog.Teams;
 import service.impl.Stage1Worker;
 import service.impl.Stage2Worker;
 import testsupport.KafkaTestSupport;
@@ -118,7 +123,9 @@ class SimulatorRunsEndToEndTest {
             KafkaSettings.consumer(KafkaTestSupport.bootstrap(), "s1-" + UUID.randomUUID()));
         consumer.subscribe(List.of(gameEvents));
         KafkaProducer<String, String> producer = new KafkaProducer<>(KafkaSettings.fanoutProducer(KafkaTestSupport.bootstrap()));
-        return new Stage1Worker(pool, new Stage1Progress(pool), consumer, producer, notifications, () -> {
+        GameLabels labels = new GameLabels(Teams.load());
+        return new Stage1Worker(new DetectorMemory(pool), Detectors.standard(labels),
+            new MomentFanout(pool, new AlertAudience(), labels), consumer, producer, notifications, () -> {
             try (Jedis j = pool.getResource()) {
                 return j.exists(RedisKeys.SUB_BUILT);
             }
@@ -221,5 +228,57 @@ class SimulatorRunsEndToEndTest {
     private String summary(String gameId) {
         return deliveredFor(gameId).stream().map(SimulatorRunsEndToEndTest::headline).toList()
             + ", pushes " + pushesFor(gameId);
+    }
+
+    /** One play straight into Event Processing, with its real position and seq. */
+    private void accept(String gameId, int period, int clockTenths, String status, int home, int away) {
+        model.GameSnapshot.Phase phase = "FINAL".equals(status) ? model.GameSnapshot.Phase.FINAL : model.GameSnapshot.Phase.LIVE;
+        model.GameSnapshot snap = new model.GameSnapshot(gameId, "NHL", "BOS", "NYR", home, away, phase, period,
+            model.GameSnapshot.Half.TOP, clockTenths, 0, model.GameSnapshot.Stage.IN_PLAY, status, 0L);
+        long seq = Seq.of(snap);
+        model.GameEvent e = new model.GameEvent(gameId, gameId + ":" + seq, "GAME_SYNC", "BOS", 1234L, "", "BOS", "NYR",
+            home, away, status, "NHL", seq).withPosition(phase.name(), period, clockTenths, "TOP", 0, "IN_PLAY", 2, null);
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (eps.processEvent(e) == ProcessResult.PENDING) {   // the previous play is still on its way to Kafka
+            assertTrue(System.nanoTime() < deadline, "still pending: " + e.getEventId());
+        }
+    }
+
+    @Test
+    void finalArrivesAfterTheGoal() throws Exception {
+        // An overtime winner lands on the play that turns the game final: two pushes, the goal first.
+        List<String> fans = List.of("bos-fan-1", "bos-fan-2", "bos-fan-3");
+        Map<String, AlertSetting> alerts = new LinkedHashMap<>();
+        for (String type : List.of("GOAL", "FINAL")) alerts.put(type, new AlertSetting(true, Map.of()));
+        long expires = Long.parseLong(jedis.time().get(0)) + 600;
+        for (String fan : fans) {
+            new FollowSets(pool).writeState(new Follow("f-" + fan, fan, FollowKind.TEAM, "nhl-bos", "NHL", alerts, null, Instant.now()));
+            jedis.zadd(RedisKeys.CONN_PREFIX + fan, expires, gateway);
+        }
+        accept("nhl-ot1", 3, 100, "IN_PROGRESS", 2, 2);       // Stage 1's baseline
+        accept("nhl-ot1", 4, 3000, "IN_PROGRESS", 2, 2);      // overtime (nobody follows it)
+        accept("nhl-ot1", 4, 1800, "FINAL", 3, 2);            // the winner and the final, one play
+
+        long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
+        while (fans.stream().mapToInt(f -> pushTexts(f).size()).sum() < 2 * fans.size()) {
+            assertTrue(System.nanoTime() < deadline, "pushes so far: " + pushes);
+            stage1.pollOnce(Duration.ofMillis(200));
+            stage2.pollOnce(Duration.ofMillis(200));
+        }
+        for (String fan : fans) {
+            List<String> texts = pushTexts(fan);
+            assertEquals(2, texts.size(), fan + ": " + texts);
+            assertTrue(texts.get(0).startsWith("Goal Bruins!"), fan + ": " + texts);
+            assertTrue(texts.get(1).startsWith("Final (OT): Bruins 3, Rangers 2."), fan + ": " + texts);
+        }
+    }
+
+    /** The texts the gateway's channel carried for one user, in the order they arrived. */
+    private List<String> pushTexts(String user) {
+        return pushes.stream()
+            .map(raw -> JsonParser.parseString(raw).getAsJsonObject())
+            .filter(m -> user.equals(m.get("userId").getAsString()))
+            .map(m -> m.getAsJsonObject("payload").get("message").getAsString())
+            .toList();
     }
 }

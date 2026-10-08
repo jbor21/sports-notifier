@@ -1,20 +1,15 @@
 package service.impl;
 
-import catalog.AlertCatalog;
-import catalog.Teams;
-import com.google.gson.JsonObject;
-import model.NotificationBody;
-
+import alerts.Detectors;
+import alerts.Play;
 import com.google.gson.Gson;
 import model.GameEvent;
-import model.NotificationMessage;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.errors.WakeupException;
-import redis.clients.jedis.JedisPool;
 import util.GameEventParser;
 
 import util.LoopHealth;
@@ -25,8 +20,9 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Stage 1: reads accepted plays from game-events and writes one notifications message per user who
- * should hear about each (DESIGN.md decision 3; Phase 3.1 spec, section 2.2).
+ * Stage 1: reads accepted plays from game-events, runs the detectors over each, and writes one
+ * notifications message per user per moment, plus the final as its own (DESIGN.md decisions 3 and 15;
+ * Phase 3.1 spec, section 2.2; Phase 3.3 spec, sections 2 and 5).
  *
  * Kafka gives each game's lane to one worker in the group, so a game's plays arrive here in version
  * order. Everything runs on one thread, one record at a time: per-user order on the notifications
@@ -36,11 +32,12 @@ import java.util.concurrent.atomic.AtomicReference;
  * <pre>
  *   crash point                                  replacement worker            result
  *   before Kafka confirms the messages           re-reads, sends again         duplicates; Stage 2 dedups them
- *   after recording the version, before commit  re-reads, finds the version   skips; messages were confirmed
+ *   after writing det:, before commit            re-reads, finds the version   skips; messages were confirmed
  * </pre>
  *
- * That is why the version is recorded only after every message is confirmed: recording first and
- * crashing before the sends would skip the play for good.
+ * That is why det:<gameId> (the version and the detectors' memory) is written only after every message
+ * is confirmed: writing first and crashing before the sends would skip the play's alerts for good. A
+ * re-read runs the detectors against the same memory, so it finds the same alerts with the same ids.
  *
  * While the sub:* sets are being rebuilt ({@code sub:built} missing), an audience built from them
  * could be empty and the play's alerts silently lost. So Stage 1 waits: it rewinds the batch and
@@ -52,30 +49,28 @@ public final class Stage1Worker implements AutoCloseable {
 
     private static final Gson GSON = new Gson();
 
-    private final Stage1Progress progress;
+    private final DetectorMemory memory;
     private final Consumer<String, String> consumer;
     private final Producer<String, String> producer;
     private final String notificationsTopic;
     private static final long WAIT_WARN_EVERY_MILLIS = 30_000L;
 
-    private final Audience audience;
-    private final AlertMapping mapping;
-    private final Teams teams;
+    private final Detectors detectors;
+    private final MomentFanout fanout;
     private final BooleanSupplier setsReady;
     private volatile boolean running = true;
     private volatile boolean waitingForSets;
     private long lastWaitWarning;
 
     /** {@code setsReady}: whether the sub:* sets can be trusted ({@code sub:built} exists). */
-    public Stage1Worker(JedisPool pool, Stage1Progress progress, Consumer<String, String> consumer,
+    public Stage1Worker(DetectorMemory memory, Detectors detectors, MomentFanout fanout, Consumer<String, String> consumer,
                         Producer<String, String> producer, String notificationsTopic, BooleanSupplier setsReady) {
-        this.progress = progress;
+        this.memory = memory;
+        this.detectors = detectors;
+        this.fanout = fanout;
         this.consumer = consumer;
         this.producer = producer;
         this.notificationsTopic = notificationsTopic;
-        this.audience = new Audience(pool);
-        this.mapping = new AlertMapping(AlertCatalog.load());
-        this.teams = Teams.load();
         this.setsReady = setsReady;
     }
 
@@ -147,23 +142,20 @@ public final class Stage1Worker implements AutoCloseable {
             System.err.println("[Stage1] skipped unreadable record at " + r.topic() + "-" + r.partition() + "@" + r.offset());
             return;
         }
-        if (play.getVersion() <= progress.last(play.getGameId())) return;
+        DetectorMemory.Stored stored = memory.read(play.getGameId());
+        if (play.getVersion() <= stored.version()) return;
 
-        List<String> switches = mapping.switchesFor(play.getLeague(), play.getEventType());   // GAME_SYNC: none
-        if (!switches.isEmpty()) {
+        Play p = Play.of(play);
+        Detectors.Result result = detectors.run(stored.memory(), p);
+        if (!result.moment().isEmpty() || result.finalAlert() != null) {
             AtomicReference<Exception> failed = new AtomicReference<>();
-            final GameEvent p = play;
-            JsonObject body = NotificationBody.of(p, mapping.headlineType(p.getLeague(), p.getEventType()), teams);
-            audience.forEachPage(p, switches, page -> {
-                for (String userId : page) {
-                    producer.send(new ProducerRecord<>(notificationsTopic, userId, GSON.toJson(NotificationMessage.of(p, userId, body))),
-                        (meta, err) -> { if (err != null) failed.compareAndSet(null, err); });
-                }
-            });
+            fanout.send(p, result, (userId, message) ->
+                producer.send(new ProducerRecord<>(notificationsTopic, userId, GSON.toJson(message)),
+                    (meta, err) -> { if (err != null) failed.compareAndSet(null, err); }));
             producer.flush();
             if (failed.get() != null) throw new IllegalStateException("notifications not all confirmed", failed.get());
         }
-        progress.recordIfHigher(play.getGameId(), play.getVersion());
+        memory.writeIfHigher(play.getGameId(), play.getVersion(), result.after());
     }
 
     /** The loop: poll, handle, commit. A failure is logged and the batch is retried after a second. */

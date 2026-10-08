@@ -29,7 +29,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     private static final long IDLE_GAME_TTL_SECONDS = 8 * 86_400L;
     /** How long the same period and score must keep looking "older" before the no-score heal accepts it. */
     private static final long NO_SCORE_HEAL_MILLIS = 30_000L;
-    /** Longer than Stage 1's 8-day memory of versions (Stage1Progress), refreshed on every accept. */
+    /** Longer than Stage 1's 8-day memory of versions (det:<gameId>), refreshed on every accept. */
     private static final long VERSION_TTL_SECONDS = 9 * 86_400L;
 
     /**

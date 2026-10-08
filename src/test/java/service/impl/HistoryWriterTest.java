@@ -69,8 +69,10 @@ class HistoryWriterTest {
     private static NotificationMessage message(String userId, long version) {
         GameEvent play = new GameEvent("mlb-1", "mlb-1:" + version, "SCORE_UPDATE", "CHW", 1234L, "CHW scores!",
                 "CHW", "CLE", (int) version, 0, "IN_PROGRESS", "MLB", 10 + version).withVersion(version);
-        JsonObject body = NotificationBody.of(play, "RUN_SCORED", catalog.Teams.load());
-        return NotificationMessage.of(play, userId, body);
+        alerts.Play p = alerts.Play.of(play);
+        alerts.Alert run = alerts.Alert.of("mlb-1:v" + version, "RUN_SCORED", alerts.Alert.P_SCORE, alerts.Side.HOME, "CHW scores!");
+        JsonObject body = NotificationBody.of(p, java.util.List.of(run), new alerts.GameLabels(catalog.Teams.load()));
+        return NotificationMessage.of(p, userId, body);
     }
 
     private RecordMetadata send(NotificationMessage m) throws Exception {

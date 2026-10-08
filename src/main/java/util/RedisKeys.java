@@ -26,8 +26,11 @@ public final class RedisKeys {
     /** Games with a play in the outbox, scored by accept time in millis; the retry loop reads it. */
     public static final String OUTBOX_PENDING = "outbox:pending";
 
-    /** The last play version Stage 1 finished for a game: {@code s1:last:<gameId>} */
-    public static final String STAGE1_LAST_PREFIX = "s1:last:";
+    /**
+     * Stage 1's memory of a game: the last play version handled and the detectors' state, as a hash
+     * {@code det:<gameId>} with fields {@code version} and {@code memory} (Phase 3.3 spec, 2.2).
+     */
+    public static final String DETECTOR_PREFIX = "det:";
 
     /** Stage 2's dedup claim, one per message per user: {@code notif:<messageId>:<userId>} */
     public static final String NOTIF_DEDUP_PREFIX = "notif:";

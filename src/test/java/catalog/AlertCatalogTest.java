@@ -18,15 +18,15 @@ class AlertCatalogTest {
     /**
      * Decision 15, transcribed separately from alerts.json: "league type team league game availability",
      * with "-" where the alert does not apply to that follow kind. FINAL starts on for league follows
-     * until the daily summary ships (docs/api/openapi.yaml). Rows marked "?" in the tables are coming_soon.
+     * until the daily summary ships (docs/api/openapi.yaml). Rows marked "?" in the tables, and alerts with no detector yet (wave 2), are coming_soon.
      */
     private static final List<String> EVERY_SPORT = List.of(
-            "STARTING_SOON off off off available",
+            "STARTING_SOON off off off coming_soon",
             "GAME_START on off on available",
             "DELAYED on off on available",
             "LEAD_CHANGE off off off available",
             "CLOSE_LATE on on on available",
-            "COMEBACK on on on available",
+            "COMEBACK on on on coming_soon",
             "OVERTIME on on on available",
             "FINAL on on on available",
             "DAILY_SUMMARY - on - coming_soon");
@@ -39,29 +39,29 @@ class AlertCatalogTest {
                     "SAFETY on off on available",
                     "END_OF_PERIOD on off on available",
                     "HALFTIME on off on available",
-                    "TWO_MINUTE_WARNING off off off available",
+                    "TWO_MINUTE_WARNING off off off coming_soon",
                     "RED_ZONE off off off coming_soon",
                     "CHANCE_TO_WIN on on on coming_soon"),
             "NBA", List.of(
                     "END_OF_PERIOD on off on available",
                     "HALFTIME on off on available",
-                    "BIG_RUN off off off available",
-                    "BIG_LEAD off off off available",
-                    "TIE_LATE off off off available"),
+                    "BIG_RUN off off off coming_soon",
+                    "BIG_LEAD off off off coming_soon",
+                    "TIE_LATE off off off coming_soon"),
             "MLB", List.of(
                     "RUN_SCORED on off on available",
                     "END_OF_INNING off off off available",
-                    "BIG_INNING off off off available",
-                    "TIE_LATE off off off available",
+                    "BIG_INNING off off off coming_soon",
+                    "TIE_LATE off off off coming_soon",
                     "BASES_LOADED off off off coming_soon",
                     "NO_HITTER on on on coming_soon",
-                    "WALK_OFF on on on available"),
+                    "WALK_OFF on on on coming_soon"),
             "NHL", List.of(
                     "GOAL on off on available",
                     "END_OF_PERIOD on off on available",
-                    "TIE_LATE off off off available",
-                    "BIG_LEAD off off off available",
-                    "SHUTOUT_WATCH off off off available",
+                    "TIE_LATE off off off coming_soon",
+                    "BIG_LEAD off off off coming_soon",
+                    "SHUTOUT_WATCH off off off coming_soon",
                     "SHOOTOUT on on on available"));
 
     @Test
@@ -79,14 +79,6 @@ class AlertCatalogTest {
             }
             assertEquals(expected, actual, league);
         }
-    }
-
-    @Test
-    void scoringTypesPerLeague() {
-        assertEquals(List.of("TOUCHDOWN", "TRY_RESULT", "FIELD_GOAL", "SAFETY"), CATALOG.scoringTypes("NFL"));
-        assertEquals(List.of("RUN_SCORED"), CATALOG.scoringTypes("MLB"));
-        assertEquals(List.of("GOAL"), CATALOG.scoringTypes("NHL"));
-        assertEquals(List.of(), CATALOG.scoringTypes("NBA"));
     }
 
     @Test
@@ -144,6 +136,19 @@ class AlertCatalogTest {
         // sub:<kind>:<target>:ANY holds everyone who follows the target; a switch by that name would collide.
         for (String league : java.util.List.of("NFL", "NBA", "MLB", "NHL")) {
             assertTrue(AlertCatalog.load().forLeague(league).stream().noneMatch(t -> "ANY".equals(t.type())), league);
+        }
+    }
+
+    @Test
+    void unbuiltAlertsAreComingSoon() {
+        // No detector until wave 2 or 3: shown, but switched off in the UI (docs/api, availability).
+        java.util.Set<String> unbuilt = java.util.Set.of("STARTING_SOON", "COMEBACK", "BIG_RUN", "BIG_LEAD", "TIE_LATE",
+            "BIG_INNING", "WALK_OFF", "SHUTOUT_WATCH", "TWO_MINUTE_WARNING", "DAILY_SUMMARY", "RED_ZONE", "CHANCE_TO_WIN",
+            "BASES_LOADED", "NO_HITTER");
+        for (String league : java.util.List.of("NFL", "NBA", "MLB", "NHL")) {
+            for (AlertType t : AlertCatalog.load().forLeague(league)) {
+                assertEquals(unbuilt.contains(t.type()) ? "coming_soon" : "available", t.availability(), league + " " + t.type());
+            }
         }
     }
 }

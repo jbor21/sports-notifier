@@ -12,35 +12,13 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * The API's {@code Notification} for one play (docs/api/openapi.yaml), built once per play by Stage 1.
- * History stores it as is; {@code createdAt} is added when it is read, from the history row.
+ * The API's {@code Notification} for one moment (docs/api/openapi.yaml), built by Stage 1 once per
+ * distinct set of alerts. History stores it as is; {@code createdAt} is added when it is read, from
+ * the history row.
  */
 public final class NotificationBody {
 
     private NotificationBody() {}
-
-    public static JsonObject of(GameEvent play, String headlineType, Teams teams) {
-        JsonObject headline = new JsonObject();
-        headline.addProperty("type", headlineType);
-        headline.addProperty("text", play.getDescription());
-
-        JsonObject game = new JsonObject();
-        game.addProperty("id", play.getGameId());
-        game.add("home", side(play.getLeague(), play.getHomeTeam(), play.getHomeScore(), teams));
-        game.add("away", side(play.getLeague(), play.getAwayTeam(), play.getAwayScore(), teams));
-        game.add("periodLabel", null);
-        game.add("clock", null);
-
-        JsonObject n = new JsonObject();
-        n.addProperty("id", play.getGameId() + ":v" + play.getVersion());
-        n.addProperty("kind", "game_moment");
-        n.addProperty("leagueId", play.getLeague());
-        n.add("headline", headline);
-        n.add("extras", new JsonArray());
-        n.add("game", game);
-        n.addProperty("detectedAt", Instant.ofEpochMilli(play.getTimestamp()).toString());
-        return n;
-    }
 
     /**
      * One push for a moment (Phase 3.3 spec, 5.5): the first alert is the headline and its id is the

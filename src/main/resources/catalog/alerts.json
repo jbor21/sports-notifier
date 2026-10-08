@@ -17,7 +17,7 @@
           "game": false
         },
         "precision": "exact",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "GAME_START",
@@ -107,7 +107,7 @@
           "game": true
         },
         "precision": "from_snapshots",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "OVERTIME",
@@ -283,7 +283,7 @@
           "game": false
         },
         "precision": "exact",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "RED_ZONE",
@@ -339,7 +339,7 @@
           "game": false
         },
         "precision": "exact",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "GAME_START",
@@ -429,7 +429,7 @@
           "game": true
         },
         "precision": "from_snapshots",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "OVERTIME",
@@ -533,7 +533,7 @@
           "game": false
         },
         "precision": "from_snapshots",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "BIG_LEAD",
@@ -551,7 +551,7 @@
           "game": false
         },
         "precision": "exact",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "TIE_LATE",
@@ -569,7 +569,7 @@
           "game": false
         },
         "precision": "from_snapshots",
-        "availability": "available"
+        "availability": "coming_soon"
       }
     ],
     "MLB": [
@@ -589,7 +589,7 @@
           "game": false
         },
         "precision": "exact",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "GAME_START",
@@ -679,7 +679,7 @@
           "game": true
         },
         "precision": "from_snapshots",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "OVERTIME",
@@ -790,7 +790,7 @@
           "game": false
         },
         "precision": "exact",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "TIE_LATE",
@@ -808,7 +808,7 @@
           "game": false
         },
         "precision": "from_snapshots",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "BASES_LOADED",
@@ -862,7 +862,7 @@
           "game": true
         },
         "precision": "exact",
-        "availability": "available"
+        "availability": "coming_soon"
       }
     ],
     "NHL": [
@@ -882,7 +882,7 @@
           "game": false
         },
         "precision": "exact",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "GAME_START",
@@ -972,7 +972,7 @@
           "game": true
         },
         "precision": "from_snapshots",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "OVERTIME",
@@ -1076,7 +1076,7 @@
           "game": false
         },
         "precision": "from_snapshots",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "BIG_LEAD",
@@ -1094,7 +1094,7 @@
           "game": false
         },
         "precision": "exact",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "SHUTOUT_WATCH",
@@ -1112,7 +1112,7 @@
           "game": false
         },
         "precision": "exact",
-        "availability": "available"
+        "availability": "coming_soon"
       },
       {
         "type": "SHOOTOUT",

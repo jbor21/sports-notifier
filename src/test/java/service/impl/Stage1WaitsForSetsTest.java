@@ -63,6 +63,7 @@ class Stage1WaitsForSetsTest {
         KafkaTestSupport.createTopic(gameEvents, 12);
         KafkaTestSupport.createTopic(notifications, 48);
         jedis.sadd(FollowSets.key(FollowKind.TEAM, "nhl-bos", "GOAL"), "bos-fan");
+        jedis.sadd(FollowSets.key(FollowKind.TEAM, "nhl-bos", "ANY"), "bos-fan");
     }
 
     @AfterEach
@@ -85,7 +86,9 @@ class Stage1WaitsForSetsTest {
             @Override public void onPartitionsAssigned(Collection<TopicPartition> parts) {}
         });
         KafkaProducer<String, String> producer = new KafkaProducer<>(KafkaSettings.fanoutProducer(KafkaTestSupport.bootstrap()));
-        Stage1Worker w = new Stage1Worker(pool, new Stage1Progress(pool), consumer, producer, notifications,
+        alerts.GameLabels labels = new alerts.GameLabels(catalog.Teams.load());
+        Stage1Worker w = new Stage1Worker(new DetectorMemory(pool), alerts.Detectors.standard(labels),
+                new MomentFanout(pool, new AlertAudience(), labels), consumer, producer, notifications,
                 () -> { try (Jedis j = pool.getResource()) { return j.exists(RedisKeys.SUB_BUILT); } });
         Thread loop = new Thread(() -> { try { w.run(health); } finally { w.close(); } }, "stage1-test");
         health.attach(loop);
@@ -95,9 +98,15 @@ class Stage1WaitsForSetsTest {
         return w;
     }
 
+    /** A Bruins goal at version 2, after a 0-0 baseline at version 1 that Stage 1 has already handled. */
     private void sendGoal() throws Exception {
-        GameEvent play = new GameEvent("nhl-1", "nhl-1:1", "SCORE_UPDATE", "BOS", 1234L, "BOS scores!",
-                "TOR", "BOS", 0, 1, "IN_PROGRESS", "NHL", 11).withVersion(1);
+        GameEvent baseline = new GameEvent("nhl-1", "nhl-1:1", "GAME_SYNC", "TOR", 1234L, "",
+                "TOR", "BOS", 0, 0, "IN_PROGRESS", "NHL", 10).withVersion(1);
+        alerts.GameLabels labels = new alerts.GameLabels(catalog.Teams.load());
+        new DetectorMemory(pool).writeIfHigher("nhl-1", 1,
+                alerts.Detectors.standard(labels).run(null, alerts.Play.of(baseline)).after());
+        GameEvent play = new GameEvent("nhl-1", "nhl-1:2", "SCORE_UPDATE", "BOS", 1234L, "BOS scores!",
+                "TOR", "BOS", 0, 1, "IN_PROGRESS", "NHL", 11).withVersion(2);
         try (KafkaProducer<String, String> p = new KafkaProducer<>(KafkaSettings.ingestProducer(KafkaTestSupport.bootstrap()))) {
             p.send(new ProducerRecord<>(gameEvents, play.getGameId(), GameEventParser.toJson(play))).get();
         }
