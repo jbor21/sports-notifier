@@ -175,7 +175,7 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   `docs/superpowers/specs/2026-10-07-phase-3-2-postgres-design.md`, plan
   `docs/superpowers/plans/2026-10-07-phase-3-2-postgres.md`. The course UI is
   broken from here (no adapter endpoints); the new UI is 3b.
-- **Phase 3.3 (alerts, wave 1) is built** on branch `phase-3-3-alerts`: spec
+- **Phase 3.3 (alerts, wave 1) is merged** (PR #14, 2026-10-08): spec
   `docs/superpowers/specs/2026-10-07-phase-3-3-alerts-wave-1-design.md`, plan
   `docs/superpowers/plans/2026-10-07-phase-3-3-alerts-wave-1.md`.
 - **Next step: Phase 3.4 (live API)**, starting with its brainstorm.
