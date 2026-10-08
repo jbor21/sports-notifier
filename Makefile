@@ -15,7 +15,7 @@ export KUBE_CONTEXT
 # A new tag per build so Kubernetes always rolls pods onto new code. Uncommitted changes get a unique suffix.
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
-.PHONY: test cluster up simulate smoke logs down
+.PHONY: test cluster up simulate smoke logs down replay-detectors
 
 # Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
 # until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
@@ -81,3 +81,9 @@ test:
 	docker exec $(TEST_REDIS) redis-cli ping >/dev/null 2>&1 \
 		|| { echo "Test Redis did not answer within 10s"; exit 1; }; \
 	mvn -B test
+
+# Recorded ESPN games through the poller's decision and the alert detectors; prints each game's alerts.
+# No cluster, Redis, or Kafka. Reads ~/sportsnotifier-recordings, or RECORDINGS_DIR.
+replay-detectors:
+	mvn -q -DskipTests package
+	java -cp target/sports-notifier.jar tools.ReplayDetectors
