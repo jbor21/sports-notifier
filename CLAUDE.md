@@ -184,12 +184,13 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
 - **Phase 3.3 (alerts, wave 1) is merged** (PR #14, 2026-10-08): spec
   `docs/superpowers/specs/2026-10-07-phase-3-3-alerts-wave-1-design.md`, plan
   `docs/superpowers/plans/2026-10-07-phase-3-3-alerts-wave-1.md`.
-- **Phase 3.4 (live API)**: spec
+- **Phase 3.4 (live API) is merged** (PR #28, 2026-10-08): spec
   `docs/superpowers/specs/2026-10-08-phase-3-4-live-api-design.md`, plan
   `docs/superpowers/plans/2026-10-08-phase-3-4-live-api.md`.
 - **Next step: Phase 3b (new UI)**, against the now fully served `docs/api/`.
-  Deferred 3.3 minors are issues #15–#20; #15 must be fixed before Phase 4,
-  #16 before Phase 5.
+  Deferred minors are issues #15–#27 (#15 must be fixed before Phase 4, #16 before
+  Phase 5). CI: #29, HistoryWriterTest can hang while Postgres is paused (a watchdog
+  dumps threads after 12 min; suspected unbounded socket write).
 - **New in Phase 3.4:** `/api/v1/ws` (`gateway/LiveSocket`): `hello` with the unread
   count, 4401 without a session, ping/pong, idle close after 60 s, notifications in the
   API shape, `unread_count`, `game_update`. The accept script saves start time and line
