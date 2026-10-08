@@ -150,6 +150,18 @@ if probe_kafka netpol-probe; then
   fail "a pod outside the allow lists reached sports-notifier-kafka-bootstrap:9092 (network policies not enforced). If the cluster was just restarted, k3s may not have started its policy controller: check 'docker logs k3d-sports-notifier-server-0 | grep \"network policy controller\"', then 'k3d cluster stop sports-notifier && make cluster'"
 fi
 
+# 9b. Only the services that use Postgres reach it: user-pref, notification, history. The gateway is
+#     ours but has no business there, so it is the refused case. Same probe and 5 s wait as step 7.
+probe_postgres() {  # $1 = app.kubernetes.io/name label for the probe pod
+  k run "netpol-pg-$1-$RANDOM" --rm -i --restart=Never --quiet --image=curlimages/curl:8.10.1 \
+    --labels="app.kubernetes.io/name=$1" --command -- \
+    sh -c 'sleep 5; nc -z -w 5 postgres 5432' >/dev/null 2>&1
+}
+probe_postgres history || fail "a pod labelled as history could not reach postgres:5432"
+if probe_postgres gateway; then
+  fail "a pod labelled as the gateway reached postgres:5432; only user-pref, notification, and history may"
+fi
+
 # 10. Plays sent while the stage workers are down still arrive once they are back: they wait in
 #     Kafka, and a group coming back reads from its own bookmark. (auto.offset.reset=earliest, for a
 #     group with no bookmark yet, is tested in Stage1WorkerTest.newGroupReadsEarlierPlays: here the

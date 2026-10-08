@@ -38,17 +38,8 @@ public final class RedisKeys {
     /** A gateway's own pub/sub channel; Stage 2 publishes there for the users it holds: {@code gw:<gatewayId>} */
     public static final String GATEWAY_CHANNEL_PREFIX = "gw:";
 
-    /** Account record JSON (id, username, bcrypt hash): {@code user:<userId>} */
-    public static final String USER_PREFIX = "user:";
-
-    /** Username → userId, claimed with SET NX at signup: {@code username:<name>} */
-    public static final String USERNAME_PREFIX = "username:";
-
     /** Failed-login counters: {@code login:fail:user:<name>} and {@code login:fail:ip:<address>} */
     public static final String LOGIN_FAIL_PREFIX = "login:fail:";
-
-    /** User preferences JSON blob: {@code prefs:<userId>} */
-    public static final String PREFS_PREFIX = "prefs:";
 
     /** Session token → userId mapping: {@code sid:<token>} */
     public static final String SESSION_PREFIX = "sid:";
@@ -76,8 +67,5 @@ public final class RedisKeys {
 
     /** Temporary audience set built during one event's fan-out: {@code fanout:<eventId>} */
     public static final String FANOUT_PREFIX = "fanout:";
-
-    /** Per-user notification history list: {@code notifications:<userId>} */
-    public static final String NOTIFICATIONS_PREFIX = "notifications:";
 
 }
