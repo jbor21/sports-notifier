@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import feed.EspnClient;
 import io.javalin.Javalin;
-import io.javalin.http.Context;
 import io.javalin.http.staticfiles.Location;
 import io.javalin.websocket.WsContext;
 import redis.clients.jedis.JedisPool;
@@ -18,7 +17,6 @@ import java.net.UnknownHostException;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -83,15 +81,6 @@ public final class GatewayMain {
         // --- Upcoming games (proxied from ESPN to avoid browser CORS issues) ---
         app.get("/api/upcoming", espnProxyHandler::handleUpcoming);
 
-        // --- History ---
-        app.get("/api/history", ctx -> {
-            String userId = requireAuth(pool, ctx);
-            if (userId == null) return;
-            String limit = ctx.queryParamAsClass("limit", String.class).getOrDefault("50");
-            HttpResponse<String> r = SimpleHttp.get(NOTIFICATION_URL + "/history/" + urlEnc(userId) + "?limit=" + urlEnc(limit));
-            ctx.status(r.statusCode()).result(r.body());
-        });
-
         // --- WebSocket push stream ---
         app.ws("/ws", ws -> {
             ws.onConnect(ctx -> {
@@ -154,15 +143,6 @@ public final class GatewayMain {
         } catch (UnknownHostException e) {
             return "gateway-" + UUID.randomUUID();
         }
-    }
-
-    private static String requireAuth(JedisPool pool, Context ctx) {
-        String userId = SessionAuth.currentUserId(pool, ctx);
-        if (userId == null) {
-            ctx.status(401).json(Map.of("error", "not authenticated"));
-            return null;
-        }
-        return userId;
     }
 
     private static String urlEnc(String s) {

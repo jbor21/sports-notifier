@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Stage 2's deliver script: dedup, history, and publish as one step (Phase 3.1 spec, section 2.3). */
+/** Stage 2's deliver script: dedup and publish as one step. History is the history writers' job (Phase 3.2 spec, 7.1). */
 class DeliveryTest {
 
     private JedisPool pool;
@@ -69,11 +69,11 @@ class DeliveryTest {
     }
 
     @Test
-    void sameMessageTwiceIsOneHistoryEntryAndOnePublish() throws Exception {
+    void sameMessageTwiceIsOnePublish() throws Exception {
         jedis.zadd("conn:u1", redisNow() + 90, "A");
         assertTrue(delivery.deliver(msg("u1", 1)));
         assertFalse(delivery.deliver(msg("u1", 1)), "Kafka redelivered it; the script must make that a no-op");
-        assertEquals(1, jedis.llen("notifications:u1"));
+        assertFalse(jedis.exists("notifications:u1"), "no history in Redis: it is in Postgres now");
         assertEquals(1, receivedOn("gw:A").size());
         assertTrue(receivedOn("notify:u1").isEmpty(), "no broadcast channel any more: only the user's gateways");
     }
@@ -85,7 +85,7 @@ class DeliveryTest {
         String gw = receivedOn("gw:A").get(0);
         assertTrue(gw.contains("\"userId\":\"u1\""), gw);
         assertTrue(gw.contains("\"payload\":{"), gw);
-        assertTrue(jedis.lindex("notifications:u1", 0).contains("\"message\":\"LAL scores!\""));
+        assertTrue(gw.contains("\"message\":\"LAL scores!\""), gw);
     }
 
     @Test
@@ -101,9 +101,9 @@ class DeliveryTest {
     }
 
     @Test
-    void userWithNoSocketGetsHistoryOnly() throws Exception {
+    void userWithNoSocketIsClaimedWithoutAPush() throws Exception {
         assertTrue(delivery.deliver(msg("u1", 1)));
-        assertEquals(1, jedis.llen("notifications:u1"));
+        assertTrue(jedis.exists("notif:nba-1:v1:u1"), "delivered as far as Stage 2 goes; history has it from the history writers");
         assertTrue(receivedOn("gw:").isEmpty());
     }
 
@@ -112,7 +112,7 @@ class DeliveryTest {
         // Review finding I1: a pipelined script error was swallowed and the batch committed, so the
         // notification was lost. And Redis does not roll back a script that fails halfway, so a claim
         // written before the failing write would make the retry think it was already delivered.
-        jedis.set("notifications:u1", "not a list");                 // LPUSH will fail with WRONGTYPE
+        jedis.set("conn:u1", "not a sorted set");                    // ZREMRANGEBYSCORE will fail with WRONGTYPE
         assertThrows(redis.clients.jedis.exceptions.JedisDataException.class,
             () -> delivery.deliverAll(List.of(msg("u1", 1))));
         assertFalse(jedis.exists("notif:nba-1:v1:u1"), "no claim left behind, so the retry delivers it");
@@ -126,10 +126,11 @@ class DeliveryTest {
     }
 
     @Test
-    void deliverAllKeepsOrderAndDedupsInsideTheBatch() {
+    void deliverAllKeepsOrderAndDedupsInsideTheBatch() throws Exception {
+        jedis.zadd("conn:u1", redisNow() + 90, "A");
         delivery.deliverAll(List.of(msg("u1", 1), msg("u1", 2), msg("u1", 2), msg("u1", 3)));
-        List<String> history = jedis.lrange("notifications:u1", 0, -1);
-        assertEquals(3, history.size());
+        List<String> pushes = receivedOn("gw:A");
+        assertEquals(3, pushes.size());
         assertEquals(3, jedis.keys("notif:*").size());
     }
 }

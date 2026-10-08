@@ -85,9 +85,10 @@ echo "simulator job: $job"
 # 5. Bob gets the game start and at least one run, whichever team scored.
 got=0
 for _ in $(seq 1 60); do
-  if curl -fsS -b "$bob_jar" "$BASE_URL/api/history" | jq -e '
-      any(.[]; .gameId == "game-BOS-HOU" and (.message | contains("has started")))
-      and any(.[]; .gameId == "game-BOS-HOU" and (.message | contains("scores!")))' >/dev/null; then
+  # History is in Postgres now (the history writers); the API's Notification carries the headline.
+  if curl -fsS -b "$bob_jar" "$BASE_URL/api/v1/notifications?game=game-BOS-HOU&limit=100" | jq -e '
+      any(.items[]; .headline.type == "GAME_START" and (.headline.text | contains("has started")))
+      and any(.items[]; .headline.type == "RUN_SCORED" and (.headline.text | contains("scores!")))' >/dev/null; then
     got=1; break
   fi
   sleep 1
@@ -97,9 +98,9 @@ wait "$ws_pid" || fail "Bob's open WebSocket did not receive the game start: $(c
 
 # 6. Alice sees none of it, and naming Bob's id in the query changes nothing: the gateway
 #    takes the user from the session cookie, never from the request.
-[[ "$(curl -fsS -b "$alice_jar" "$BASE_URL/api/history" | jq 'length')" == 0 ]] \
+[[ "$(curl -fsS -b "$alice_jar" "$BASE_URL/api/v1/notifications" | jq '.items | length')" == 0 ]] \
   || fail "Alice's history is not empty (her nhl-bos follow heard about a Boston game in another league?)"
-[[ "$(curl -fsS -b "$alice_jar" "$BASE_URL/api/history?userId=$bob_id" | jq 'length')" == 0 ]] \
+[[ "$(curl -fsS -b "$alice_jar" "$BASE_URL/api/v1/notifications?userId=$bob_id" | jq '.items | length')" == 0 ]] \
   || fail "Alice could read Bob's history with ?userId="
 [[ "$(curl -fsS -b "$alice_jar" "$BASE_URL/api/v1/follows?userId=$bob_id" | jq -r '.items[0].target.id')" == nhl-bos ]] \
   || fail "Alice could read Bob's follows with ?userId="
@@ -153,7 +154,7 @@ fi
 #     Kafka, and a group coming back reads from its own bookmark. (auto.offset.reset=earliest, for a
 #     group with no bookmark yet, is tested in Stage1WorkerTest.newGroupReadsEarlierPlays: here the
 #     workers join their groups before any play is sent, so "latest" would pass too.)
-starts_before=$(curl -fsS -b "$bob_jar" "$BASE_URL/api/history?limit=200" | jq '[.[] | select(.gameId == "game-BOS-HOU" and (.message | contains("has started")))] | length')
+starts_before=$(curl -fsS -b "$bob_jar" "$BASE_URL/api/v1/notifications?game=game-BOS-HOU&limit=100" | jq '[.items[] | select(.headline.type == "GAME_START")] | length')
 k scale deploy/stage1-worker deploy/stage2-worker --replicas=0 >/dev/null
 k wait pod -l 'app.kubernetes.io/name in (stage1-worker,stage2-worker)' --for=delete --timeout=120s >/dev/null 2>&1 || true
 k delete jobs -l app.kubernetes.io/name=simulator --cascade=foreground --wait=true --ignore-not-found >/dev/null
@@ -162,7 +163,7 @@ k wait "job/$job" --for=condition=complete --timeout=180s >/dev/null || fail "si
 k scale deploy/stage1-worker deploy/stage2-worker --replicas=1 >/dev/null
 got=0
 for _ in $(seq 1 90); do
-  now=$(curl -fsS -b "$bob_jar" "$BASE_URL/api/history?limit=200" | jq '[.[] | select(.gameId == "game-BOS-HOU" and (.message | contains("has started")))] | length')
+  now=$(curl -fsS -b "$bob_jar" "$BASE_URL/api/v1/notifications?game=game-BOS-HOU&limit=100" | jq '[.items[] | select(.headline.type == "GAME_START")] | length')
   if (( now > starts_before )); then got=1; break; fi
   sleep 1
 done

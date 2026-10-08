@@ -66,6 +66,8 @@ public final class ApiV1Routes {
             forward(ctx, SimpleHttp.patchJson(userPrefUrl + "/users/" + enc(userId), ctx.body()));
         });
 
+        registerNotifications(app, pool, notificationUrl);
+
         app.get("/api/v1/follows", ctx -> {
             String userId = requireUser(pool, ctx);
             if (userId == null) return;
@@ -94,6 +96,38 @@ public final class ApiV1Routes {
             String userId = requireUser(pool, ctx);
             if (userId == null) return;
             forward(ctx, SimpleHttp.delete(followUrl(userPrefUrl, userId, ctx)));
+        });
+    }
+
+    private static void registerNotifications(Javalin app, JedisPool pool, String notificationUrl) {
+        app.get("/api/v1/notifications", ctx -> {
+            String userId = requireUser(pool, ctx);
+            if (userId == null) return;
+            // Only the API's filters are passed on; the user always comes from the session.
+            StringBuilder q = new StringBuilder();
+            for (String name : new String[] {"league", "team", "game", "cursor", "limit"}) {
+                String v = ctx.queryParam(name);
+                if (v != null) q.append(q.length() == 0 ? "?" : "&").append(name).append('=').append(enc(v));
+            }
+            forward(ctx, SimpleHttp.get(notificationUrl + "/users/" + enc(userId) + "/notifications" + q));
+        });
+
+        app.delete("/api/v1/notifications", ctx -> {
+            String userId = requireUser(pool, ctx);
+            if (userId == null) return;
+            forward(ctx, SimpleHttp.delete(notificationUrl + "/users/" + enc(userId) + "/notifications"));
+        });
+
+        app.get("/api/v1/notifications/unread-count", ctx -> {
+            String userId = requireUser(pool, ctx);
+            if (userId == null) return;
+            forward(ctx, SimpleHttp.get(notificationUrl + "/users/" + enc(userId) + "/notifications/unread-count"));
+        });
+
+        app.post("/api/v1/notifications/seen", ctx -> {
+            String userId = requireUser(pool, ctx);
+            if (userId == null) return;
+            forward(ctx, SimpleHttp.postJson(notificationUrl + "/users/" + enc(userId) + "/notifications/seen", ""));
         });
     }
 
