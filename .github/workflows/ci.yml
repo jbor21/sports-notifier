@@ -18,6 +18,8 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # The suite takes about 5 minutes. A hang used to hold the runner for up to 6 hours.
+    timeout-minutes: 20
     services:
       # The tests expect Redis on localhost:6379.
       redis:
@@ -35,8 +37,31 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
-      - run: mvn -B test
-      # A failed Kafka test leaves the broker's log and a docker stats snapshot here (testsupport.KafkaDiagnostics).
+      # A watchdog: if the tests are still running after 12 minutes (normal is about 5), it saves
+      # every JVM's thread dump, prints the test JVM's main thread, and stops Maven, so a hang fails
+      # with evidence instead of running until the job timeout. (Seen: HistoryWriterTest hanging
+      # while Postgres was paused, 3 of 5 runs on 2026-10-08.)
+      - name: Run mvn -B test
+        run: |
+          mvn -B test &
+          mvn_pid=$!
+          (
+            sleep 720
+            echo "::error::tests still running after 12 minutes; saving thread dumps"
+            mkdir -p target/kafka-diagnostics
+            for p in $(jps -q); do jstack -l "$p" > "target/kafka-diagnostics/threads-$p.txt" 2>&1 || true; done
+            for f in target/kafka-diagnostics/threads-*.txt; do
+              echo "== $f"; awk '/^"main"/{p=1} p&&/^$/{exit} p' "$f"
+            done
+            kill "$mvn_pid"
+          ) &
+          watchdog=$!
+          rc=0
+          wait "$mvn_pid" || rc=$?
+          kill "$watchdog" 2>/dev/null || true
+          exit "$rc"
+      # A failed Kafka test leaves the broker's log and a docker stats snapshot here (testsupport.KafkaDiagnostics);
+      # the watchdog above leaves thread dumps here too.
       - name: Save Kafka diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
@@ -49,6 +74,7 @@ jobs:
   deploy-check:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: Install k3d

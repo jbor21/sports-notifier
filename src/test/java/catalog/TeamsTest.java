@@ -45,4 +45,19 @@ class TeamsTest {
         for (String league : TEAMS.countsByLeague().keySet()) assertNotNull(league);
         assertTrue(TEAMS.all().stream().allMatch(t -> t.shortName() != null && !t.shortName().isBlank()));
     }
+
+    @Test
+    void everyTeamHasLogoAndColors() {
+        for (Teams.Team t : TEAMS.all()) {
+            assertNotNull(t.logoUrl(), t.id());
+            assertTrue(t.logoUrl().startsWith("https://"), t.id() + " " + t.logoUrl());
+            assertNotNull(t.primaryColor(), t.id());
+            assertTrue(t.primaryColor().matches("#[0-9a-fA-F]{6}"), t.id() + " " + t.primaryColor());
+            assertNotNull(t.location(), t.id());
+            assertNotNull(t.name(), t.id());
+        }
+        Teams.Team bears = TEAMS.find("nfl-chi").orElseThrow();
+        assertEquals("Chicago", bears.location());
+        assertEquals("Bears", bears.name());
+    }
 }

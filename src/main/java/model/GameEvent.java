@@ -1,5 +1,7 @@
 package model;
 
+import java.util.List;
+
 /**
  * Represents a live event occurring during a sports game.
  * New fields (homeTeam, awayTeam, homeScore, awayScore, gameStatus, league)
@@ -56,6 +58,10 @@ public class GameEvent {
     private int seasonType;
     /** The feed's short status text, e.g. {@code Bot 4th}; null if none. */
     private String detail;
+    /** Scheduled start, epoch milliseconds; 0 if unknown. Saved in game:<id> for the game lists. */
+    private long startTime;
+    /** Points per period so far; saved with the score in one step, so the two always add up. */
+    private List<LinePeriod> lineScore;
 
     public GameEvent() {}
 
@@ -110,6 +116,8 @@ public class GameEvent {
     public String getStage() { return stage; }
     public int getSeasonType() { return seasonType; }
     public String getDetail() { return detail; }
+    public long getStartTime() { return startTime; }
+    public List<LinePeriod> getLineScore() { return lineScore == null ? List.of() : lineScore; }
 
     /** A copy of this play with its accept counter set. */
     public GameEvent withVersion(long version) {
@@ -133,6 +141,14 @@ public class GameEvent {
         return copy;
     }
 
+    /** A copy of this play with its scheduled start and line score set. */
+    public GameEvent withSchedule(long startTime, List<LinePeriod> lineScore) {
+        GameEvent copy = copy();
+        copy.startTime = startTime;
+        copy.lineScore = lineScore == null ? List.of() : List.copyOf(lineScore);
+        return copy;
+    }
+
     private GameEvent copy() {
         GameEvent c = new GameEvent(gameId, eventId, eventType, team, timestamp, description,
             homeTeam, awayTeam, homeScore, awayScore, gameStatus, league, seq);
@@ -145,6 +161,8 @@ public class GameEvent {
         c.stage = stage;
         c.seasonType = seasonType;
         c.detail = detail;
+        c.startTime = startTime;
+        c.lineScore = lineScore;
         return c;
     }
 }

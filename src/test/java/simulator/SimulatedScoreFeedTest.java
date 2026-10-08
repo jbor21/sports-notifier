@@ -217,4 +217,16 @@ class SimulatedScoreFeedTest {
         assertEquals(nhl.snapshot(f.gameIds().get(0), lastNhl, f.fetch("NHL").get(0).startTimeMillis()),
             f.fetch("NHL").get(0));
     }
+
+    @Test
+    void lineScoreSumsToScore() {
+        GameScript nfl = GameScript.nfl("KC", "BUF");
+        for (int i = 0; i < nfl.steps().size(); i++) {
+            model.GameSnapshot snap = nfl.snapshot("nfl-sim1-1", i, T0);
+            assertEquals(snap.homeScore(), snap.lineScore().stream().mapToInt(model.LinePeriod::home).sum(), "step " + i);
+            assertEquals(snap.awayScore(), snap.lineScore().stream().mapToInt(model.LinePeriod::away).sum(), "step " + i);
+        }
+        model.GameSnapshot last = nfl.snapshot("nfl-sim1-1", nfl.steps().size() - 1, T0);
+        assertTrue(last.lineScore().size() >= 4, "every quarter gets a column: " + last.lineScore());
+    }
 }

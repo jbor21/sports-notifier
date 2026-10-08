@@ -1,6 +1,7 @@
 package simulator;
 
 import model.GameSnapshot;
+import model.LinePeriod;
 import model.GameSnapshot.Half;
 import model.GameSnapshot.Phase;
 import model.GameSnapshot.Stage;
@@ -54,7 +55,28 @@ public final class GameScript {
     public GameSnapshot snapshot(String gameId, int i, long startTimeMillis) {
         Step s = steps.get(i);
         return new GameSnapshot(gameId, league, home, away, s.homeScore(), s.awayScore(), s.phase(), s.period(),
-            s.half(), s.clockTenths(), s.outs(), s.stage(), s.status(), startTimeMillis, 2, s.detail());
+            s.half(), s.clockTenths(), s.outs(), s.stage(), s.status(), startTimeMillis, 2, s.detail(), lineScore(i));
+    }
+
+    /** Each step's points go to the period it is in; every period up to step i's gets a column. */
+    private List<LinePeriod> lineScore(int i) {
+        int periods = 0;
+        for (int k = 0; k <= i; k++) periods = Math.max(periods, steps.get(k).period());
+        int[] home = new int[periods + 1], away = new int[periods + 1];
+        int lastHome = 0, lastAway = 0;
+        for (int k = 0; k <= i; k++) {
+            Step s = steps.get(k);
+            int p = Math.max(1, s.period());
+            if (p <= periods) {
+                home[p] += s.homeScore() - lastHome;
+                away[p] += s.awayScore() - lastAway;
+            }
+            lastHome = s.homeScore();
+            lastAway = s.awayScore();
+        }
+        List<LinePeriod> out = new ArrayList<>();
+        for (int p = 1; p <= periods; p++) out.add(new LinePeriod(p, home[p], away[p]));
+        return out;
     }
 
     /**

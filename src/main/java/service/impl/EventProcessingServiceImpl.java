@@ -1,5 +1,6 @@
 package service.impl;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import model.GameEvent;
 import redis.clients.jedis.Jedis;
@@ -18,6 +19,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     /** State-only event: the script saves it, nobody is notified. */
     public static final String GAME_SYNC = "GAME_SYNC";
 
+    private static final Gson GSON = new Gson();
+
     private final JedisPool pool;
     private final PlayPublisher publisher;
     private final LongSupplier nowMillis;
@@ -27,8 +30,15 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     private static final long FINISHED_GAME_TTL_SECONDS = 86_400L;
     /** Any other game's record, and its place in games:recent, lasts 8 days without an update. */
     private static final long IDLE_GAME_TTL_SECONDS = 8 * 86_400L;
-    /** How long the same period and score must keep looking "older" before the no-score heal accepts it. */
-    private static final long NO_SCORE_HEAL_MILLIS = 30_000L;
+    /**
+     * How long the same period and score must keep looking "older" before the no-score heal accepts it.
+     * 10 s, two polls: any accepted play resets the timer, so it runs out only when nothing newer
+     * arrives. It was 30 s until ESPN showed 0:00 mid-period for 90 s and the card stayed frozen 30 s
+     * more (Phase 3.4 spec, section 2).
+     */
+    private static final long NO_SCORE_HEAL_MILLIS = 10_000L;
+    /** games:start keeps games that start within the last 3 days or later: the lists go back one day. */
+    private static final long GAMES_START_WINDOW_MILLIS = 3 * 86_400_000L;
     /** Longer than Stage 1's 8-day memory of versions (det:<gameId>), refreshed on every accept. */
     private static final long VERSION_TTL_SECONDS = 9 * 86_400L;
 
@@ -54,13 +64,13 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      *    11:45), because the bad snapshot's seq would otherwise block the game for minutes:
      *    - goal heal: same phase, period, and half (seq's first four digits) and more points.
      *      An older snapshot never has more points, so a slower overlapping poller can't use this.
-     *    - no-score heal: same phase, period, half, and score, still "older" after 30 seconds.
+     *    - no-score heal: same phase, period, half, and score, still "older" after 10 seconds.
      *      staleSince records when that started; any accepted play clears it.
      *    Either heal lowers lastSeq to the play's seq. Both apply only to game positions (below
      *    10^14). A seq at or above that isn't a position (the course-era simulator sent such seqs to
      *    order its runs), so its leading digits mean nothing as a period.
      *    This check comes after "pending", so a play that will not be considered never starts
-     *    the 30-second timer.
+     *    the 10-second timer.
      * 4. Only then claim the id, add 1 to the game's version, and write the full state. Every
      *    event carries the whole state, so the script does not branch on event type. version
      *    changes in the same step as the score, so it counts accepted plays in exactly the order
@@ -71,7 +81,14 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      *    retry loop sends whatever is still waiting. Written in the same step as the score, so a
      *    Redis crash keeps or loses both together.
      * 6. Expire the record (a day after a final, 8 days idle otherwise) and note the game in
-     *    games:recent, so the game list reads a bounded set instead of scanning every key.
+     *    games:recent, so the game list reads a bounded set instead of scanning every key. Index the
+     *    game by its scheduled start in games:start for the day lists, trimmed to the last 3 days
+     *    here too, because on the laptop no schedule loop runs and every simulator run adds new ids.
+     * 7. Last, publish the play on live:<gameId> for the gateways showing that game. Here and not
+     *    after the script returns: Redis runs one script at a time, so a game's publishes leave in
+     *    version order and only for state that was saved. Two pods accepting back to back and
+     *    publishing afterwards could cross. Pub/sub is fire-and-forget; a gateway that misses one
+     *    catches up on the next play or when a tab subscribes (it reads game:<id> then).
      *
      * KEYS[1] = game hash key  (e.g. "game:g1")
      * KEYS[2] = dedup key      (e.g. "processed:evt-1")
@@ -81,6 +98,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      * KEYS[6] = version:<gameId>, the accept counter. Its own key, not a field of the game record:
      *           the record expires a day after a final, and a counter that restarted at 1 for a
      *           reused game id would be dropped by Stage 1, which remembers versions for 8 days.
+     * KEYS[7] = games:start
      *
      * ARGV[1] = seq        ARGV[2] = dedup TTL seconds
      * ARGV[3] = homeTeam   ARGV[4] = awayTeam   ARGV[5] = league
@@ -90,6 +108,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      * ARGV[15] = no-score heal window millis   ARGV[16] = version key TTL seconds
      * ARGV[17..24] = phase, period, clockTenths, half, outs, stage, seasonType, detail (the position,
      *                saved with the score for the live game API)
+     * ARGV[25] = scheduled start millis (0 = unknown)   ARGV[26] = line score JSON
+     * ARGV[27] = live channel (live:<gameId>)   ARGV[28] = games:start window millis
      *
      * Returns: 0 duplicate | -1 stale | -2 pending | the game's new version when accepted
      *
@@ -134,7 +154,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         "  'homeScore', ARGV[6], 'awayScore', ARGV[7], 'status', ARGV[8],\n" +
         "  'lastSeq', ARGV[1], 'lastTimestamp', ARGV[9],\n" +
         "  'phase', ARGV[17], 'period', ARGV[18], 'clockTenths', ARGV[19], 'half', ARGV[20],\n" +
-        "  'outs', ARGV[21], 'stage', ARGV[22], 'seasonType', ARGV[23], 'detail', ARGV[24])\n" +
+        "  'outs', ARGV[21], 'stage', ARGV[22], 'seasonType', ARGV[23], 'detail', ARGV[24],\n" +
+        "  'startTime', ARGV[25], 'lineScore', ARGV[26])\n" +
         "if ARGV[8] == 'FINAL' or ARGV[8] == 'CANCELED' then\n" +
         "  redis.call('EXPIRE', KEYS[1], ARGV[11])\n" +
         "else\n" +
@@ -145,6 +166,9 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         "local now = tonumber(redis.call('TIME')[1])\n" +
         "redis.call('ZADD', KEYS[3], now, ARGV[10])\n" +
         "redis.call('ZREMRANGEBYSCORE', KEYS[3], '-inf', now - tonumber(ARGV[12]))\n" +
+        "if tonumber(ARGV[25]) > 0 then redis.call('ZADD', KEYS[7], ARGV[25], ARGV[10]) end\n" +
+        "redis.call('ZREMRANGEBYSCORE', KEYS[7], '-inf', '(' .. (tonumber(ARGV[13]) - tonumber(ARGV[28])))\n" +
+        "redis.call('PUBLISH', ARGV[27], '{\"version\":' .. version .. ',\"play\":' .. ARGV[14] .. '}')\n" +
         "return version\n";
 
     public EventProcessingServiceImpl(JedisPool pool, PlayPublisher publisher, LongSupplier nowMillis) {
@@ -181,7 +205,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                 RedisKeys.GAMES_RECENT,
                 RedisKeys.OUTBOX_PREFIX + event.getGameId(),
                 RedisKeys.OUTBOX_PENDING,
-                RedisKeys.VERSION_PREFIX + event.getGameId()
+                RedisKeys.VERSION_PREFIX + event.getGameId(),
+                RedisKeys.GAMES_START
             );
             List<String> args = List.of(
                 String.valueOf(event.getSeq()),
@@ -207,7 +232,11 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                 String.valueOf(event.getOuts()),
                 orEmpty(event.getStage()),
                 String.valueOf(event.getSeasonType()),
-                orEmpty(event.getDetail())
+                orEmpty(event.getDetail()),
+                String.valueOf(event.getStartTime()),
+                GSON.toJson(event.getLineScore()),
+                RedisKeys.LIVE_CHANNEL_PREFIX + event.getGameId(),
+                String.valueOf(GAMES_START_WINDOW_MILLIS)
             );
             result = (Long) jedis.eval(PROCESS_EVENT_SCRIPT, keys, args);
         }

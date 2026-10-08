@@ -21,14 +21,18 @@ import java.util.HashMap;
 import java.util.Properties;
 
 /**
- * One Kafka broker for the whole test JVM, started on first use (about a second for the native
- * image). Testcontainers removes it when the JVM exits. Tests share the broker, so each test
+ * One Kafka broker for the whole test JVM, started on first use (a few seconds). Testcontainers
+ * removes it when the JVM exits. Tests share the broker, so each test
  * uses its own topic and group names.
  */
 public final class KafkaTestSupport {
 
-    /** Same Kafka version as kafka-clients in pom.xml and the Strimzi broker in values.yaml. */
-    private static final String IMAGE = "apache/kafka-native:4.3.1";
+    /**
+     * Same Kafka version as kafka-clients in pom.xml and the Strimzi broker in values.yaml. The JVM
+     * image, not apache/kafka-native: the native build segfaulted at startup on GitHub's runners in
+     * 2 of 3 runs on 2026-10-08 (issue #30), for a second or two saved per test JVM.
+     */
+    private static final String IMAGE = "apache/kafka:4.3.1";
 
     private static KafkaContainer broker;
 

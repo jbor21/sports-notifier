@@ -191,7 +191,8 @@ class SimulatorRunsEndToEndTest {
             .map(raw -> JsonParser.parseString(raw).getAsJsonObject())
             .filter(m -> USER.equals(m.get("userId").getAsString()))
             .map(m -> m.getAsJsonObject("payload"))
-            .filter(p -> gameId.equals(p.get("gameId").getAsString()))
+            .filter(p -> "notification".equals(p.get("type").getAsString()))
+            .filter(p -> gameId.equals(p.getAsJsonObject("notification").getAsJsonObject("game").get("id").getAsString()))
             .count();
     }
 
@@ -278,7 +279,8 @@ class SimulatorRunsEndToEndTest {
         return pushes.stream()
             .map(raw -> JsonParser.parseString(raw).getAsJsonObject())
             .filter(m -> user.equals(m.get("userId").getAsString()))
-            .map(m -> m.getAsJsonObject("payload").get("message").getAsString())
+            .filter(m -> "notification".equals(m.getAsJsonObject("payload").get("type").getAsString()))
+            .map(m -> m.getAsJsonObject("payload").getAsJsonObject("notification").getAsJsonObject("headline").get("text").getAsString())
             .toList();
     }
 }

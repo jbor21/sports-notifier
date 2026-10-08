@@ -1,0 +1,12 @@
+{
+  "leagues": [
+    { "id": "NFL", "name": "National Football League", "sport": "football", "periodName": "quarter", "regulationPeriods": 4,
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png" },
+    { "id": "NBA", "name": "National Basketball Association", "sport": "basketball", "periodName": "quarter", "regulationPeriods": 4,
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/leagues/500/nba.png" },
+    { "id": "MLB", "name": "Major League Baseball", "sport": "baseball", "periodName": "inning", "regulationPeriods": 9,
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/leagues/500/mlb.png" },
+    { "id": "NHL", "name": "National Hockey League", "sport": "hockey", "periodName": "period", "regulationPeriods": 3,
+      "logoUrl": "https://a.espncdn.com/i/teamlogos/leagues/500/nhl.png" }
+  ]
+}

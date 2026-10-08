@@ -5,9 +5,12 @@ import feed.EspnScoreFeed;
 import feed.FeedBlockedException;
 import feed.HttpEventSink;
 import feed.Poller;
+import feed.ScheduleLoop;
+import feed.ScheduleWriter;
 import redis.clients.jedis.JedisPool;
 import util.JedisPoolHolder;
 
+import java.time.Clock;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -29,6 +32,7 @@ public final class EspnPollerMain {
     private static final long IDLE_MS =
         Long.parseLong(System.getenv().getOrDefault("ESPN_POLL_IDLE_MS", "60000"));
     private static final long MAX_BACKOFF_MS = 5 * 60 * 1000L;
+    private static final long SCHEDULE_EVERY_MINUTES = 15;
 
     private static final String[] LEAGUES = {"NBA", "NFL", "MLB", "NHL"};
 
@@ -40,6 +44,19 @@ public final class EspnPollerMain {
             System::currentTimeMillis);
 
         System.out.println("[ESPN Poller] live " + LIVE_MS + "ms, idle " + IDLE_MS + "ms, EPS " + EPS_URL);
+
+        // The schedule (yesterday to +7 days for the game lists) is its own thread: a slow ESPN day
+        // fetch never delays live polling.
+        ScheduleLoop schedule = new ScheduleLoop(espn::scoreboard,
+            new ScheduleWriter(pool, System::currentTimeMillis), Clock.systemUTC());
+        ScheduledExecutorService scheduleExec = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "schedule"));
+        scheduleExec.scheduleWithFixedDelay(() -> {
+            try {
+                System.out.println("[ESPN Poller] schedule: " + schedule.runOnce() + " games");
+            } catch (RuntimeException e) {
+                System.err.println("[ESPN Poller] schedule run failed: " + e);
+            }
+        }, 0, SCHEDULE_EVERY_MINUTES, TimeUnit.MINUTES);
 
         for (int i = 0; i < LEAGUES.length; i++) {
             ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();

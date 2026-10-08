@@ -15,6 +15,8 @@ bob_jar=$(mktemp)
 alice_jar=$(mktemp)
 carol_jar=$(mktemp)
 dave_jar=$(mktemp)
+empty_jar=$(mktemp)
+WS_URL="${BASE_URL/http/ws}/api/v1/ws"
 
 fail() {
   trap - ERR
@@ -23,7 +25,7 @@ fail() {
   exit 1
 }
 trap 'fail "command failed on line $LINENO"' ERR
-trap 'rm -f "$jar" "$bob_jar" "$alice_jar" "$carol_jar" "$dave_jar"' EXIT
+trap 'rm -f "$jar" "$bob_jar" "$alice_jar" "$carol_jar" "$dave_jar" "$empty_jar"' EXIT
 
 # 1. Wait for the cluster and the route through Traefik.
 k -n kube-system rollout status deployment/traefik --timeout=180s
@@ -57,6 +59,21 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -c "$bob_jar" -H 'Content-Type: ap
 [[ "$code" == 200 ]] || fail "login returned HTTP $code"
 [[ "$(curl -fsS -b "$bob_jar" "$BASE_URL/api/v1/me" | jq -r .id)" == "$bob_id" ]] || fail "/api/v1/me is not Bob"
 
+# 2c. The live socket (docs/api/websocket.md): without a session it is closed with 4401; with one it
+#     starts with hello, which carries the unread count.
+if out=$(python3 "$repo_root/scripts/ws-listen.py" "$WS_URL" "$empty_jar" hello 10 2>&1); then
+  fail "a socket without a session got hello: $out"
+fi
+grep -q "code 4401" <<<"$out" || fail "a socket without a session was not closed with 4401: $out"
+python3 "$repo_root/scripts/ws-listen.py" "$WS_URL" "$bob_jar" '"unreadCount"' 10 >/dev/null 2>&1 \
+  || fail "Bob's socket got no hello with unreadCount"
+
+# 2d. Reference data from the gateway, and the course endpoints are gone.
+curl -fsS "$BASE_URL/api/v1/leagues/NFL/alerts" | jq -e 'any(.items[]; .type == "TOUCHDOWN")' >/dev/null \
+  || fail "/api/v1/leagues/NFL/alerts has no TOUCHDOWN"
+[[ "$(curl -fsS "$BASE_URL/api/v1/leagues/NFL/teams" | jq '.items | length')" == 32 ]] || fail "/api/v1/leagues/NFL/teams is not 32 teams"
+[[ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/upcoming")" == 404 ]] || fail "the course's /api/upcoming still answers"
+
 # 3. Bob follows mlb-hou, the AWAY team in the simulator's Red Sox–Astros game, with the catalog's
 #    default switches (game start, runs, final). Game start is tagged with the home team and runs with whoever scored, so Bob
 #    getting both proves fan-out covers both teams. Alice follows nhl-bos: wave 1 has no NHL game, but
@@ -84,16 +101,43 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH -b "$dave_jar" -H 'Conten
 #     only in history: that proves Stage 2 found Bob's gateway in conn:<userId> and published on
 #     that gateway's own channel (gateway routing, DESIGN.md decision 13).
 ws_out=$(mktemp)
-python3 "$repo_root/scripts/ws-listen.py" "${BASE_URL/http/ws}/ws" "$bob_jar" "First pitch" 120 >"$ws_out" 2>&1 &
+python3 "$repo_root/scripts/ws-listen.py" "$WS_URL" "$bob_jar" "First pitch" 120 >"$ws_out" 2>&1 &
 ws_pid=$!
 for _ in $(seq 1 50); do grep -q '^open' "$ws_out" && break; sleep 0.2; done
 grep -q '^open' "$ws_out" || fail "Bob's WebSocket did not open: $(cat "$ws_out")"
+
+# 3c. Carol's tab too: her badge must move when her touchdown arrives (unread_count after the push).
+carol_ws=$(mktemp)
+python3 "$repo_root/scripts/ws-listen.py" "$WS_URL" "$carol_jar" '"type":"unread_count"' 180 >"$carol_ws" 2>&1 &
+carol_pid=$!
+for _ in $(seq 1 50); do grep -q '^frame .*"type":"hello"' "$carol_ws" && break; sleep 0.2; done
+grep -q '"type":"hello"' "$carol_ws" || fail "Carol's WebSocket got no hello: $(cat "$carol_ws")"
 
 # 4. Play one wave of games. Stop any simulator still running first: each run has its own game ids
 #    (<league>-sim<run start>-<slot>), so an older run still going would only add noise to histories.
 k delete jobs -l app.kubernetes.io/name=simulator --cascade=foreground --wait=true --ignore-not-found >/dev/null
 job=$("$repo_root/scripts/simulate.sh" SIM_WAVES=1)
 echo "simulator job: $job"
+
+# 4b. The day's game list has this run's NFL game (the accept script indexes it by start time), its
+#     detail has a line score, and a tab that subscribes gets its current state, then live updates
+#     with rising versions (game_update through live:<gameId>).
+sim_game=""
+for _ in $(seq 1 60); do
+  sim_game=$(curl -fsS "$BASE_URL/api/v1/games?date=$(date -u +%F)&tz=UTC&league=NFL" \
+    | jq -r '[.items[] | select((.id | startswith("nfl-sim")) and .status != "final")][-1].id // empty')
+  [[ -n "$sim_game" ]] && break
+  sleep 1
+done
+[[ -n "$sim_game" ]] || fail "/api/v1/games never listed the simulator's NFL game"
+curl -fsS "$BASE_URL/api/v1/games/$sim_game" | jq -e '.lineScore | type == "array"' >/dev/null \
+  || fail "/api/v1/games/$sim_game has no lineScore"
+game_ws=$(mktemp)
+python3 "$repo_root/scripts/ws-listen.py" --count 2 "$WS_URL" "$bob_jar" '"type":"game_update"' 60 \
+  "{\"type\":\"subscribe_games\",\"gameIds\":[\"$sim_game\"]}" >"$game_ws" 2>&1 \
+  || fail "subscribing to $sim_game did not bring two game_update messages: $(cat "$game_ws")"
+versions=$(sed -n 's/^frame //p' "$game_ws" | jq -s -c '[.[] | select(.type == "game_update") | .game.version]')
+jq -e '.[-1] > .[0]' <<<"$versions" >/dev/null || fail "game_update versions did not rise: $versions"
 
 # 5. Bob gets the game start and at least one run, whichever team scored.
 got=0
@@ -122,6 +166,20 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 [[ "$got" == 1 ]] || fail "Carol (nfl-kc follower) did not get a touchdown followed by its try result within 120s: $(curl -fsS -b "$carol_jar" "$BASE_URL/api/v1/notifications?team=nfl-kc&limit=100" | jq -c '[.items[].headline.type]')"
+wait "$carol_pid" || fail "Carol's tab got no unread_count: $(cat "$carol_ws")"
+sed -n 's/^frame //p' "$carol_ws" | jq -e -s '
+    (map(.type) | index("notification")) < (map(.type) | index("unread_count"))
+    and any(.[]; .type == "notification" and .notification.leagueId == "NFL")' >/dev/null \
+  || fail "Carol's tab did not get a notification, then its unread_count: $(cat "$carol_ws")"
+
+# 5d. "Seen" in one tab clears the badge in the others: unread_count 0 on an open socket.
+seen_ws=$(mktemp)
+python3 "$repo_root/scripts/ws-listen.py" "$WS_URL" "$carol_jar" '"count":0' 20 >"$seen_ws" 2>&1 &
+seen_pid=$!
+for _ in $(seq 1 50); do grep -q '"type":"hello"' "$seen_ws" && break; sleep 0.2; done
+[[ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -b "$carol_jar" "$BASE_URL/api/v1/notifications/seen")" == 204 ]] \
+  || fail "Carol's POST /notifications/seen failed"
+wait "$seen_pid" || fail "Carol's open tab did not get unread_count 0 after seen: $(cat "$seen_ws")"
 
 # 5c. Dave, touchdowns off, gets the final but never a touchdown, as a headline or an extra.
 got=0

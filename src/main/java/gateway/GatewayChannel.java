@@ -7,7 +7,14 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPubSub;
 import util.RedisKeys;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.function.BiConsumer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
@@ -16,6 +23,9 @@ import java.util.function.Supplier;
  * there only for users this gateway holds (see {@link ConnectionRegistry}), so a gateway reads only
  * its own users' notifications and adding gateways spreads the work. Replaces the course version's
  * PSUBSCRIBE notify:*, where every gateway read every notification.
+ *
+ * The same connection also carries the {@code live:<gameId>} channels of the games this gateway's
+ * tabs show ({@link GameSubscriptions} decides which); messages are routed by channel prefix.
  */
 public final class GatewayChannel {
 
@@ -26,9 +36,45 @@ public final class GatewayChannel {
     private final JedisPubSub subscriber = new JedisPubSub() {
         @Override
         public void onMessage(String channel, String message) {
-            deliverLocally(message);
+            if (channel.startsWith(RedisKeys.LIVE_CHANNEL_PREFIX)) {
+                BiConsumer<String, String> l = liveListener;
+                if (l != null) l.accept(channel.substring(RedisKeys.LIVE_CHANNEL_PREFIX.length()), message);
+            } else {
+                deliverLocally(message);
+            }
+        }
+
+        @Override
+        public void onSubscribe(String channel, int count) {
+            CompletableFuture<Void> f = subscriptions.get(channel);
+            if (f != null) f.complete(null);
+            sendUnrequested();
+            if (resubscribing && count >= expectedOnConnect) {
+                resubscribing = false;
+                Runnable r = afterResubscribe;
+                if (r != null) callbacks.execute(r);
+            }
         }
     };
+    /**
+     * live:<gameId> channels this gateway wants, each with a future Redis's confirmation completes.
+     * Jedis writes SUBSCRIBE on the caller's thread with no lock of its own, so every change goes
+     * through {@link #commandLock}.
+     */
+    private final Map<String, CompletableFuture<Void>> subscriptions = new ConcurrentHashMap<>();
+    private final Object commandLock = new Object();
+    /** Channels sent to Redis on the current connection; a game wanted but not in here still needs a SUBSCRIBE. */
+    private final Set<String> requested = ConcurrentHashMap.newKeySet();
+    private volatile BiConsumer<String, String> liveListener;
+    private volatile Runnable afterResubscribe;
+    private volatile boolean everConnected;
+    private volatile boolean resubscribing;
+    private volatile int expectedOnConnect;
+    private final ExecutorService callbacks = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "gateway-channel-callbacks");
+        t.setDaemon(true);
+        return t;
+    });
     private Thread subscriberThread;
     private volatile boolean running = true;
 
@@ -93,12 +139,84 @@ public final class GatewayChannel {
         }
     }
 
+    /**
+     * Where live:<gameId> messages go, and what to run after a reconnect has re-subscribed every
+     * channel (the tabs may have missed plays while the connection was down).
+     */
+    public void onGames(BiConsumer<String, String> live, Runnable afterResubscribe) {
+        this.liveListener = live;
+        this.afterResubscribe = afterResubscribe;
+    }
+
+    /**
+     * Starts listening on a channel. Completes when Redis confirms; at once if already confirmed.
+     * While the connection is down the future waits for the reconnect, which subscribes it.
+     */
+    public CompletableFuture<Void> subscribe(String channel) {
+        synchronized (commandLock) {
+            CompletableFuture<Void> existing = subscriptions.get(channel);
+            if (existing != null) return existing;
+            CompletableFuture<Void> f = new CompletableFuture<>();
+            subscriptions.put(channel, f);
+            if (subscriber.isSubscribed()) send(channel);
+            // Not connected yet (starting, or between reconnects): the next confirmation sends it.
+            return f;
+        }
+    }
+
+    /** Called with commandLock held. */
+    private void send(String channel) {
+        try {
+            subscriber.subscribe(channel);
+            requested.add(channel);
+        } catch (RuntimeException e) {
+            System.err.println("[GatewayChannel] subscribe " + channel + " failed; the reconnect retries it: " + e.getMessage());
+        }
+    }
+
+    /**
+     * A game asked for while the connection was being set up was neither in the connect command nor
+     * sent itself; every confirmation sends what is still missing.
+     */
+    private void sendUnrequested() {
+        synchronized (commandLock) {
+            for (String ch : subscriptions.keySet()) if (!requested.contains(ch)) send(ch);
+        }
+    }
+
+    public void unsubscribe(String channel) {
+        synchronized (commandLock) {
+            if (subscriptions.remove(channel) == null) return;
+            if (requested.remove(channel) && subscriber.isSubscribed()) {
+                try {
+                    subscriber.unsubscribe(channel);
+                } catch (RuntimeException e) {
+                    System.err.println("[GatewayChannel] unsubscribe " + channel + " failed: " + e.getMessage());
+                }
+            }
+        }
+    }
+
     public void start() {
         subscriberThread = new Thread(() -> {
             while (running) {
                 try (Jedis conn = connect.get()) {
                     blocking = conn;
-                    conn.subscribe(subscriber, RedisKeys.GATEWAY_CHANNEL_PREFIX + gatewayId);
+                    String[] channels;
+                    synchronized (commandLock) {
+                        // A reconnect: every wanted game channel waits for its new confirmation.
+                        subscriptions.replaceAll((ch, f) -> f.isDone() ? new CompletableFuture<>() : f);
+                        List<String> all = new ArrayList<>();
+                        all.add(RedisKeys.GATEWAY_CHANNEL_PREFIX + gatewayId);
+                        all.addAll(subscriptions.keySet());
+                        channels = all.toArray(new String[0]);
+                        requested.clear();
+                        requested.addAll(subscriptions.keySet());
+                        expectedOnConnect = channels.length;
+                        resubscribing = everConnected;
+                        everConnected = true;
+                    }
+                    conn.subscribe(subscriber, channels);
                 } catch (RuntimeException e) {
                     if (!running) return;
                     System.err.println("[GatewayChannel] subscribe error: " + e.getMessage());
@@ -121,6 +239,7 @@ public final class GatewayChannel {
 
     public void stop() {
         running = false;
+        callbacks.shutdownNow();
         try { subscriber.unsubscribe(); } catch (RuntimeException ignored) {}
         Jedis conn = blocking;
         if (conn != null) try { conn.close(); } catch (RuntimeException ignored) {}

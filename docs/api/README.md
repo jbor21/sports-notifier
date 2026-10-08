@@ -7,7 +7,7 @@ The contract between the new web UI (phase 3b, in `web/`) and the backend. It wa
 | `openapi.yaml` | Every HTTP endpoint: paths, inputs, outputs, errors, examples. The standard format UI tools, code generators, and mock servers read. |
 | `websocket.md` | The live connection: notifications, live scores, keepalive, reconnecting. |
 
-Status: **final for Phase 3, 2026-10-06.** Reviewed against the backend design in the Phase 3 brainstorm. The backend implements it slice by slice: 3.2 (`/auth`, `/me`, `/follows`, `/notifications`), 3.3 (the alert catalog's behavior), 3.4 (`/games`, `/leagues`, live `game_update`). Until a slice lands, only the mock serves it. **Served by the backend since 3.2:** `/auth`, `/me`, `/follows`, `/notifications` (alert switches are stored and validated; until 3.3, only game start, the sport's scoring alerts, and the final fire).
+Status: **final for Phase 3, 2026-10-06.** Reviewed against the backend design in the Phase 3 brainstorm. The backend implements it slice by slice: 3.2 (`/auth`, `/me`, `/follows`, `/notifications`), 3.3 (the alert catalog's behavior), 3.4 (`/games`, `/leagues`, live `game_update`). Until a slice lands, only the mock serves it. **Served by the backend:** everything, since Phase 3.4 (`/auth`, `/me`, `/follows`, `/notifications` since 3.2; the alert catalog's behavior since 3.3; `/leagues`, `/games`, and the WebSocket since 3.4). The mock is still useful for building screens without a cluster.
 
 ## Screens and the calls behind them
 
@@ -41,7 +41,7 @@ From the repo root (needs Node):
 npx @stoplight/prism-cli mock docs/api/openapi.yaml -p 4010
 ```
 
-It answers every endpoint with the examples in the spec and checks inputs against the schemas. Endpoints that need a session return 401 unless the request carries a `sid` cookie; any value works against the mock. The mock covers HTTP only. The WebSocket has no mock yet, so a UI that needs live data before Phase 3 can fake `game_update` and `notification` messages locally from the examples in `websocket.md`.
+It answers every endpoint with the examples in the spec and checks inputs against the schemas. Endpoints that need a session return 401 unless the request carries a `sid` cookie; any value works against the mock. The mock covers HTTP only. For live data, run the real backend (`make cluster up simulate`), or fake `game_update` and `notification` messages locally from the examples in `websocket.md`.
 
 ## What changed from the course API
 

@@ -1,5 +1,9 @@
 package service.impl;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import testsupport.TestMessages;
+
 import model.GameEvent;
 import model.NotificationMessage;
 import org.junit.jupiter.api.AfterEach;
@@ -60,7 +64,7 @@ class DeliveryTest {
     private static NotificationMessage msg(String userId, long version) {
         GameEvent play = new GameEvent("nba-1", "nba-1:" + version, "SCORE_UPDATE", "LAL", 1234L, "LAL scores!",
             "LAL", "BOS", 2, 0, "IN_PROGRESS", "NBA", 10).withVersion(version);
-        return NotificationMessage.of(play, userId);
+        return TestMessages.of(play, userId);
     }
 
     private List<String> receivedOn(String channel) throws InterruptedException {
@@ -84,8 +88,9 @@ class DeliveryTest {
         delivery.deliver(msg("u1", 1));
         String gw = receivedOn("gw:A").get(0);
         assertTrue(gw.contains("\"userId\":\"u1\""), gw);
-        assertTrue(gw.contains("\"payload\":{"), gw);
-        assertTrue(gw.contains("\"message\":\"LAL scores!\""), gw);
+        JsonObject payload = JsonParser.parseString(gw.substring(gw.indexOf('|') + 1)).getAsJsonObject().getAsJsonObject("payload");
+        assertEquals("notification", payload.get("type").getAsString());
+        assertEquals("LAL scores!", payload.getAsJsonObject("notification").getAsJsonObject("headline").get("text").getAsString());
     }
 
     @Test
@@ -132,5 +137,68 @@ class DeliveryTest {
         List<String> pushes = receivedOn("gw:A");
         assertEquals(3, pushes.size());
         assertEquals(3, jedis.keys("notif:*").size());
+    }
+
+    @Test
+    void notificationInApiShape() throws Exception {
+        jedis.zadd("conn:u1", redisNow() + 90, "A");
+        NotificationMessage m = msg("u1", 1);
+        m.setCreatedAt(1_791_300_000_000L);
+        delivery.deliver(m);
+        JsonObject payload = payloadOf(receivedOn("gw:A").get(0));
+        assertEquals("notification", payload.get("type").getAsString());
+        JsonObject n = payload.getAsJsonObject("notification");
+        assertEquals("nba-1:v1", n.get("id").getAsString());
+        assertEquals("2026-10-06T15:20:00Z", n.get("createdAt").getAsString());
+    }
+
+    @Test
+    void counterPresentIncrementsAndPublishesAfter() throws Exception {
+        jedis.zadd("conn:u1", redisNow() + 90, "A");
+        jedis.set("unread:u1", "4");
+        delivery.deliver(msg("u1", 1));
+        List<String> got = receivedOn("gw:A");
+        assertEquals(2, got.size(), got.toString());
+        assertEquals("notification", payloadOf(got.get(0)).get("type").getAsString());
+        JsonObject count = payloadOf(got.get(1));
+        assertEquals("unread_count", count.get("type").getAsString());
+        assertEquals(5, count.get("count").getAsInt());
+        assertEquals("5", jedis.get("unread:u1"));
+    }
+
+    @Test
+    void counterMissingStaysMissing() throws Exception {
+        jedis.zadd("conn:u1", redisNow() + 90, "A");
+        delivery.deliver(msg("u1", 1));
+        assertFalse(jedis.exists("unread:u1"), "INCR on nothing would start at 1, not the real count");
+        assertEquals(1, receivedOn("gw:A").size());
+    }
+
+    @Test
+    void redeliveryCountsOnce() throws Exception {
+        jedis.zadd("conn:u1", redisNow() + 90, "A");
+        jedis.set("unread:u1", "0");
+        delivery.deliver(msg("u1", 1));
+        delivery.deliver(msg("u1", 1));
+        assertEquals("1", jedis.get("unread:u1"));
+        assertEquals(2, receivedOn("gw:A").size());
+    }
+
+    @Test
+    void noBodyIsClaimedAndCountedButNotPushed() throws Exception {
+        jedis.zadd("conn:u1", redisNow() + 90, "A");
+        jedis.set("unread:u1", "0");
+        GameEvent play = new GameEvent("nba-1", "nba-1:1", "SCORE_UPDATE", "LAL", 1234L, "LAL scores!",
+            "LAL", "BOS", 2, 0, "IN_PROGRESS", "NBA", 10).withVersion(1);
+        assertTrue(delivery.deliver(NotificationMessage.of(play, "u1")));
+        assertTrue(jedis.exists("notif:nba-1:v1:u1"));
+        assertEquals("1", jedis.get("unread:u1"));
+        List<String> got = receivedOn("gw:A");
+        assertEquals(1, got.size(), "only the count: a pre-3.3 message has no API body to push");
+        assertEquals("unread_count", payloadOf(got.get(0)).get("type").getAsString());
+    }
+
+    private static JsonObject payloadOf(String received) {
+        return JsonParser.parseString(received.substring(received.indexOf('|') + 1)).getAsJsonObject().getAsJsonObject("payload");
     }
 }

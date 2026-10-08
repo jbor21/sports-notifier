@@ -49,6 +49,7 @@ public final class Stage2Worker implements AutoCloseable {
                 System.err.println("[Stage2] skipped unreadable record at " + r.topic() + "-" + r.partition() + "@" + r.offset());
                 continue;
             }
+            m.setCreatedAt(r.timestamp());
             batch.add(m);
         }
         try {

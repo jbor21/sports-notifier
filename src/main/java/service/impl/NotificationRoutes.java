@@ -18,7 +18,7 @@ public final class NotificationRoutes {
 
     private NotificationRoutes() {}
 
-    public static void register(Javalin app, NotificationHistory history) {
+    public static void register(Javalin app, NotificationHistory history, UnreadCounter unread) {
         app.get("/users/{userId}/notifications", ctx -> {
             Integer limit = limit(ctx);
             if (limit == null) return;
@@ -39,14 +39,28 @@ public final class NotificationRoutes {
         });
         app.delete("/users/{userId}/notifications", ctx -> {
             history.clear(ctx.pathParam("userId"));
+            resetBadge(unread, ctx.pathParam("userId"));
             ctx.status(204);
         });
         app.get("/users/{userId}/notifications/unread-count", ctx ->
                 ApiJson.write(ctx, ApiResult.ok(200, Map.of("count", history.unreadCount(ctx.pathParam("userId"))))));
         app.post("/users/{userId}/notifications/seen", ctx -> {
             history.markSeen(ctx.pathParam("userId"));
+            resetBadge(unread, ctx.pathParam("userId"));
             ctx.status(204);
         });
+    }
+
+    /**
+     * Postgres has committed, so the answer is 204 either way. If Redis is down the tabs keep the old
+     * badge until the next connect, which reads the count again.
+     */
+    private static void resetBadge(UnreadCounter unread, String userId) {
+        try {
+            unread.reset(userId);
+        } catch (RuntimeException e) {
+            System.err.println("[NotificationService] badge reset failed for " + userId + ": " + e.getMessage());
+        }
     }
 
     /** 1 to 100, default 20; null after answering 422. */

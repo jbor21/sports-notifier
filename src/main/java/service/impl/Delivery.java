@@ -1,7 +1,7 @@
 package service.impl;
 
 import com.google.gson.Gson;
-import model.Notification;
+import com.google.gson.JsonObject;
 import model.NotificationMessage;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
@@ -9,6 +9,7 @@ import redis.clients.jedis.Pipeline;
 import util.RedisKeys;
 import util.RedisPipelines;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -40,18 +41,32 @@ public class Delivery {
     static final long DEDUP_TTL_SECONDS = 2 * 86_400L;
 
     /**
-     * KEYS[1] = notif:<messageId>:<userId>   KEYS[2] = conn:<userId>
-     * ARGV[1] = dedup TTL seconds   ARGV[2] = gateway message JSON ({"userId", "payload"})   ARGV[3] = gateway channel prefix
+     * KEYS[1] = notif:<messageId>:<userId>   KEYS[2] = conn:<userId>   KEYS[3] = unread:<userId>
+     * ARGV[1] = dedup TTL seconds   ARGV[2] = gateway message JSON ({"userId", "payload"}), or "" for a
+     *           message with no API body (nothing to show)   ARGV[3] = gateway channel prefix
+     * ARGV[4] = the user id as a JSON string
      *
      * conn:<userId> scores are expiry times in seconds from Redis's TIME; past ones are removed here.
+     *
+     * The unread badge (Phase 3.4 spec, 8.2) is counted here, in the same step as the claim, so a push
+     * is counted exactly once however often Kafka redelivers it. Only an existing counter is raised:
+     * INCR on a missing key would start at 1 instead of the real count, so a missing counter waits for
+     * the gateway to fill it from Postgres. The new count goes to the same gateways, after the push.
+     *
      * Returns 1 delivered, 0 already delivered.
      */
     private static final String DELIVER_SCRIPT =
         "if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end\n" +
         "local now = tonumber(redis.call('TIME')[1])\n" +
         "redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now)\n" +
-        "for _, gw in ipairs(redis.call('ZRANGE', KEYS[2], 0, -1)) do\n" +
-        "  redis.call('PUBLISH', ARGV[3] .. gw, ARGV[2])\n" +
+        "local gateways = redis.call('ZRANGE', KEYS[2], 0, -1)\n" +
+        "if ARGV[2] ~= '' then\n" +
+        "  for _, gw in ipairs(gateways) do redis.call('PUBLISH', ARGV[3] .. gw, ARGV[2]) end\n" +
+        "end\n" +
+        "if redis.call('EXISTS', KEYS[3]) == 1 then\n" +
+        "  local n = redis.call('INCR', KEYS[3])\n" +
+        "  local count = '{\"userId\":' .. ARGV[4] .. ',\"payload\":{\"type\":\"unread_count\",\"count\":' .. n .. '}}'\n" +
+        "  for _, gw in ipairs(gateways) do redis.call('PUBLISH', ARGV[3] .. gw, count) end\n" +
         "end\n" +
         "redis.call('SET', KEYS[1], '1', 'EX', ARGV[1])\n" +
         "return 1\n";
@@ -85,14 +100,26 @@ public class Delivery {
     private static List<String> keys(NotificationMessage m) {
         return List.of(
             RedisKeys.NOTIF_DEDUP_PREFIX + m.getMessageId() + ":" + m.getUserId(),
-            RedisKeys.CONN_PREFIX + m.getUserId());
+            RedisKeys.CONN_PREFIX + m.getUserId(),
+            RedisKeys.UNREAD_PREFIX + m.getUserId());
     }
 
+    /** The socket gets the API's notification message: Stage 1's body plus createdAt, as history serves it. */
     private static List<String> args(NotificationMessage m) {
-        // The socket message keeps the 3.1 shape until 3.4's /api/v1/ws.
-        String entry = GSON.toJson(new Notification(m.getUserId(), m.getGameId(), m.getMessage(),
-            m.getDetectedAt(), m.getLeague(), m.getHomeTeam(), m.getAwayTeam()));
-        String toGateway = "{\"userId\":" + GSON.toJson(m.getUserId()) + ",\"payload\":" + entry + "}";
-        return List.of(String.valueOf(DEDUP_TTL_SECONDS), toGateway, RedisKeys.GATEWAY_CHANNEL_PREFIX);
+        String toGateway = "";
+        if (m.getNotification() != null) {
+            JsonObject body = m.getNotification().deepCopy();
+            long created = m.getCreatedAt() > 0 ? m.getCreatedAt() : System.currentTimeMillis();
+            body.addProperty("createdAt", Instant.ofEpochMilli(created).toString());
+            JsonObject payload = new JsonObject();
+            payload.addProperty("type", "notification");
+            payload.add("notification", body);
+            JsonObject message = new JsonObject();
+            message.addProperty("userId", m.getUserId());
+            message.add("payload", payload);
+            toGateway = message.toString();
+        }
+        return List.of(String.valueOf(DEDUP_TTL_SECONDS), toGateway, RedisKeys.GATEWAY_CHANNEL_PREFIX,
+            GSON.toJson(m.getUserId()));
     }
 }

@@ -30,6 +30,11 @@ def fetch(path):
         return json.load(resp)
 
 
+def color(hex_value):
+    """ESPN writes colors without the #, e.g. "0b162a"."""
+    return f"#{hex_value}" if hex_value else None
+
+
 def main():
     teams = []
     for league, path in LEAGUES.items():
@@ -44,11 +49,22 @@ def main():
                 "displayName": t["displayName"],
                 # "Red Sox", "Bears": what alert text calls the team.
                 "shortName": t.get("shortDisplayName") or abbr,
+                # For the UI's team pages and score cards (GET /leagues/{id}/teams).
+                "location": t.get("location") or "",
+                "name": t.get("name") or t.get("shortDisplayName") or abbr,
+                "logoUrl": next((l["href"] for l in t.get("logos", []) if l.get("href")), None),
+                "colors": {"primary": color(t.get("color")), "secondary": color(t.get("alternateColor"))},
             })
     teams.sort(key=lambda t: (t["league"], t["id"]))
     ids = [t["id"] for t in teams]
     if len(ids) != len(set(ids)):
         raise SystemExit("duplicate team id; check ESPN's abbreviations")
+    # Ids are stored in follows and sub:* sets: a changed id silently orphans its followers. Refuse to
+    # write a different set; a real league change is a deliberate edit with a migration.
+    if OUT.exists():
+        before = {t["id"] for t in json.loads(OUT.read_text())["teams"]}
+        if before != set(ids):
+            raise SystemExit(f"team ids changed: added {sorted(set(ids) - before)}, removed {sorted(before - set(ids))}")
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps({"teams": teams}, indent=2) + "\n")
     counts = {lg: sum(1 for t in teams if t["league"] == lg) for lg in LEAGUES}

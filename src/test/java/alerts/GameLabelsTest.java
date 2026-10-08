@@ -76,4 +76,55 @@ class GameLabelsTest {
         assertEquals("AFC 3, NFC 0 · Q1 15:00",
             LABELS.scoreLine(PlayBuilder.nfl("g").teams("AFC", "NFC").score(3, 0).build()));
     }
+
+    @Test
+    void finalRegulationIsFinal() {
+        assertEquals("Final", GameLabels.periodLabel(PlayBuilder.nfl("g").fin().period(4).clock(0).build()));
+        assertEquals("Final", GameLabels.periodLabel(PlayBuilder.mlb("g").fin().period(9).build()));
+        assertEquals("Final", GameLabels.periodLabel(PlayBuilder.nhl("g").fin().period(3).clock(0).build()));
+    }
+
+    @Test
+    void finalOvertimeLabels() {
+        assertEquals("Final/OT", GameLabels.periodLabel(PlayBuilder.nfl("g").fin().period(5).build()));
+        assertEquals("Final/2OT", GameLabels.periodLabel(PlayBuilder.nba("g").fin().period(6).build()));
+        assertEquals("Final/OT", GameLabels.periodLabel(PlayBuilder.nhl("g").fin().period(4).build()));
+        assertEquals("Final/SO", GameLabels.periodLabel(PlayBuilder.nhl("g").fin().period(5).build()));
+        assertEquals("Final/2OT", GameLabels.periodLabel(PlayBuilder.nhl("g").fin().period(5).season(3).build()));
+        assertEquals("Final/10", GameLabels.periodLabel(PlayBuilder.mlb("g").fin().period(10).build()));
+    }
+
+    @Test
+    void betweenPeriodsSaysEnd() {
+        assertEquals("End Q1", GameLabels.periodLabel(PlayBuilder.nfl("g").period(1).stage("END_PERIOD").build()));
+        assertEquals("End 2nd", GameLabels.periodLabel(PlayBuilder.nhl("g").period(2).stage("END_PERIOD").build()));
+        assertEquals("End OT", GameLabels.periodLabel(PlayBuilder.nhl("g").period(4).stage("END_PERIOD").build()));
+        assertEquals("End 7th", GameLabels.periodLabel(PlayBuilder.mlb("g").period(7).half("END").build()));
+        assertEquals("Mid 7th", GameLabels.periodLabel(PlayBuilder.mlb("g").period(7).half("MIDDLE").build()));
+    }
+
+    @Test
+    void scheduledPostponedCanceledAreNull() {
+        assertNull(GameLabels.periodLabel(PlayBuilder.nfl("g").pre().build()));
+        assertNull(GameLabels.periodLabel(PlayBuilder.nfl("g").pre().status("POSTPONED").stage("DELAYED").build()));
+        assertNull(GameLabels.periodLabel(PlayBuilder.nfl("g").fin().status("CANCELED").period(2).build()));
+    }
+
+    @Test
+    void finalPositionIsNull() {
+        assertNull(GameLabels.position(PlayBuilder.nhl("g").fin().period(4).clock(0).build()));
+        assertEquals("End Q1", GameLabels.position(PlayBuilder.nfl("g").period(1).stage("END_PERIOD").clock(0).build()));
+    }
+
+    @Test
+    void lineLabels() {
+        assertEquals("Q1", GameLabels.lineLabel("NFL", 1, 2));
+        assertEquals("OT", GameLabels.lineLabel("NBA", 5, 2));
+        assertEquals("2OT", GameLabels.lineLabel("NFL", 6, 2));
+        assertEquals("3", GameLabels.lineLabel("NHL", 3, 2));
+        assertEquals("OT", GameLabels.lineLabel("NHL", 4, 2));
+        assertEquals("SO", GameLabels.lineLabel("NHL", 5, 2));
+        assertEquals("2OT", GameLabels.lineLabel("NHL", 5, 3));
+        assertEquals("10", GameLabels.lineLabel("MLB", 10, 2));
+    }
 }

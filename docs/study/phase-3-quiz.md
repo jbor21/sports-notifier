@@ -632,3 +632,154 @@ Three real bugs: ESPN shows HALFTIME with the period already at 3, which sent "E
 **Model answer:** "Deterministic ids mean a reused game id is the same game. Each simulator run is a new game, so it gets a new id."
 
 </details>
+
+---
+
+## 3.4 Live API
+
+| # | Topic | First run |
+|---|---|---|
+| 1 | Who publishes `game_update`, and why there | **Not yet taken** |
+| 2 | Subscribe first, then read | **Not yet taken** |
+| 3 | Per game, not per user | **Not yet taken** |
+| 4 | The unread badge as a counter | **Not yet taken** |
+| 5 | The 0:00 freeze and the 10-second heal | **Not yet taken** |
+| 6 | The schedule is not the score | **Not yet taken** |
+| 7 | One builder for every `GameSummary` | **Not yet taken** |
+| 8 | Why idle close isn't Jetty's timeout | **Not yet taken** |
+| 9 | A tab that leaves while subscribing | **Not yet taken** |
+
+---
+
+### 3.4-1. Who publishes `game_update`, and why there
+
+> Every accepted play becomes a score-card update in the browser. Which component publishes it, and what would go wrong anywhere else?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** Two Event Processing pods can accept plays of the same game back to back. If each published after its script returned, the two publishes could cross, and a tab would see the older score last. If Stage 1 published, scores would freeze whenever Stage 1 pauses (while `sub:built` is missing) or lags. **Fix:** the accept script itself runs `PUBLISH live:<gameId> {version, play}` as its last step. **Why:** Redis runs one script at a time, so publishes leave in version order and only for state that was saved.
+
+**Model answer:** "The Lua script that accepts the play publishes it, in the same atomic step as the score write. Order comes for free from Redis being single-threaded, and the browser still drops any version it already has."
+
+</details>
+
+---
+
+### 3.4-2. Subscribe first, then read
+
+> A tab loads the game list over HTTP, then sends `subscribe_games`. What can it miss, and in what order does the gateway do things to prevent that?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** a play accepted between the HTTP fetch and the subscription would not show until the game's next play. If the gateway read `game:<id>` first and subscribed after, a play between those two steps is lost. **Fix:** the gateway sends `SUBSCRIBE live:<gameId>`, waits for Redis's confirmation (`onSubscribe`), and only then reads `game:<id>` and sends the current state. **Why:** after the confirmation every new play is delivered live; anything before it is in the read. Worst case the same version arrives twice, which the UI ignores. A test lands a play exactly between the confirmation and the read.
+
+**Model answer:** "Subscribe, wait for the confirmation, then read. Duplicates are harmless because of versions; gaps are not."
+
+</details>
+
+---
+
+### 3.4-3. Per game, not per user
+
+> A Super Bowl has 100,000 people watching its score card. How many Redis messages does one touchdown's score update cost?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** sending score updates per user (like notifications) would mean 100,000 publishes per play. **Fix:** one channel per game, `live:<gameId>`. Each gateway subscribes once while any of its tabs shows the game (a reference count), and fans the message out to its own sockets. **Why:** the cost is one publish, delivered once per gateway: 100,000 viewers on 10 gateways is 10 deliveries. `PSUBSCRIBE live:*` would also work at today's few dozen games, but per-game subscriptions keep a gateway's work tied to what its tabs show as the game count grows.
+
+**Model answer:** "One publish per play, one delivery per gateway that has a viewer. Viewers cost the gateway a socket write, not Redis anything."
+
+</details>
+
+---
+
+### 3.4-4. The unread badge as a counter
+
+> Why not count unread notifications in Postgres every time a push goes out? And what keeps the Redis counter honest?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** one count query per user per moment is a Postgres query storm at a big moment, and the count could miss the push itself, because history is written in batches by another consumer group. **Fix:** `unread:<userId>` in Redis, raised by Stage 2's delivery script in the same step as the delivery, so a redelivered message counts once. Seen and clear set it to 0 and tell every gateway holding the user. **Honesty:** it is only raised if it exists (INCR on nothing would start at 1, not the real count); a missing counter is filled from Postgres on the next connect; it expires daily, so any drift heals. Known gap: two narrow races can leave it off by one until then.
+
+**Model answer:** "A cache of a Postgres count, kept by the same script that delivers, rebuilt from Postgres when missing. Exact enough for a badge, cheap at any scale."
+
+</details>
+
+---
+
+### 3.4-5. The 0:00 freeze and the 10-second heal
+
+> In the Bruins at Jets recording, ESPN showed 0:00 in the middle of the 2nd period for 90 seconds. What did that do to our score card, and what changed?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** `seq` treats 0:00 as later in the period, so the script accepted it, and every real snapshot after it (1:20, 1:15...) looked older and was rejected as stale. The no-score heal lowers the bar only after the same period and score keep arriving "older" for a while: 30 seconds, so the card showed 0:00 for 30 seconds after ESPN fixed itself. **Fix:** the window is 10 seconds. **Why that's safe:** 30 s was meant for two pollers overlapping in a deploy, but any accepted play resets the timer, so it only runs out when nothing newer arrives at all. Scores can't change on this path, so a wrong heal can't fire an alert. Waiting one poll to confirm a 0:00 wouldn't help: ESPN repeated it three times.
+
+**Model answer:** "We measured it in the recordings: the glitch lasted 90 s, and our recovery added 30. Two polls of only-older plays is enough evidence, so the heal waits 10."
+
+</details>
+
+---
+
+### 3.4-6. The schedule is not the score
+
+> `/games?date=` shows next Sunday's games. Where do they come from, and why can't that path change a score?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** the poller only sees ESPN's current scoreboard, and `game:<id>` (written only by the accept script) expires a day after a final. **Fix:** a schedule loop in the ESPN poller fetches 11 UTC dates for 4 leagues every 15 minutes (44 requests) into `sched:<gameId>`. **Why it can't change a score:** it never writes `game:<id>`, sends no play, fires no alert. The game lists prefer `game:` for everything it has and use `sched:` only for games with no record (future games, old finals) and for venue and broadcast. A schedule-only game has version 0, so the first live update replaces it.
+
+**Model answer:** "Two sources with one rule: the score authority's record wins; the schedule is a listing beside it."
+
+</details>
+
+---
+
+### 3.4-7. One builder for every `GameSummary`
+
+> The game list, the game page, and the live socket all describe a game. How do we keep them from disagreeing?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** three code paths building the same JSON would drift: a label, a status mapping, or a team logo fixed in one place but not the others. **Fix:** `games/GameSummaries` builds every `GameSummary`. A live update is turned into the same field map the script wrote for that play and goes through the same function, and a test asserts the two are equal. Labels come from the same `GameLabels` the alerts use, so a push and a score card say `Final/OT` the same way.
+
+**Model answer:** "One function, and a test that a live update equals the summary of the record it produced."
+
+</details>
+
+---
+
+### 3.4-8. Why idle close isn't Jetty's timeout
+
+> The contract says the server closes a socket that has sent nothing for 60 seconds. Why write our own sweeper?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** Jetty's idle timeout resets on any traffic, including our own sends. A dead tab on a busy game keeps receiving `game_update`s, so Jetty would never call it idle, and the gateway would keep writing to a socket nobody reads. **Fix:** each session remembers when the client last sent anything; a sweeper every 10 s closes those silent for 60 s. Browsers ping every 25 s. **Also:** pub/sub threads, the socket's own thread, and the sweeper can all write to one tab, and Jetty refuses two blocking sends at once, so every send takes a per-session lock.
+
+**Model answer:** "Idle means the client went quiet, not the connection. Only the client's messages count."
+
+</details>
+
+---
+
+### 3.4-9. A tab that leaves while subscribing
+
+> A tab sends `subscribe_games` and closes while the gateway is still waiting for Redis's confirmation. What stops the gateway from listening to that game forever?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** the subscribe is in flight; if the close only removed the tab and never unsubscribed, or unsubscribed before the subscribe was sent, the gateway could keep a channel nobody needs. **Fix:** tabs per game and the subscribe/unsubscribe decisions change together under one lock, and the channel only sends `UNSUBSCRIBE` when the last tab leaves. Both commands go down the same Redis connection in order, so an unsubscribe after the subscribe wins. After the wait, the gateway reads current state only for games the tab still shows. A test closes the tab between the confirmation and the read and checks Redis reports zero subscribers.
+
+**Model answer:** "Reference counts under one lock, commands in order on one connection, and a re-check after any wait."
+
+</details>

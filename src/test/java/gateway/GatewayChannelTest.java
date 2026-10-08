@@ -65,7 +65,7 @@ class GatewayChannelTest {
     private static NotificationMessage msg(String userId, long version) {
         GameEvent play = new GameEvent("nba-1", "nba-1:" + version, "SCORE_UPDATE", "LAL", 1234L, "LAL scores!",
             "LAL", "BOS", 2, 0, "IN_PROGRESS", "NBA", 10).withVersion(version);
-        return NotificationMessage.of(play, userId);
+        return testsupport.TestMessages.of(play, userId);
     }
 
     private static void settle() throws InterruptedException {
@@ -82,7 +82,8 @@ class GatewayChannelTest {
         delivery.deliver(msg("u1", 1));
         settle();
         assertEquals(1, onA.sent.size());
-        assertTrue(onA.sent.get(0).contains("\"message\":\"LAL scores!\""), "the socket gets the notification itself");
+        assertTrue(onA.sent.get(0).startsWith("{\"type\":\"notification\""), "the socket gets the API message itself: " + onA.sent.get(0));
+        assertTrue(onA.sent.get(0).contains("\"text\":\"LAL scores!\""), onA.sent.get(0));
         assertEquals(0, onB.sent.size());
     }
 
@@ -155,5 +156,39 @@ class GatewayChannelTest {
         settle();
         assertEquals(0, u1.sent.size());
         assertEquals(1, u2.sent.size(), "one user's gone socket must not affect another's delivery");
+    }
+
+    /** A tab whose peer stopped reading: a blocking send never returns, an async one never completes. */
+    static final class StalledSocket implements ClientSocket {
+        final java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        volatile Integer closedWith;
+        @Override public boolean isOpen() { return closedWith == null; }
+        @Override public void send(String text) {
+            try { release.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }
+        @Override public void sendAsync(String text, Runnable done) { }
+        @Override public void close(int code, String reason) { closedWith = code; }
+    }
+
+    /** Final review, Important 2: one tab that stopped reading must not freeze every other tab on the gateway. */
+    @Test
+    void stalledTabDoesNotBlockOtherUsers() throws Exception {
+        GatewayChannel a = gateway();
+        StalledSocket stalled = new StalledSocket();
+        FakeSocket other = new FakeSocket();
+        a.register("u1", new SocketSession("u1", stalled, 0L));
+        a.register("u2", new SocketSession("u2", other, 0L));
+        try {
+            for (int i = 0; i < SocketSession.MAX_IN_FLIGHT + 10; i++) {
+                jedis.publish("gw:" + a.gatewayId(), "{\"userId\":\"u1\",\"payload\":{\"type\":\"x\",\"n\":" + i + "}}");
+            }
+            jedis.publish("gw:" + a.gatewayId(), "{\"userId\":\"u2\",\"payload\":{\"type\":\"notification\"}}");
+            long until = System.currentTimeMillis() + 3000;
+            while (other.sent.isEmpty() && System.currentTimeMillis() < until) Thread.sleep(20);
+            assertEquals(1, other.sent.size(), "u2's push waited behind u1's stalled socket");
+            assertEquals(1013, stalled.closedWith, "a tab too far behind is closed, so it reconnects and refetches");
+        } finally {
+            stalled.release.countDown();
+        }
     }
 }
