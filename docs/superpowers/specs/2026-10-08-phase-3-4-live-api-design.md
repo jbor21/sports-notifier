@@ -72,7 +72,7 @@ The poller does not send a play for a line score change alone: the line score on
 
 **Fix.** A schedule loop in the ESPN poller process, beside the live loop. It runs only with the ESPN feed (`espnPoller.enabled`), never with the simulator's `ScoreFeed`:
 
-- Every 15 minutes, for each league and each UTC date from yesterday − 1 to today + 8 (10 dates, wide enough for any timezone's "yesterday to +7"), it fetches `scoreboard?dates=YYYYMMDD` through `EspnClient` (`scoreboard(league, date)`, same host and User-Agent). That is 40 requests per 15 minutes.
+- Every 15 minutes, for each league and each UTC date from yesterday − 1 to today + 8 (11 dates, wide enough for any timezone's "yesterday to +7"), it fetches `scoreboard?dates=YYYYMMDD` through `EspnClient` (`scoreboard(league, date)`, same host and User-Agent). That is 44 requests per 15 minutes.
 - For each game it writes `sched:<gameId>`, a hash: league, home and away abbreviations, start time, ESPN's status mapped as the poller maps it, scores, period, venue, broadcast, `fetchedAt`. TTL 10 days. And `ZADD games:start <startMillis> <gameId>`.
 - A failed league or date is logged and skipped; the previous entries stay until their TTL.
 
@@ -142,7 +142,12 @@ Jedis writes subscribe commands on the caller's thread with no lock, so every `S
 
 **Problem.** The UI fetches `/games` over HTTP, then sends `subscribe_games`. A play accepted between the two is missed until the game's next play, about 5 seconds later.
 
-**Fix.** For every id a socket adds, the gateway reads `game:<id>` (pipelined) and sends a `game_update` right away, built by `GameSummaries`. Ids with no record (scheduled games, unknown ids) get nothing. The UI already drops any update whose version is not higher than what it has, so the extra message is harmless when nothing was missed. This is an addition to `websocket.md` (section 11).
+**Fix.** For every id a socket adds, the gateway sends a `game_update` with the current state right away, built by `GameSummaries`. Order matters:
+
+1. If the gateway is not yet listening to `live:<gameId>`, it sends `SUBSCRIBE` and **waits for Redis to confirm** (`JedisPubSub.onSubscribe` for that channel; up to 2 s, then it reads anyway and logs).
+2. Only then it reads `game:<id>` (pipelined across the added ids) and sends the state.
+
+Read first and a play accepted between the read and the subscription is lost until the game's next play. Subscribe first and that play arrives twice at worst (once live, once in the read), which is harmless: the UI drops any update whose version is not higher than what it has. Ids with no record (scheduled games, unknown ids) get no current state. If the gateway was already listening (another tab), it reads at once. This is an addition to `websocket.md` (section 11).
 
 ### 7.4 The message
 
@@ -201,7 +206,8 @@ The Notification service gets Redis access (pool, env vars, and the network poli
 A test gateway with a real Redis and fake services:
 - No session → close 4401. Session → `hello` with the count from Redis, or from the Notification service when the key is missing (then the key exists).
 - Two sockets subscribe to the same game: one `SUBSCRIBE`; one leaves: still subscribed; both leave: `UNSUBSCRIBE`.
-- `subscribe_games` sends current state at once for ids with a record.
+- `subscribe_games` sends current state at once for ids with a record, and only after the gateway's `SUBSCRIBE` is confirmed.
+- A play published between the confirmed subscription and the read of `game:<id>` still reaches the socket (a test hook runs between the two steps).
 - A `live:` publish reaches only sockets subscribed to that game, as a valid `GameSummary`.
 - Redis connection killed: the gateway resubscribes games and sends current state.
 - `ping` → `pong`; 60 s with nothing from the client → closed (injectable clock).
