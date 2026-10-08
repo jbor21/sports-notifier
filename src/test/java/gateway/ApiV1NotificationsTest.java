@@ -12,6 +12,7 @@ import redis.clients.jedis.JedisPoolConfig;
 import service.impl.HistoryStore;
 import service.impl.NotificationHistory;
 import service.impl.NotificationRoutes;
+import service.impl.UnreadCounter;
 import testsupport.PostgresTestSupport;
 import util.RedisKeys;
 
@@ -46,7 +47,7 @@ class ApiV1NotificationsTest {
         jedis.select(1);
         jedis.flushDB();
         notification = Javalin.create().start(0);
-        NotificationRoutes.register(notification, new NotificationHistory(PostgresTestSupport.dataSource()));
+        NotificationRoutes.register(notification, new NotificationHistory(PostgresTestSupport.dataSource()), new UnreadCounter(pool));
         gateway = Javalin.create().start(0);
         ApiV1Routes.register(gateway, pool, new LoginThrottle(pool), "http://localhost:1",
                 "http://localhost:" + notification.port());
@@ -125,5 +126,15 @@ class ApiV1NotificationsTest {
                 .method(method, HttpRequest.BodyPublishers.noBody());
         if (session != null) b.header("Cookie", "sid=" + session);
         return HTTP.send(b.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void seenAndClearResetTheBadge() throws Exception {
+        jedis.set(RedisKeys.UNREAD_PREFIX + bob, "5");
+        assertEquals(204, send("POST", "/notifications/seen", sid).statusCode());
+        assertEquals("0", jedis.get(RedisKeys.UNREAD_PREFIX + bob));
+        jedis.set(RedisKeys.UNREAD_PREFIX + bob, "2");
+        assertEquals(204, send("DELETE", "/notifications", sid).statusCode());
+        assertEquals("0", jedis.get(RedisKeys.UNREAD_PREFIX + bob));
     }
 }

@@ -278,7 +278,8 @@ class SimulatorRunsEndToEndTest {
         return pushes.stream()
             .map(raw -> JsonParser.parseString(raw).getAsJsonObject())
             .filter(m -> user.equals(m.get("userId").getAsString()))
-            .map(m -> m.getAsJsonObject("payload").get("message").getAsString())
+            .filter(m -> "notification".equals(m.getAsJsonObject("payload").get("type").getAsString()))
+            .map(m -> m.getAsJsonObject("payload").getAsJsonObject("notification").getAsJsonObject("headline").get("text").getAsString())
             .toList();
     }
 }

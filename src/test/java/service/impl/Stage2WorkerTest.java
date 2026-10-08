@@ -97,7 +97,7 @@ class Stage2WorkerTest {
     private static NotificationMessage msg(String userId, long version) {
         GameEvent play = new GameEvent("nba-1", "nba-1:" + version, "SCORE_UPDATE", "LAL", 1234L, "play " + version,
             "LAL", "BOS", (int) version, 0, "IN_PROGRESS", "NBA", 10 + version).withVersion(version);
-        return NotificationMessage.of(play, userId);
+        return testsupport.TestMessages.of(play, userId);
     }
 
     private void send(NotificationMessage m) throws Exception {
@@ -111,7 +111,7 @@ class Stage2WorkerTest {
         for (String raw : pushes) {
             com.google.gson.JsonObject m = com.google.gson.JsonParser.parseString(raw).getAsJsonObject();
             if (userId.equals(m.get("userId").getAsString())) {
-                texts.add(m.getAsJsonObject("payload").get("message").getAsString());
+                texts.add(m.getAsJsonObject("payload").getAsJsonObject("notification").getAsJsonObject("headline").get("text").getAsString());
             }
         }
         return texts;

@@ -37,6 +37,11 @@ public class NotificationMessage {
     private long detectedAt;
     /** The API's {@code Notification} (see {@link NotificationBody}): what history stores and the new UI reads. */
     private JsonObject notification;
+    /**
+     * The notifications record's Kafka timestamp, set by Stage 2 when it reads the record (history saves
+     * the same value as created_at). Not part of the topic's JSON.
+     */
+    private transient long createdAt;
 
     public NotificationMessage() {}
 
@@ -97,4 +102,6 @@ public class NotificationMessage {
     public String getStatus() { return status; }
     public long getDetectedAt() { return detectedAt; }
     public JsonObject getNotification() { return notification; }
+    public long getCreatedAt() { return createdAt; }
+    public void setCreatedAt(long createdAt) { this.createdAt = createdAt; }
 }

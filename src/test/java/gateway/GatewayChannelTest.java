@@ -65,7 +65,7 @@ class GatewayChannelTest {
     private static NotificationMessage msg(String userId, long version) {
         GameEvent play = new GameEvent("nba-1", "nba-1:" + version, "SCORE_UPDATE", "LAL", 1234L, "LAL scores!",
             "LAL", "BOS", 2, 0, "IN_PROGRESS", "NBA", 10).withVersion(version);
-        return NotificationMessage.of(play, userId);
+        return testsupport.TestMessages.of(play, userId);
     }
 
     private static void settle() throws InterruptedException {
@@ -82,7 +82,8 @@ class GatewayChannelTest {
         delivery.deliver(msg("u1", 1));
         settle();
         assertEquals(1, onA.sent.size());
-        assertTrue(onA.sent.get(0).contains("\"message\":\"LAL scores!\""), "the socket gets the notification itself");
+        assertTrue(onA.sent.get(0).startsWith("{\"type\":\"notification\""), "the socket gets the API message itself: " + onA.sent.get(0));
+        assertTrue(onA.sent.get(0).contains("\"text\":\"LAL scores!\""), onA.sent.get(0));
         assertEquals(0, onB.sent.size());
     }
 

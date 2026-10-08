@@ -1,5 +1,8 @@
 package service.impl;
 
+import redis.clients.jedis.JedisPool;
+import util.JedisPoolHolder;
+
 import com.zaxxer.hikari.HikariDataSource;
 import io.javalin.Javalin;
 import util.Db;
@@ -19,6 +22,8 @@ public final class NotificationServiceMain {
 
     public static void main(String[] args) {
         int port = Integer.parseInt(System.getenv().getOrDefault("NOTIFICATION_PORT", "8087"));
+        JedisPoolHolder.awaitRedisOrExit("notification");
+        JedisPool pool = JedisPoolHolder.create();
         HikariDataSource db = Db.fromEnv("notification");
         Db.migrate(db);
         NotificationHistory history = new NotificationHistory(db);
@@ -35,12 +40,13 @@ public final class NotificationServiceMain {
 
         Javalin app = Javalin.create(cfg -> cfg.jsonMapper(new GsonJsonMapper())).start(port);
         app.get("/health", ctx -> ctx.json(Collections.singletonMap("status", "ok")));
-        NotificationRoutes.register(app, history);
+        NotificationRoutes.register(app, history, new UnreadCounter(pool));
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             cleanup.shutdownNow();
             app.stop();
             db.close();
+            pool.close();
         }));
 
         System.out.println("[NotificationService] listening on :" + port);
