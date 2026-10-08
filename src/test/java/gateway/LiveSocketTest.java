@@ -95,7 +95,7 @@ class LiveSocketTest {
         GameSubscriptions games = new GameSubscriptions(pool, channel, new GameSummaries(Teams.load()), 2000);
         live = new LiveSocket(pool, channel, new ConnectionRegistry(pool, gatewayId, 90),
             new UnreadCount(pool, user -> 3), games, now::get);
-        app = Javalin.create().start(0);
+        app = Javalin.create(LiveSocket::configure).start(0);
         live.register(app);
         sid = UUID.randomUUID().toString();
         jedis.set(RedisKeys.SESSION_PREFIX + sid, "u1");
@@ -226,5 +226,14 @@ class LiveSocketTest {
         JsonObject hello = JsonParser.parseString(connect(sid).awaitType("hello", 1)).getAsJsonObject();
         assertEquals(0, hello.get("unreadCount").getAsInt());
         assertFalse(jedis.exists("unread:u1"), "a guessed 0 must not stick for a day");
+    }
+
+    /** Jetty's own WebSocket idle timeout (30 s by default) must not beat the contract's 60 s. Real time, 35 s. */
+    @Test
+    void quietSocketOutlivesJettysDefaultTimeout() throws Exception {
+        Client c = connect(sid);
+        c.awaitType("hello", 1);
+        Thread.sleep(35_000);
+        assertFalse(c.closed.isDone(), "closed by Jetty with " + (c.closed.isDone() ? c.closed.getNow(-1) : 0));
     }
 }

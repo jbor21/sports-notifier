@@ -4,9 +4,11 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.javalin.Javalin;
+import io.javalin.config.JavalinConfig;
 import io.javalin.websocket.WsContext;
 import redis.clients.jedis.JedisPool;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +48,18 @@ public final class LiveSocket {
         this.unread = unread;
         this.games = games;
         this.now = now;
+    }
+
+    /** Above IDLE_MILLIS, so the sweeper decides when a quiet tab is gone, not Jetty. */
+    static final Duration JETTY_IDLE_TIMEOUT = Duration.ofSeconds(90);
+
+    /**
+     * Jetty settings the socket contract needs; GatewayMain and the tests create their Javalin with this.
+     * Jetty's own WebSocket idle timeout is 30 s, which would close a tab that pings every 25 s after
+     * one late timer, with 1001, before the contract's 60 s.
+     */
+    public static void configure(JavalinConfig cfg) {
+        cfg.jetty.modifyWebSocketServletFactory(f -> f.setIdleTimeout(JETTY_IDLE_TIMEOUT));
     }
 
     public void register(Javalin app) {

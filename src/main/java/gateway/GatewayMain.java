@@ -59,6 +59,7 @@ public final class GatewayMain {
 
         Javalin app = Javalin.create(cfg -> {
             cfg.jsonMapper(new GsonJsonMapper());
+            LiveSocket.configure(cfg);
             cfg.staticFiles.add(staticCfg -> {
                 staticCfg.hostedPath = "/ui";
                 staticCfg.directory = "/public";
