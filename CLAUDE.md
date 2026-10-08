@@ -37,6 +37,8 @@ leagues / specific games, turn alert switches on or off per follow (the catalog 
 those moments occur. Stage 1's detectors turn each game's snapshots into decision 15's
 wave 1 alerts (start, scores with the NFL try, period ends, lead change, close game
 late, overtime, shootout, delays, overturns, final), one push per user per moment.
+The same socket carries live scores for the games a tab shows (`game_update`) and the
+unread badge (`unread_count`); `/games` lists yesterday through 7 days ahead.
 
 ## Architecture
 
@@ -44,14 +46,16 @@ Separate JVM processes, one Docker image (`SERVICE` picks the main), deployed
 by one Helm chart on k3d. **Kafka** (Strimzi, one broker locally) is the event
 log; **Postgres** (one pod) holds accounts, follows, and notification history;
 **Redis** holds the live score, the outbox, sessions, the `sub:*` sets (rebuilt
-from Postgres), and pub/sub to gateways.
+from Postgres), the schedule cache (`sched:`), the unread badge cache, and pub/sub
+to gateways.
 
 ```
 Simulator / ESPN Poller
       │ POST /events
       ▼
 Event Processing (8083) ──► atomic Lua: duplicate · pending · newer (seq, two heals)
-      │                     → state write + version + outbox:<gameId>
+      │                     → state write + version + outbox:<gameId> + games:start
+      │                     → PUBLISH live:<gameId> {version, play} (score cards)
       │ produce game-events (key = gameId, 12 lanes); confirmation clears the outbox;
       │ a retry loop re-sends leftovers
       ▼
@@ -63,27 +67,29 @@ Stage 1 (8085, group stage1) ──► detectors over det:<gameId> (version dedu
       ▼                                              ▼
 Stage 2 (8086, group stage2) ──► one Lua script:   History (8088, group history)
       │   notif:<msg>:<user> claim + PUBLISH        ──► batched INSERT into Postgres
-      │   gw:<gatewayId> per conn:<userId>              (created_at = Kafka timestamp)
+      │   gw:<gatewayId> per conn:<userId>,             (created_at = Kafka timestamp)
+      │   + unread:<userId> INCR → unread_count
       ▼
-Browser ◄── WebSocket ◄── Gateway (8080) ◄── SUBSCRIBE gw:<its pod name>
+Browser ◄── /api/v1/ws ◄── Gateway (8080) ◄── SUBSCRIBE gw:<its pod name>
+                                          ◄── SUBSCRIBE live:<gameId> while a tab shows it
 ```
 
 | Service | Port | Entry point | Role |
 |---|---|---|---|
-| Gateway | 8080 | `gateway.GatewayMain` | HTTP API, WebSocket push, sessions, `conn:` registry |
+| Gateway | 8080 | `gateway.GatewayMain` | HTTP API, `/api/v1/ws` (`LiveSocket`), reference data, sessions, `conn:` registry, per-game subscriptions |
 | User Preference | 8081 | `service.impl.UserPreferenceServiceMain` | Accounts and follows (Postgres), the `sub:*` sets, their rebuild, game-follow expiry |
-| Game State | 8082 | `service.impl.GameStateServiceMain` | Game state reads **only** |
+| Game State | 8082 | `service.impl.GameStateServiceMain` | `/games`, `/games/{id}`: reads `game:` + `sched:` **only** |
 | Event Processing | 8083 | `service.impl.EventProcessingServiceMain` | Validate, Lua accept, outbox, produce, retry loop |
 | Stage 1 | 8085 | `service.impl.Stage1WorkerMain` | game-events → one message per user |
 | Stage 2 | 8086 | `service.impl.Stage2WorkerMain` | notifications → the user's gateways |
-| Notification | 8087 | `service.impl.NotificationServiceMain` | History reads, seen, clear, 30-day cleanup (Postgres) |
+| Notification | 8087 | `service.impl.NotificationServiceMain` | History reads, seen, clear (resets the badge), 30-day cleanup (Postgres) |
 | History | 8088 | `service.impl.HistoryWriterMain` | notifications → Postgres history, batched |
-| Simulator / ESPN Poller | — | `simulator.*` | Event sources |
+| Simulator / ESPN Poller | — | `simulator.*` | Event sources; the ESPN poller also caches the schedule |
 
 **Stack:** Java 17 · Maven · Javalin 6.1.6 · Jedis 4.4.7 · Gson · jbcrypt ·
 kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · PostgreSQL 17 · HikariCP ·
 Flyway · Testcontainers 2.0.5
-**Size:** ~8,000 lines Java · the course's 1,851-line `index.html` (broken since 3.2; the new UI is 3b) · 455 tests
+**Size:** ~9,000 lines Java · the course's 1,851-line `index.html` (broken since 3.2; the new UI is 3b) · 529 tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -110,7 +116,7 @@ than what's on disk. Verified against the source:
 | Deduction | Status in current code |
 |---|---|
 | TOCTOU race | **Fixed** — `EventProcessingServiceImpl` runs one Lua script: id check, `seq` check, then claim + state write, atomically. Exactly the fix suggested. `EventProcessingBurstTest` (50 concurrent events → 50) runs on every push. |
-| `GatewayMain` monolith | **Fixed** — now 157 lines; `EspnProxyHandler` (103) and `GameListingHandler` (54) extracted. |
+| `GatewayMain` monolith | **Fixed** — now ~125 lines of wiring; routes live in `ApiV1Routes`, `GameRoutes`, `ReferenceRoutes`, and `LiveSocket`. |
 | Inline Redis key strings | **Fixed** — `util/RedisKeys.java` centralizes them (the last inline `user:` / `username:` keys moved there in Phase 2). |
 | Model field Javadoc | **Fixed** — e.g. `model/GameEvent.java` documents every field. |
 
@@ -178,7 +184,24 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
 - **Phase 3.3 (alerts, wave 1) is merged** (PR #14, 2026-10-08): spec
   `docs/superpowers/specs/2026-10-07-phase-3-3-alerts-wave-1-design.md`, plan
   `docs/superpowers/plans/2026-10-07-phase-3-3-alerts-wave-1.md`.
-- **Next step: Phase 3.4 (live API)**, starting with its brainstorm.
+- **Phase 3.4 (live API)**: spec
+  `docs/superpowers/specs/2026-10-08-phase-3-4-live-api-design.md`, plan
+  `docs/superpowers/plans/2026-10-08-phase-3-4-live-api.md`.
+- **Next step: Phase 3b (new UI)**, against the now fully served `docs/api/`.
+  Deferred 3.3 minors are issues #15–#20; #15 must be fixed before Phase 4,
+  #16 before Phase 5.
+- **New in Phase 3.4:** `/api/v1/ws` (`gateway/LiveSocket`): `hello` with the unread
+  count, 4401 without a session, ping/pong, idle close after 60 s, notifications in the
+  API shape, `unread_count`, `game_update`. The accept script saves start time and line
+  score, indexes `games:start`, and publishes each accepted play on `live:<gameId>`;
+  gateways `SUBSCRIBE` per game (`GameSubscriptions`), wait for Redis's confirmation,
+  then send the tab the current state. `/games` (Game State, through `GameRoutes`)
+  serves yesterday to +7 days in the user's timezone from `game:` + `sched:`; the ESPN
+  poller's `ScheduleLoop` writes `sched:` every 15 min (44 requests). One builder,
+  `games/GameSummaries`, makes every `GameSummary`. `unread:<userId>` is raised by
+  Stage 2's delivery script (only if present) and reset by seen/clear. Labels read
+  `Final`, `Final/OT`, `End Q1`. The no-score heal waits 10 s, not 30 (ESPN showed
+  0:00 for 90 s mid-period). The course's `/ws`, `/api/games`, `/api/upcoming` are gone.
 - **New in Phase 3.3:** detectors in `src/main/java/alerts/` (pure functions of
   memory + play; `Detectors.standard`). Stage 1 keeps each game's memory in
   `det:<gameId>` (replaces `s1:last:`), written set-if-higher after the messages are

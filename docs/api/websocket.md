@@ -108,7 +108,9 @@ The reply to `ping`.
 { "type": "subscribe_games", "gameIds": ["nfl-401872948", "nfl-401872951"] }
 ```
 
-At most 100 ids. Notifications do not depend on this. They arrive for everything the user follows, whatever is on screen.
+At most 100 ids; extra ids and ids that are not game ids are ignored. Notifications do not depend on this. They arrive for everything the user follows, whatever is on screen.
+
+**Current state right away.** For every game the list adds, the server sends a `game_update` with the game's current state as soon as it is listening for that game, so nothing that happened between the HTTP fetch and the subscription is missed. It may repeat a version the UI already has; the stale-version rule drops it. Games that have not started send nothing until they do.
 
 ### `ping`
 
@@ -118,7 +120,7 @@ Send every 25 seconds while connected.
 { "type": "ping" }
 ```
 
-This keeps proxies and load balancers from closing a quiet connection. The server closes a connection that has sent nothing for 60 seconds.
+This keeps proxies and load balancers from closing a quiet connection. The server closes a connection that has sent nothing for 60 seconds, with code 1000 (reconnect with backoff).
 
 ## Reconnecting
 
@@ -145,6 +147,7 @@ Connections drop: Wi-Fi changes, a laptop sleeps, or a gateway restarts or scale
 Notes for whoever builds the server side; the UI can skip this.
 
 - **Notifications** follow decision 13: Stage 2 publishes to the channel of the gateway holding the user's socket.
-- **Game updates** are a second path. Every accepted snapshot also publishes its `GameSummary` to a per-game Redis channel. A gateway subscribes to the channels of games its tabs asked for, and unsubscribes when no tab wants them. Updates are per game, not per user, so a Super Bowl with 100,000 viewers is one message per gateway, not 100,000.
+- **Game updates** are a second path. The accept script (the Lua script that is the authority on the score) publishes every accepted play on `live:<gameId>` in the same step that saves it, so updates leave in version order and only for saved state. A gateway subscribes to the channels of games its tabs asked for, waits for Redis to confirm, then reads the game's current state for the tab; it unsubscribes when no tab wants a game. Updates are per game, not per user, so a Super Bowl with 100,000 viewers is one message per gateway, not 100,000.
+- **Unread count.** `unread:<userId>` in Redis is a cache of the count in Postgres. Stage 2's delivery script raises it in the same step as the delivery (only if it exists) and publishes `unread_count`; seen and clear set it to 0 and tell every gateway holding the user. `hello` reads it, or fills it from Postgres when it is missing. It can be off by one until the next seen, clear, or its daily expiry.
 - `version` is the per-game counter the Lua script increments on every accepted play, in the same step as the score, so it increases in the order the score changed. It is not the script's internal `seq`, which can go down when the script heals a bad ESPN clock (Phase 3.1 spec, section 1.4).
 - Multiple tabs: each tab is its own connection and gets its own copy of notifications and `unread_count`.

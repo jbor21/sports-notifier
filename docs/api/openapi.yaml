@@ -244,9 +244,11 @@ paths:
       summary: Games for a day
       description: |
         Games on one calendar day in the given timezone, soonest first. Live scores
-        then update over the WebSocket (`subscribe_games`). Which dates are
-        supported (today only, or a range around it) is settled when the backend
-        implements this endpoint (Phase 3.4); a date outside it is a 422.
+        then update over the WebSocket (`subscribe_games`). Supported dates are
+        yesterday through 7 days ahead, in `tz`; any other date is a 422 whose
+        message names the first and last allowed dates. A game that has not
+        started (or finished more than a day ago) comes from the schedule and has
+        `version` 0, so the first live update replaces it.
       security: []
       parameters:
         - name: date
@@ -677,11 +679,15 @@ components:
           description: 1-based period number; above regulation means overtime or extra innings.
         periodLabel:
           type: [string, 'null']
-          description: Ready to display.
-          examples: [Q4, Half, OT, 2OT, Bot 7th, 3rd, SO]
+          description: |
+            Ready to display. Between periods it starts with `End` (`End Q1`, `End 2nd`).
+            A finished game says `Final`, with the last period when it went past
+            regulation (`Final/OT`, `Final/2OT`, `Final/SO`, `Final/10` for extra
+            innings). Null for scheduled, postponed, and canceled games.
+          examples: [Q4, Half, End Q1, OT, 2OT, Bot 7th, 3rd, SO, Final, Final/OT]
         clock:
           type: [string, 'null']
-          description: Game clock as `m:ss`, also under a minute (`0:42`). Null for baseball and between periods.
+          description: Game clock as `m:ss`, also under a minute (`0:42`). Null for baseball, between periods, and once the game is final.
           examples: ['4:12']
         version:
           type: integer
@@ -885,8 +891,8 @@ components:
             id: { type: string }
             home: { $ref: '#/components/schemas/GameSide' }
             away: { $ref: '#/components/schemas/GameSide' }
-            periodLabel: { type: [string, 'null'], description: Ready to display, e.g. `Q4`, `Half`, `Bot 7th`. Null outside play. }
-            clock: { type: [string, 'null'], description: '`m:ss`, also under a minute (`0:42`). Null for baseball and between periods.' }
+            periodLabel: { type: [string, 'null'], description: 'Ready to display, as in GameSummary: `Q4`, `Half`, `End Q1`, `Bot 7th`, `Final/OT`. Null before the start.' }
+            clock: { type: [string, 'null'], description: '`m:ss`, also under a minute (`0:42`). Null for baseball, between periods, and once final.' }
         summary:
           type: object
           description: Present for `daily_summary`.
