@@ -83,14 +83,29 @@ class EventProcessingHealTest {
     }
 
     @Test
-    void noScoreHealAcceptsAfterThirtySeconds() {
+    void noScoreHealAtTenSeconds() {
         service.processEvent(nhl(2, GLITCH, 0, 4));
         now.set(1_000);
         assertEquals(ProcessResult.STALE, service.processEvent(nhl(2, REAL, 0, 4)));
-        now.set(30_999);
+        now.set(10_999);
         assertEquals(ProcessResult.STALE, service.processEvent(nhl(2, REAL - 50, 0, 4)));
-        now.set(31_000);
+        now.set(11_000);
         GameEvent healed = nhl(2, REAL - 100, 0, 4);
+        assertEquals(ProcessResult.ACCEPTED, service.processEvent(healed));
+        assertEquals(String.valueOf(healed.getSeq()), jedis.hget("game:nhl-1", "lastSeq"));
+    }
+
+    /** Bruins at Jets, 2nd period: ESPN showed 0:00 for 90 s mid-period, then 1:20 (nhl-401891831). */
+    @Test
+    void bruinsZeroZeroGlitchHealsInTenSeconds() {
+        assertEquals(ProcessResult.ACCEPTED, service.processEvent(nhl(2, 2350, 2, 2)));   // 3:55
+        assertEquals(ProcessResult.ACCEPTED, service.processEvent(nhl(2, 0, 2, 2)));      // 0:00, the glitch
+        now.set(100_000);
+        assertEquals(ProcessResult.STALE, service.processEvent(nhl(2, 800, 2, 2)));       // 1:20
+        now.set(105_000);
+        assertEquals(ProcessResult.STALE, service.processEvent(nhl(2, 750, 2, 2)));       // 1:15
+        now.set(110_000);
+        GameEvent healed = nhl(2, 700, 2, 2);                                              // 1:10
         assertEquals(ProcessResult.ACCEPTED, service.processEvent(healed));
         assertEquals(String.valueOf(healed.getSeq()), jedis.hget("game:nhl-1", "lastSeq"));
     }
@@ -98,7 +113,7 @@ class EventProcessingHealTest {
     @Test
     void anyAcceptClearsStaleSince() {
         service.processEvent(nhl(2, GLITCH, 0, 4));
-        service.processEvent(nhl(2, REAL, 0, 4));                  // starts the 30-second timer
+        service.processEvent(nhl(2, REAL, 0, 4));                  // starts the 10-second timer
         assertNotNull(jedis.hget("game:nhl-1", "staleSince"));
         service.processEvent(nhl(2, GLITCH - 100, 0, 4));          // genuinely newer
         assertNull(jedis.hget("game:nhl-1", "staleSince"));

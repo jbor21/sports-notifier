@@ -27,8 +27,13 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     private static final long FINISHED_GAME_TTL_SECONDS = 86_400L;
     /** Any other game's record, and its place in games:recent, lasts 8 days without an update. */
     private static final long IDLE_GAME_TTL_SECONDS = 8 * 86_400L;
-    /** How long the same period and score must keep looking "older" before the no-score heal accepts it. */
-    private static final long NO_SCORE_HEAL_MILLIS = 30_000L;
+    /**
+     * How long the same period and score must keep looking "older" before the no-score heal accepts it.
+     * 10 s, two polls: any accepted play resets the timer, so it runs out only when nothing newer
+     * arrives. It was 30 s until ESPN showed 0:00 mid-period for 90 s and the card stayed frozen 30 s
+     * more (Phase 3.4 spec, section 2).
+     */
+    private static final long NO_SCORE_HEAL_MILLIS = 10_000L;
     /** Longer than Stage 1's 8-day memory of versions (det:<gameId>), refreshed on every accept. */
     private static final long VERSION_TTL_SECONDS = 9 * 86_400L;
 
@@ -54,13 +59,13 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      *    11:45), because the bad snapshot's seq would otherwise block the game for minutes:
      *    - goal heal: same phase, period, and half (seq's first four digits) and more points.
      *      An older snapshot never has more points, so a slower overlapping poller can't use this.
-     *    - no-score heal: same phase, period, half, and score, still "older" after 30 seconds.
+     *    - no-score heal: same phase, period, half, and score, still "older" after 10 seconds.
      *      staleSince records when that started; any accepted play clears it.
      *    Either heal lowers lastSeq to the play's seq. Both apply only to game positions (below
      *    10^14). A seq at or above that isn't a position (the course-era simulator sent such seqs to
      *    order its runs), so its leading digits mean nothing as a period.
      *    This check comes after "pending", so a play that will not be considered never starts
-     *    the 30-second timer.
+     *    the 10-second timer.
      * 4. Only then claim the id, add 1 to the game's version, and write the full state. Every
      *    event carries the whole state, so the script does not branch on event type. version
      *    changes in the same step as the score, so it counts accepted plays in exactly the order
