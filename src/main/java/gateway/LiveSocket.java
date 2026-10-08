@@ -6,6 +6,7 @@ import com.google.gson.JsonParser;
 import io.javalin.Javalin;
 import io.javalin.config.JavalinConfig;
 import io.javalin.websocket.WsContext;
+import org.eclipse.jetty.websocket.api.WriteCallback;
 import redis.clients.jedis.JedisPool;
 
 import java.time.Duration;
@@ -178,6 +179,12 @@ public final class LiveSocket {
         return new ClientSocket() {
             @Override public boolean isOpen() { return ctx.session.isOpen(); }
             @Override public void send(String text) { ctx.send(text); }
+            @Override public void sendAsync(String text, Runnable done) {
+                ctx.session.getRemote().sendString(text, new WriteCallback() {
+                    @Override public void writeSuccess() { done.run(); }
+                    @Override public void writeFailed(Throwable x) { done.run(); }
+                });
+            }
             @Override public void close(int code, String reason) { ctx.closeSession(code, reason); }
         };
     }

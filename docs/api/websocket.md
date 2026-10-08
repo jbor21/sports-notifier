@@ -32,7 +32,7 @@ The first message after connecting.
 
 ### `notification`
 
-A new alert for this user, as one push: a headline plus anything merged into it. It is already saved to history when it arrives.
+A new alert for this user, as one push: a headline plus anything merged into it. History saves it separately and may lag the push by a second or two, so add the pushed notification to the list on screen rather than refetching `GET /notifications` at once; its `id` is the same in both.
 
 ```json
 {
@@ -132,6 +132,8 @@ Connections drop: Wi-Fi changes, a laptop sleeps, or a gateway restarts or scale
 |---|---|---|
 | 4401 | Not signed in | Go to sign in. Do not retry. |
 | 4000 | Server is shutting this gateway down | Reconnect right away (after the jitter below). |
+| 1013 | This tab fell too far behind reading messages (a slow or sleeping connection) | Reconnect with backoff, then refetch. |
+| 1000 `idle` | Nothing received from the tab for 60 seconds | Reconnect with backoff; keep pinging every 25 seconds. |
 | anything else | Network or server problem | Reconnect with backoff. |
 
 **Backoff.** Wait 1 s, then 2 s, 4 s, 8 s, up to 30 s between tries. Add a random 0–1 s to each wait, so a thousand tabs do not all reconnect in the same instant. Reset to 1 s after a connection stays up for a minute.

@@ -157,4 +157,38 @@ class GatewayChannelTest {
         assertEquals(0, u1.sent.size());
         assertEquals(1, u2.sent.size(), "one user's gone socket must not affect another's delivery");
     }
+
+    /** A tab whose peer stopped reading: a blocking send never returns, an async one never completes. */
+    static final class StalledSocket implements ClientSocket {
+        final java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        volatile Integer closedWith;
+        @Override public boolean isOpen() { return closedWith == null; }
+        @Override public void send(String text) {
+            try { release.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }
+        @Override public void sendAsync(String text, Runnable done) { }
+        @Override public void close(int code, String reason) { closedWith = code; }
+    }
+
+    /** Final review, Important 2: one tab that stopped reading must not freeze every other tab on the gateway. */
+    @Test
+    void stalledTabDoesNotBlockOtherUsers() throws Exception {
+        GatewayChannel a = gateway();
+        StalledSocket stalled = new StalledSocket();
+        FakeSocket other = new FakeSocket();
+        a.register("u1", new SocketSession("u1", stalled, 0L));
+        a.register("u2", new SocketSession("u2", other, 0L));
+        try {
+            for (int i = 0; i < SocketSession.MAX_IN_FLIGHT + 10; i++) {
+                jedis.publish("gw:" + a.gatewayId(), "{\"userId\":\"u1\",\"payload\":{\"type\":\"x\",\"n\":" + i + "}}");
+            }
+            jedis.publish("gw:" + a.gatewayId(), "{\"userId\":\"u2\",\"payload\":{\"type\":\"notification\"}}");
+            long until = System.currentTimeMillis() + 3000;
+            while (other.sent.isEmpty() && System.currentTimeMillis() < until) Thread.sleep(20);
+            assertEquals(1, other.sent.size(), "u2's push waited behind u1's stalled socket");
+            assertEquals(1013, stalled.closedWith, "a tab too far behind is closed, so it reconnects and refetches");
+        } finally {
+            stalled.release.countDown();
+        }
+    }
 }
