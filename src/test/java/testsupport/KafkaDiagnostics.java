@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
 public final class KafkaDiagnostics implements TestWatcher {
 
     private static final Path DIR = Path.of("target", "kafka-diagnostics");
-    private static final int LOG_LINES = 300;
+    private static final int LOG_LINES = 2000;
 
     @Override
     public void testFailed(ExtensionContext context, Throwable cause) {

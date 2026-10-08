@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -105,9 +106,12 @@ class Stage1WaitsForSetsTest {
     private long committedTotal() throws Exception {
         Properties p = new Properties();
         p.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaTestSupport.bootstrap());
+        // Bounded, so a broker that stops answering fails the test in seconds instead of hanging it.
+        p.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "10000");
+        p.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "5000");
         try (Admin admin = Admin.create(p)) {
             Map<TopicPartition, OffsetAndMetadata> offsets =
-                    admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get();
+                    admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get(15, TimeUnit.SECONDS);
             return offsets.values().stream().filter(o -> o != null).mapToLong(OffsetAndMetadata::offset).sum();
         }
     }
