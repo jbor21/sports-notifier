@@ -53,6 +53,12 @@ public final class RedisKeys {
     /** Users following a league, one set per alert type: {@code sub:league:<league>:<ALERT>} */
     public static final String SUB_LEAGUE_PREFIX = "sub:league:";
 
+    /**
+     * The set-name suffix for everyone who follows a target at all, whatever its switches:
+     * {@code sub:<kind>:<target>:ANY}. "Most specific follow wins" subtracts it (Phase 3.3 spec, 4.1).
+     */
+    public static final String SUB_ANY = "ANY";
+
     /** Phase 3.1's per-type sets, {@code sub:notif:<type>}. Nothing writes them now; the rebuild deletes them. */
     public static final String SUB_NOTIF_PREFIX = "sub:notif:";
 

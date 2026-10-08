@@ -138,4 +138,12 @@ class AlertCatalogTest {
         out.addAll(b);
         return out;
     }
+
+    @Test
+    void noAlertTypeIsCalledAny() {
+        // sub:<kind>:<target>:ANY holds everyone who follows the target; a switch by that name would collide.
+        for (String league : java.util.List.of("NFL", "NBA", "MLB", "NHL")) {
+            assertTrue(AlertCatalog.load().forLeague(league).stream().noneMatch(t -> "ANY".equals(t.type())), league);
+        }
+    }
 }

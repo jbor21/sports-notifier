@@ -15,6 +15,7 @@ import util.ApiResult;
 import javax.sql.DataSource;
 import java.lang.reflect.Type;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -186,7 +187,14 @@ public final class FollowService {
                 conn.setAutoCommit(false);
                 try {
                     out = work.run(conn);
-                    conn.commit();
+                    try {
+                        conn.commit();
+                    } catch (SQLException e) {
+                        // The server may have committed before the connection failed; Redis may now be
+                        // missing a follow that exists. Rebuild rather than wait for the daily one.
+                        askForRebuild();
+                        throw e;
+                    }
                 } catch (Exception e) {
                     conn.rollback();
                     throw e;
@@ -209,12 +217,17 @@ public final class FollowService {
             write.run();
         } catch (RuntimeException e) {
             System.err.println("[Follows] Redis update failed, asking for a rebuild: " + e.getMessage());
-            try {
-                sets.deleteMarker();
-            } catch (RuntimeException e2) {
-                System.err.println("[Follows] marker delete failed too, rebuild owed: " + e2.getMessage());
-                rebuildOwed.set(true);
-            }
+            askForRebuild();
+        }
+    }
+
+    /** Deletes the marker so user-pref rebuilds the sets; if Redis is down too, the next check does it. */
+    private void askForRebuild() {
+        try {
+            sets.deleteMarker();
+        } catch (RuntimeException e) {
+            System.err.println("[Follows] marker delete failed, rebuild owed: " + e.getMessage());
+            rebuildOwed.set(true);
         }
     }
 

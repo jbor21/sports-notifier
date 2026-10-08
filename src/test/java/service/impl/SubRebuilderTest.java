@@ -202,4 +202,47 @@ class SubRebuilderTest {
         }
         return out;
     }
+
+    @Test
+    void rebuildWritesAnyAndInningSets() {
+        String id = follows.create(bob, "team", "mlb-chw").body().id();
+        follows.patch(bob, id, FollowServiceTest.body("{\"alerts\":{\"END_OF_INNING\":{\"enabled\":true,\"options\":{\"innings\":[4]}}}}"));
+        Set<String> before = snapshot();
+        jedis.flushDB();
+        assertTrue(rebuilder().checkOnce());
+        assertEquals(before, snapshot());
+        assertTrue(jedis.sismember("sub:team:mlb-chw:ANY", bob));
+        assertTrue(jedis.sismember("sub:team:mlb-chw:END_OF_INNING:4", bob));
+    }
+
+    @Test
+    void runIdChangeDeletesMarker() {
+        java.util.concurrent.atomic.AtomicReference<String> runId = new java.util.concurrent.atomic.AtomicReference<>("a");
+        SubRebuilder r = new SubRebuilder(PostgresTestSupport.dataSource(), pool, follows::rebuildOwed,
+            follows::clearRebuildOwed, () -> {}, j -> runId.get());
+        follows.create(bob, "team", "mlb-chw");
+        jedis.set(RedisKeys.SUB_BUILT, "x");
+        assertFalse(r.checkOnce(), "first read only remembers the run id");
+        assertFalse(r.checkOnce(), "same Redis, nothing to do");
+        runId.set("b");                                        // Redis restarted, maybe from an AOF missing a second
+        assertTrue(r.checkOnce(), "a new run id means the sets may be stale: rebuild");
+        assertTrue(jedis.exists(RedisKeys.SUB_BUILT));
+        assertFalse(r.checkOnce());
+    }
+
+    @Test
+    void firstRunIdReadDoesNot() {
+        jedis.set(RedisKeys.SUB_BUILT, "x");
+        SubRebuilder r = new SubRebuilder(PostgresTestSupport.dataSource(), pool, follows::rebuildOwed,
+            follows::clearRebuildOwed, () -> {}, j -> "fresh-pod");
+        assertFalse(r.checkOnce());
+        assertEquals("x", jedis.get(RedisKeys.SUB_BUILT));
+    }
+
+    @Test
+    void defaultRunIdReaderReadsRedis() {
+        String id = SubRebuilder.redisRunId(jedis);
+        assertNotNull(id);
+        assertEquals(40, id.length());
+    }
 }
