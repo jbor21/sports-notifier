@@ -4,12 +4,10 @@ import catalog.AlertCatalog;
 import catalog.Leagues;
 import catalog.Teams;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import feed.EspnClient;
+import com.google.gson.JsonParser;
+import games.GameSummaries;
 import io.javalin.Javalin;
 import io.javalin.http.staticfiles.Location;
-import io.javalin.websocket.WsContext;
 import redis.clients.jedis.JedisPool;
 import util.GsonJsonMapper;
 import util.JedisPoolHolder;
@@ -29,10 +27,11 @@ import java.util.concurrent.TimeUnit;
 
 public final class GatewayMain {
 
-    private static final Gson GSON = new Gson();
     /** A conn: entry lives 90 s and is renewed every 30 s: two missed renewals are survivable. */
     private static final int CONN_ENTRY_TTL_SECONDS = 90;
     private static final int CONN_RENEW_EVERY_SECONDS = 30;
+    /** How long a new game subscription waits for Redis to confirm before reading current state anyway. */
+    private static final long SUBSCRIBE_CONFIRM_MILLIS = 2000;
 
     private static final String USER_PREF_URL = System.getenv().getOrDefault("USER_PREF_URL", "http://127.0.0.1:8081");
     private static final String GAME_STATE_URL = System.getenv().getOrDefault("GAME_STATE_URL", "http://127.0.0.1:8082");
@@ -42,9 +41,7 @@ public final class GatewayMain {
         JedisPoolHolder.awaitRedisOrExit("gateway");
         int port = Integer.parseInt(System.getenv().getOrDefault("GATEWAY_PORT", "8080"));
         JedisPool pool = JedisPoolHolder.create();
-        GameListingHandler gameListingHandler = new GameListingHandler(pool);
         LoginThrottle loginThrottle = new LoginThrottle(pool);
-        EspnProxyHandler espnProxyHandler = new EspnProxyHandler(EspnClient.fromEnv());
         // Routing (DESIGN.md decision 13): this gateway listens only on its own channel, gw:<id>, and
         // records in conn:<userId> which users it holds, so Stage 2 publishes only to the right gateways.
         String gatewayId = System.getenv().getOrDefault("GATEWAY_ID", hostname());
@@ -77,40 +74,13 @@ public final class GatewayMain {
         GameRoutes.register(app, pool, GAME_STATE_URL, USER_PREF_URL, Instant::now);
         ReferenceRoutes.register(app, Leagues.load(), Teams.load(), AlertCatalog.load());
 
-        // --- Game state ---
-        app.get("/api/games", gameListingHandler::handleList);
-
-        app.get("/api/games/{gameId}", ctx -> {
-            HttpResponse<String> r = SimpleHttp.get(GAME_STATE_URL + "/games/" + urlEnc(ctx.pathParam("gameId")));
-            ctx.status(r.statusCode()).result(r.body());
-        });
-
-        // --- Upcoming games (proxied from ESPN to avoid browser CORS issues) ---
-        app.get("/api/upcoming", espnProxyHandler::handleUpcoming);
-
-        // --- WebSocket push stream ---
-        app.ws("/ws", ws -> {
-            ws.onConnect(ctx -> {
-                String userId = SessionAuth.currentUserId(pool, ctx);
-                if (userId == null) {
-                    ctx.send("{\"event\":\"auth-error\"}");
-                    ctx.closeSession();
-                    return;
-                }
-                ctx.attribute("userId", userId);
-                ClientSocket socket = socketOf(ctx);
-                ctx.attribute("socket", socket);
-                channel.register(userId, socket);
-                registry.add(userId);
-                JsonObject hello = new JsonObject();
-                hello.addProperty("event", "connected");
-                hello.addProperty("userId", userId);
-                hello.addProperty("connectedAt", System.currentTimeMillis());
-                ctx.send(GSON.toJson(hello));
-            });
-            ws.onClose(ctx -> socketGone(channel, registry, ctx.attribute("userId"), ctx.attribute("socket")));
-            ws.onError(ctx -> socketGone(channel, registry, ctx.attribute("userId"), ctx.attribute("socket")));
-        });
+        // --- Live socket: /api/v1/ws ---
+        GameSubscriptions games = new GameSubscriptions(pool, channel, new GameSummaries(Teams.load()), SUBSCRIBE_CONFIRM_MILLIS);
+        UnreadCount unread = new UnreadCount(pool, GatewayMain::unreadFromHistory);
+        LiveSocket live = new LiveSocket(pool, channel, registry, unread, games, System::currentTimeMillis);
+        live.register(app);
+        ScheduledExecutorService sweeper = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "idle-sweeper"));
+        live.startSweeper(sweeper);
 
         // Graceful shutdown: stop being anyone's gateway first, then tell every client to reconnect
         // (code 4000), so Stage 2 stops publishing here while the browsers move to another gateway.
@@ -122,6 +92,7 @@ public final class GatewayMain {
             }
             channel.closeAll(4000, "server shutting down");
             renewals.shutdownNow();
+            sweeper.shutdownNow();
             channel.stop();
             app.stop();
             pool.close();
@@ -130,18 +101,16 @@ public final class GatewayMain {
         System.out.println("[Gateway] listening on :" + port);
     }
 
-    /** Javalin's socket, as the routing code sees it. */
-    private static ClientSocket socketOf(WsContext ctx) {
-        return new ClientSocket() {
-            @Override public boolean isOpen() { return ctx.session.isOpen(); }
-            @Override public void send(String text) { ctx.send(text); }
-            @Override public void close(int code, String reason) { ctx.closeSession(code, reason); }
-        };
-    }
-
-    private static void socketGone(GatewayChannel channel, ConnectionRegistry registry, String userId, ClientSocket socket) {
-        if (userId == null || socket == null) return;
-        if (channel.unregister(userId, socket)) registry.remove(userId);
+    /** Postgres's count through the Notification service, for a tab whose badge Redis doesn't have. Throws if it can't say. */
+    private static int unreadFromHistory(String userId) {
+        HttpResponse<String> r;
+        try {
+            r = SimpleHttp.get(NOTIFICATION_URL + "/users/" + urlEnc(userId) + "/notifications/unread-count");
+        } catch (Exception e) {
+            throw new IllegalStateException("notification service unreachable", e);
+        }
+        if (r.statusCode() != 200) throw new IllegalStateException("unread count answered " + r.statusCode());
+        return JsonParser.parseString(r.body()).getAsJsonObject().get("count").getAsInt();
     }
 
     private static String hostname() {

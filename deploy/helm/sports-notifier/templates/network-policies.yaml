@@ -5,8 +5,8 @@ Network policies: firewall rules between pods.
 - The first policy below selects every pod in the namespace with an empty list, so the default is
   "no one gets in"; the rest open exactly the paths the app uses.
 k3s (our k3d cluster) enforces these out of the box. On EKS a policy engine must be turned on
-(Phase 5), or these are silently ignored. Outgoing traffic is not restricted: the poller and the
-gateway's /api/upcoming must reach ESPN.
+(Phase 5), or these are silently ignored. Outgoing traffic is not restricted: the poller's live and
+schedule loops must reach ESPN.
 */}}
 {{- $ns := .Release.Namespace }}
 apiVersion: networking.k8s.io/v1
