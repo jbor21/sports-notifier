@@ -121,7 +121,7 @@ class FollowServiceTest {
         assertEquals(200, r.status());
         Map<String, AlertSetting> a = r.body().alerts();
         assertTrue(a.get("LEAD_CHANGE").enabled());
-        assertEquals(List.of(3.0, 6.0, 9.0), a.get("END_OF_INNING").options().get("innings"));
+        assertEquals(List.of(3, 6, 9), a.get("END_OF_INNING").options().get("innings"));   // whole numbers (PR #13 minor 8)
         assertTrue(a.get("GAME_START").enabled(), "untouched");
         assertEquals(a, follows.get(bob, id).body().alerts());
     }
@@ -178,5 +178,50 @@ class FollowServiceTest {
 
     static JsonObject body(String json) {
         return JsonParser.parseString(json).getAsJsonObject();
+    }
+
+    @Test
+    void inningsAreWholeNumbers() throws Exception {
+        String id = follows.create(bob, "team", "mlb-chw").body().id();
+        assertEquals(200, follows.patch(bob, id, body(
+            "{\"alerts\":{\"END_OF_INNING\":{\"enabled\":true,\"options\":{\"innings\":[9.0,3,3]}}}}")).status());
+        Follow f = follows.get(bob, id).body();
+        assertEquals(java.util.List.of(3, 9), f.alerts().get("END_OF_INNING").options().get("innings"));
+        assertEquals("[3,9]", follows.toApi(f).getAsJsonObject("alerts").getAsJsonObject("END_OF_INNING")
+            .getAsJsonObject("options").get("innings").toString());
+        try (java.sql.Connection c = PostgresTestSupport.dataSource().getConnection();
+             java.sql.Statement st = c.createStatement();
+             java.sql.ResultSet rs = st.executeQuery("SELECT alerts->'END_OF_INNING'->'options'->'innings' FROM follows")) {
+            assertTrue(rs.next());
+            assertEquals("[3, 9]", rs.getString(1));
+        }
+    }
+
+    @Test
+    void commitFailureDeletesMarker() {
+        jedis.set(util.RedisKeys.SUB_BUILT, "x");
+        FollowService failing = new FollowService(failingCommits(PostgresTestSupport.dataSource()), pool,
+            AlertCatalog.load(), Teams.load(), gid -> Optional.empty());
+        assertThrows(RuntimeException.class, () -> failing.create(bob, "team", "mlb-chw"));
+        assertFalse(jedis.exists(util.RedisKeys.SUB_BUILT), "the server may have committed: the sets must be rebuilt");
+    }
+
+    /** A DataSource whose connections throw on commit, the way a lost connection does after the server committed. */
+    private static javax.sql.DataSource failingCommits(javax.sql.DataSource real) {
+        return (javax.sql.DataSource) java.lang.reflect.Proxy.newProxyInstance(FollowServiceTest.class.getClassLoader(),
+            new Class<?>[]{javax.sql.DataSource.class}, (proxy, m, args) -> {
+                Object r = m.invoke(real, args);
+                if (!"getConnection".equals(m.getName())) return r;
+                java.sql.Connection conn = (java.sql.Connection) r;
+                return java.lang.reflect.Proxy.newProxyInstance(FollowServiceTest.class.getClassLoader(),
+                    new Class<?>[]{java.sql.Connection.class}, (p2, m2, a2) -> {
+                        if ("commit".equals(m2.getName())) throw new java.sql.SQLException("connection lost during commit");
+                        try {
+                            return m2.invoke(conn, a2);
+                        } catch (java.lang.reflect.InvocationTargetException e) {
+                            throw e.getCause();
+                        }
+                    });
+            });
     }
 }

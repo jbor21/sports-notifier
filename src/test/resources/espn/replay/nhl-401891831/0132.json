@@ -1,0 +1,57 @@
+{
+ "events": [
+  {
+   "id": "401891831",
+   "date": "2026-10-03T00:00Z",
+   "shortName": "BOS @ WPG",
+   "season": {
+    "type": 2
+   },
+   "competitions": [
+    {
+     "status": {
+      "clock": 725.0,
+      "displayClock": "12:05",
+      "period": 3,
+      "type": {
+       "id": "2",
+       "name": "STATUS_IN_PROGRESS",
+       "state": "in",
+       "completed": false,
+       "description": "In Progress",
+       "detail": "12:05 - 3rd Period",
+       "shortDetail": "12:05 - 3rd"
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "3",
+       "team": {
+        "abbreviation": "WPG",
+        "displayName": "Winnipeg Jets",
+        "logo": "https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/wpg.png"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "2",
+       "team": {
+        "abbreviation": "BOS",
+        "displayName": "Boston Bruins",
+        "logo": "https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/bos.png"
+       }
+      }
+     ],
+     "situation": {
+      "outs": null,
+      "lastPlay": {
+       "text": "JJ Peterka Wrist Shot saved by Stuart Skinner"
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "_note": "captured live: recording nhl/20261003T022736Z.json.gz, trimmed to one game by scripts/trim-espn-fixture.py"
+}

@@ -1,5 +1,8 @@
 package service.impl;
 
+import alerts.Detectors;
+import alerts.GameLabels;
+import catalog.Teams;
 import io.javalin.Javalin;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -29,7 +32,9 @@ public final class Stage1WorkerMain {
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(KafkaSettings.consumer(KafkaSettings.bootstrap(), Topics.STAGE1_GROUP));
         consumer.subscribe(List.of(Topics.GAME_EVENTS));
         KafkaProducer<String, String> producer = new KafkaProducer<>(KafkaSettings.fanoutProducer(KafkaSettings.bootstrap()));
-        Stage1Worker worker = new Stage1Worker(pool, new Stage1Progress(pool), consumer, producer, Topics.NOTIFICATIONS, () -> {
+        GameLabels labels = new GameLabels(Teams.load());
+        Stage1Worker worker = new Stage1Worker(new DetectorMemory(pool), Detectors.standard(labels),
+                new MomentFanout(pool, new AlertAudience(), labels), consumer, producer, Topics.NOTIFICATIONS, () -> {
             try (Jedis jedis = pool.getResource()) {
                 return jedis.exists(RedisKeys.SUB_BUILT);
             }

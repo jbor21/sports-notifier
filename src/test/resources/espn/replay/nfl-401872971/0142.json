@@ -1,0 +1,57 @@
+{
+ "events": [
+  {
+   "id": "401872971",
+   "date": "2026-10-04T17:00Z",
+   "shortName": "NE @ BUF",
+   "season": {
+    "type": 2
+   },
+   "competitions": [
+    {
+     "status": {
+      "clock": 55.0,
+      "displayClock": "0:55",
+      "period": 4,
+      "type": {
+       "id": "2",
+       "name": "STATUS_IN_PROGRESS",
+       "state": "in",
+       "completed": false,
+       "description": "In Progress",
+       "detail": "0:55 - 4th Quarter",
+       "shortDetail": "0:55 - 4th"
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "26",
+       "team": {
+        "abbreviation": "BUF",
+        "displayName": "Buffalo Bills",
+        "logo": "https://a.espncdn.com/i/teamlogos/nfl/500/scoreboard/buf.png"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "29",
+       "team": {
+        "abbreviation": "NE",
+        "displayName": "New England Patriots",
+        "logo": "https://a.espncdn.com/i/teamlogos/nfl/500/scoreboard/ne.png"
+       }
+      }
+     ],
+     "situation": {
+      "outs": null,
+      "lastPlay": {
+       "text": " D.Maye pass short right to H.Henry ran ob at NE 31 for 12 yards (C.Bishop)."
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "_note": "captured live: recording nfl/20261004T201042Z.json.gz, trimmed to one game by scripts/trim-espn-fixture.py"
+}

@@ -1,136 +1,166 @@
 package simulator;
 
-import model.GameEvent;
-import util.GameEventParser;
-import util.SimpleHttp;
+import feed.HttpEventSink;
+import feed.Poller;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import util.JedisPoolHolder;
+import util.RedisKeys;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.BiFunction;
 
 /**
- * Runs multiple waves of concurrent games.
- * Each wave starts after the previous one finishes.
- * Later waves introduce teams not pre-seeded in the frontend,
- * testing live preference-discovery.
+ * Runs waves of scripted games through the real {@link Poller}, exactly as the ESPN poller runs live
+ * games: the poller reads {@code game:<id>}, compares, and POSTs plays to Event Processing. Each wave
+ * starts after the previous one is final. Later waves bring teams and an NHL debut that wave 1 lacks.
+ *
+ * A play answered {@code pending} needs nothing here: the poller sees the same difference on its next
+ * poll and sends it again (issue #7).
  */
 public final class EventSimulatorMain {
 
     private static final String EPS_URL = System.getenv().getOrDefault("EPS_URL", "http://127.0.0.1:8083");
+    private static final String[] LEAGUES = {"NFL", "NBA", "MLB", "NHL"};
+    /** After the scripts end, how long the last plays get to be accepted before the run is called failed. */
+    private static final long FINAL_WAIT_MILLIS = 60_000L;
 
-    // format: gameId, home, away, league
+    /** Home, away, league. Abbreviations are ESPN's, as in teams.json, so every team can be followed. */
     private static final String[][][] WAVES = {
-        // Wave 1 — all teams known to the frontend
+        // Wave 1. The smoke test follows mlb-hou (slot 5) and nfl-kc (slot 6).
         {
-            {"game-LAL-BOS", "LAL", "BOS", "NBA"},
-            {"game-GSW-NYK", "GSW", "NYK", "NBA"},
-            {"game-CHI-MIA", "CHI", "MIA", "NBA"},
-            {"game-NYY-LAD", "NYY", "LAD", "MLB"},
-            {"game-BOS-HOU", "BOS", "HOU", "MLB"},
-            {"game-KC-SF",   "KC",  "SF",  "NFL"},
+            {"LAL", "BOS", "NBA"},
+            {"GS",  "NY",  "NBA"},
+            {"CHI", "MIA", "NBA"},
+            {"NYY", "LAD", "MLB"},
+            {"BOS", "HOU", "MLB"},
+            {"KC",  "SF",  "NFL"},
         },
-        // Wave 2 — mix of known + NEW teams (OKC, MIL, PHI, DAL + NHL debut)
+        // Wave 2: new NBA and NFL teams, and the NHL's first games.
         {
-            {"game-OKC-MIL", "OKC", "MIL", "NBA"},   // NEW NBA teams
-            {"game-PHX-BKN", "PHX", "BKN", "NBA"},   // NEW NBA teams
-            {"game-PHI-DAL", "PHI", "DAL", "NFL"},   // NEW NFL teams
-            {"game-TOR-MTL", "TOR", "MTL", "NHL"},   // NEW league + NEW teams
-            {"game-BOS-NYR", "BOS", "NYR", "NHL"},   // NEW NHL teams
-            {"game-NYY-HOU", "NYY", "HOU", "MLB"},
+            {"OKC", "MIL", "NBA"},
+            {"PHX", "BKN", "NBA"},
+            {"PHI", "DAL", "NFL"},
+            {"TOR", "MTL", "NHL"},
+            {"BOS", "NYR", "NHL"},
+            {"NYY", "HOU", "MLB"},
         },
-        // Wave 3 — mostly new teams, second NHL wave
+        // Wave 3: mostly new teams, a second NHL wave.
         {
-            {"game-DEN-MEM", "DEN", "MEM", "NBA"},   // NEW
-            {"game-ATL-BKN", "ATL", "BKN", "NBA"},   // NEW
-            {"game-LAC-CLE", "LAC", "CLE", "NBA"},   // NEW
-            {"game-VAN-CGY", "VAN", "CGY", "NHL"},   // NEW
-            {"game-EDM-WPG", "EDM", "WPG", "NHL"},   // NEW
-            {"game-SF-CHC",  "SF",  "CHC", "MLB"},   // NEW
+            {"DEN", "MEM", "NBA"},
+            {"ATL", "BKN", "NBA"},
+            {"LAC", "CLE", "NBA"},
+            {"VAN", "CGY", "NHL"},
+            {"EDM", "WPG", "NHL"},
+            {"SF",  "CHC", "MLB"},
         },
     };
 
     public static void main(String[] args) throws Exception {
-        long interval = Long.parseLong(System.getenv().getOrDefault("SIM_INTERVAL_MS", "2000"));
-        int  numWaves = Integer.parseInt(System.getenv().getOrDefault("SIM_WAVES", String.valueOf(WAVES.length)));
+        long stepMillis = Long.parseLong(System.getenv().getOrDefault("SIM_INTERVAL_MS", "2000"));
+        long pollMillis = Long.parseLong(System.getenv().getOrDefault("SIM_POLL_MS", "1000"));
+        int numWaves = Integer.parseInt(System.getenv().getOrDefault("SIM_WAVES", String.valueOf(WAVES.length)));
 
-        for (int w = 0; w < numWaves; w++) {
-            String[][] wave = WAVES[w % WAVES.length];
-            System.out.println("\n[Simulator] ═══ Starting wave " + (w + 1) + " (" + wave.length + " games) ═══\n");
-
-            CountDownLatch latch = new CountDownLatch(wave.length);
-            long baseInterval = interval + (w * 200L); // slight speed-up each wave
-
-            for (String[] g : wave) {
-                final String[] game = g;
-                long jitter = ThreadLocalRandom.current().nextLong(0, 600);
-                Thread t = new Thread(() -> {
-                    runGame(game[0], game[1], game[2], game[3], baseInterval + jitter, latch);
-                }, "sim-" + game[0]);
-                t.start();
-            }
-
-            latch.await(); // wait for all games in this wave to finish
-
-            if (w < numWaves - 1) {
-                System.out.println("\n[Simulator] Wave " + (w + 1) + " complete. Next wave starts in 3s...\n");
-                Thread.sleep(3000);
+        JedisPoolHolder.awaitRedisOrExit("simulator");
+        long runStart = System.currentTimeMillis() / 1000;
+        boolean allFinal = true;
+        try (JedisPool pool = JedisPoolHolder.create()) {
+            HttpEventSink sink = new HttpEventSink(EPS_URL);
+            List<List<GameScript>> waves = waves(numWaves);
+            for (int w = 0; w < waves.size(); w++) {
+                List<GameScript> wave = waves.get(w);
+                SimulatedScoreFeed feed = new SimulatedScoreFeed(runStart, wave, System::currentTimeMillis, stepMillis);
+                Poller poller = new Poller(feed, pool, sink, System::currentTimeMillis);
+                System.out.println("\n[Simulator] === Wave " + (w + 1) + ": " + feed.gameIds() + " ===\n");
+                allFinal &= runWave(feed, poller, pool, pollMillis);
+                if (w < waves.size() - 1) {
+                    System.out.println("\n[Simulator] Wave " + (w + 1) + " complete. Next wave starts in 3s...\n");
+                    Thread.sleep(3000);
+                }
             }
         }
-
+        if (!allFinal) {
+            System.err.println("[Simulator] Done, but some games never reached FINAL (see above).");
+            System.exit(1);
+        }
         System.out.println("\n[Simulator] All waves complete.");
     }
 
-    private static void runGame(String gameId, String home, String away, String league,
-                                long intervalMs, CountDownLatch latch) {
-        try {
-            int n = 1;
-            long t = System.currentTimeMillis();
-            post(new GameEvent(gameId, eventId(gameId, n), "GAME_START", home, t,
-                home + " vs " + away + " has started",
-                home, away, 0, 0, "IN_PROGRESS", league, seq(n)));
+    /** The default waves, slots numbered through the run. */
+    static List<List<GameScript>> waves() {
+        return waves(WAVES.length);
+    }
 
-            int hs = 0, as = 0;
-            int events = 15 + ThreadLocalRandom.current().nextInt(11); // 15–25 scoring events
-            for (int i = 0; i < events; i++) {
-                Thread.sleep(intervalMs);
-                boolean homeScores = ThreadLocalRandom.current().nextBoolean();
-                int pts = ThreadLocalRandom.current().nextInt(1, 4);
-                if (homeScores) hs += pts; else as += pts;
-                String scorer = homeScores ? home : away;
-                t = System.currentTimeMillis();
-                n++;
-                post(new GameEvent(gameId, eventId(gameId, n), "SCORE_UPDATE", scorer, t,
-                    scorer + " scores! " + home + " " + hs + " - " + as + " " + away,
-                    home, away, hs, as, "IN_PROGRESS", league, seq(n)));
+    /**
+     * {@code count} waves, repeating the matchups past the third. Slots count up through the whole
+     * run, not per wave: a run has one start time, so a slot reused in a later wave would be a reused
+     * game id.
+     */
+    static List<List<GameScript>> waves(int count) {
+        List<List<GameScript>> out = new ArrayList<>();
+        int slot = 0;
+        for (int w = 0; w < count; w++) {
+            List<GameScript> wave = new ArrayList<>();
+            for (String[] g : WAVES[w % WAVES.length]) {
+                wave.add(script(g[2]).apply(g[0], g[1]).inSlot(++slot));
             }
+            out.add(wave);
+        }
+        return out;
+    }
 
-            Thread.sleep(intervalMs);
-            t = System.currentTimeMillis();
-            n++;
-            post(new GameEvent(gameId, eventId(gameId, n), "GAME_END", home, t,
-                "Final: " + home + " " + hs + " - " + as + " " + away,
-                home, away, hs, as, "FINAL", league, seq(n)));
+    private static BiFunction<String, String, GameScript> script(String league) {
+        return switch (league) {
+            case "NFL" -> GameScript::nfl;
+            case "NBA" -> GameScript::nba;
+            case "MLB" -> GameScript::mlb;
+            case "NHL" -> GameScript::nhl;
+            default -> throw new IllegalArgumentException("no script for " + league);
+        };
+    }
 
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-        } catch (Exception e) {
-            System.err.println("[Simulator " + gameId + "] error: " + e.getMessage());
-        } finally {
-            latch.countDown();
+    /**
+     * Polls every league until the scripts have ended and every game's record says FINAL.
+     *
+     * @return false if some game was still not final a minute after its script ended
+     */
+    private static boolean runWave(SimulatedScoreFeed feed, Poller poller, JedisPool pool, long pollMillis)
+            throws InterruptedException {
+        long giveUpAt = Long.MAX_VALUE;
+        while (true) {
+            for (String league : LEAGUES) {
+                try {
+                    poller.pollLeague(league);
+                } catch (Exception e) {
+                    System.err.println("[Simulator] " + league + " poll failed: " + e);
+                }
+            }
+            if (feed.done()) {
+                List<String> open = notFinal(pool, feed.gameIds());
+                if (open.isEmpty()) return true;
+                long now = System.currentTimeMillis();
+                if (giveUpAt == Long.MAX_VALUE) {
+                    giveUpAt = now + FINAL_WAIT_MILLIS;
+                } else if (now > giveUpAt) {
+                    System.err.println("[Simulator] still not FINAL after " + FINAL_WAIT_MILLIS / 1000 + "s: " + open);
+                    return false;
+                }
+            }
+            Thread.sleep(pollMillis);
         }
     }
 
-    private static void post(GameEvent ev) throws Exception {
-        String body = GameEventParser.toJson(ev);
-        SimpleHttp.postJson(EPS_URL + "/events", body);
-        System.out.println("[Simulator] " + ev.getEventType() + " " + ev.getGameId() + " :: " + ev.getDescription());
+    private static List<String> notFinal(JedisPool pool, List<String> gameIds) {
+        List<String> open = new ArrayList<>();
+        try (Jedis jedis = pool.getResource()) {
+            for (String id : gameIds) {
+                if (!"FINAL".equals(jedis.hget(RedisKeys.GAME_PREFIX + id, "status"))) open.add(id);
+            }
+        } catch (Exception e) {
+            System.err.println("[Simulator] reading game records failed: " + e);
+            return gameIds;
+        }
+        return open;
     }
-
-    // One id per run. seq = runId * 1000 + n makes every run newer than the last, so repeated
-    // `make simulate` / `make smoke` on one cluster are never rejected as stale, and when two
-    // runs overlap the later one wins. Fits easily under 2^53, so Lua compares it exactly.
-    private static final long RUN_ID = System.currentTimeMillis();
-
-    private static String eventId(String gameId, int n) { return "sim:" + RUN_ID + ":" + gameId + ":" + n; }
-
-    private static long seq(int n) { return RUN_ID * 1000 + n; }
 }

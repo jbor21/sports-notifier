@@ -29,7 +29,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     private static final long IDLE_GAME_TTL_SECONDS = 8 * 86_400L;
     /** How long the same period and score must keep looking "older" before the no-score heal accepts it. */
     private static final long NO_SCORE_HEAL_MILLIS = 30_000L;
-    /** Longer than Stage 1's 8-day memory of versions (Stage1Progress), refreshed on every accept. */
+    /** Longer than Stage 1's 8-day memory of versions (det:<gameId>), refreshed on every accept. */
     private static final long VERSION_TTL_SECONDS = 9 * 86_400L;
 
     /**
@@ -57,7 +57,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      *    - no-score heal: same phase, period, half, and score, still "older" after 30 seconds.
      *      staleSince records when that started; any accepted play clears it.
      *    Either heal lowers lastSeq to the play's seq. Both apply only to game positions (below
-     *    10^14): the simulator's seq orders runs, so its leading digits mean nothing as a period.
+     *    10^14). A seq at or above that isn't a position (the course-era simulator sent such seqs to
+     *    order its runs), so its leading digits mean nothing as a period.
      *    This check comes after "pending", so a play that will not be considered never starts
      *    the 30-second timer.
      * 4. Only then claim the id, add 1 to the game's version, and write the full state. Every
@@ -87,6 +88,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      * ARGV[10] = gameId    ARGV[11] = finished TTL seconds   ARGV[12] = idle TTL / recent window seconds
      * ARGV[13] = now millis (from Java, so tests can move time)   ARGV[14] = the play as JSON
      * ARGV[15] = no-score heal window millis   ARGV[16] = version key TTL seconds
+     * ARGV[17..24] = phase, period, clockTenths, half, outs, stage, seasonType, detail (the position,
+     *                saved with the score for the live game API)
      *
      * Returns: 0 duplicate | -1 stale | -2 pending | the game's new version when accepted
      *
@@ -129,7 +132,9 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         "redis.call('HSET', KEYS[1],\n" +
         "  'homeTeam', ARGV[3], 'awayTeam', ARGV[4], 'league', ARGV[5],\n" +
         "  'homeScore', ARGV[6], 'awayScore', ARGV[7], 'status', ARGV[8],\n" +
-        "  'lastSeq', ARGV[1], 'lastTimestamp', ARGV[9])\n" +
+        "  'lastSeq', ARGV[1], 'lastTimestamp', ARGV[9],\n" +
+        "  'phase', ARGV[17], 'period', ARGV[18], 'clockTenths', ARGV[19], 'half', ARGV[20],\n" +
+        "  'outs', ARGV[21], 'stage', ARGV[22], 'seasonType', ARGV[23], 'detail', ARGV[24])\n" +
         "if ARGV[8] == 'FINAL' or ARGV[8] == 'CANCELED' then\n" +
         "  redis.call('EXPIRE', KEYS[1], ARGV[11])\n" +
         "else\n" +
@@ -194,7 +199,15 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                 String.valueOf(nowMillis.getAsLong()),
                 GameEventParser.toJson(event),
                 String.valueOf(NO_SCORE_HEAL_MILLIS),
-                String.valueOf(VERSION_TTL_SECONDS)
+                String.valueOf(VERSION_TTL_SECONDS),
+                orEmpty(event.getPhase()),
+                String.valueOf(event.getPeriod()),
+                String.valueOf(event.getClockTenths()),
+                orEmpty(event.getHalf()),
+                String.valueOf(event.getOuts()),
+                orEmpty(event.getStage()),
+                String.valueOf(event.getSeasonType()),
+                orEmpty(event.getDetail())
             );
             result = (Long) jedis.eval(PROCESS_EVENT_SCRIPT, keys, args);
         }

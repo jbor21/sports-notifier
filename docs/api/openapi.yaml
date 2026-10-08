@@ -681,7 +681,7 @@ components:
           examples: [Q4, Half, OT, 2OT, Bot 7th, 3rd, SO]
         clock:
           type: [string, 'null']
-          description: Game clock as shown on TV. Null for baseball and between periods.
+          description: Game clock as `m:ss`, also under a minute (`0:42`). Null for baseball and between periods.
           examples: ['4:12']
         version:
           type: integer
@@ -844,7 +844,14 @@ components:
       type: object
       required: [type, text]
       properties:
-        type: { type: string, description: An alert type from the catalog. }
+        type:
+          type: string
+          description: |
+            An alert type from the catalog, or one of the types that answer to a
+            catalog switch: `SCORE` (an NFL score that is no single kind, under every
+            NFL scoring switch), `RESUMED` (MLB play resumes, under `DELAYED`), and the
+            overturns `GOAL_OVERTURNED`, `RUN_OVERTURNED`, `TOUCHDOWN_OVERTURNED`,
+            `FIELD_GOAL_OVERTURNED`, `SCORE_OVERTURNED` (under the scoring switch they undo).
         text: { type: string }
 
     Notification:
@@ -855,7 +862,12 @@ components:
         `summary` instead of a game.
       required: [id, kind, leagueId, createdAt, headline]
       properties:
-        id: { type: string }
+        id:
+          type: string
+          description: |
+            The headline alert's id, built from the game and what makes the alert
+            distinct (e.g. `nfl-401872948:SCORE:away:3`, `nfl-401872948:FINAL`), so a
+            re-sent push has the same id. Unique per user.
         kind:
           type: string
           enum: [game_moment, daily_summary]
@@ -873,8 +885,8 @@ components:
             id: { type: string }
             home: { $ref: '#/components/schemas/GameSide' }
             away: { $ref: '#/components/schemas/GameSide' }
-            periodLabel: { type: [string, 'null'] }
-            clock: { type: [string, 'null'] }
+            periodLabel: { type: [string, 'null'], description: Ready to display, e.g. `Q4`, `Half`, `Bot 7th`. Null outside play. }
+            clock: { type: [string, 'null'], description: '`m:ss`, also under a minute (`0:42`). Null for baseball and between periods.' }
         summary:
           type: object
           description: Present for `daily_summary`.
@@ -893,13 +905,13 @@ components:
           format: date-time
           description: When the poller saw the change.
       example:
-        id: n_5521
+        id: nfl-401872948:SCORE:away:3
         kind: game_moment
         leagueId: NFL
         createdAt: '2026-10-04T20:01:14Z'
-        headline: { type: TOUCHDOWN, text: 'TD Raiders! Extra point pending.' }
+        headline: { type: TOUCHDOWN, text: 'Touchdown Raiders! Extra point pending. Raiders 20, Bears 17 · Q4 4:12' }
         extras:
-          - { type: LEAD_CHANGE, text: Raiders take the lead. }
+          - { type: LEAD_CHANGE, text: 'Raiders take the lead. Raiders 20, Bears 17 · Q4 4:12' }
         game:
           id: nfl-401872948
           home: { team: { id: nfl-chi, abbreviation: CHI, displayName: Chicago Bears }, score: 17 }

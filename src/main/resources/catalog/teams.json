@@ -4,745 +4,869 @@
       "id": "mlb-ari",
       "league": "MLB",
       "abbreviation": "ARI",
-      "displayName": "Arizona Diamondbacks"
+      "displayName": "Arizona Diamondbacks",
+      "shortName": "Diamondbacks"
     },
     {
       "id": "mlb-ath",
       "league": "MLB",
       "abbreviation": "ATH",
-      "displayName": "Athletics"
+      "displayName": "Athletics",
+      "shortName": "Athletics"
     },
     {
       "id": "mlb-atl",
       "league": "MLB",
       "abbreviation": "ATL",
-      "displayName": "Atlanta Braves"
+      "displayName": "Atlanta Braves",
+      "shortName": "Braves"
     },
     {
       "id": "mlb-bal",
       "league": "MLB",
       "abbreviation": "BAL",
-      "displayName": "Baltimore Orioles"
+      "displayName": "Baltimore Orioles",
+      "shortName": "Orioles"
     },
     {
       "id": "mlb-bos",
       "league": "MLB",
       "abbreviation": "BOS",
-      "displayName": "Boston Red Sox"
+      "displayName": "Boston Red Sox",
+      "shortName": "Red Sox"
     },
     {
       "id": "mlb-chc",
       "league": "MLB",
       "abbreviation": "CHC",
-      "displayName": "Chicago Cubs"
+      "displayName": "Chicago Cubs",
+      "shortName": "Cubs"
     },
     {
       "id": "mlb-chw",
       "league": "MLB",
       "abbreviation": "CHW",
-      "displayName": "Chicago White Sox"
+      "displayName": "Chicago White Sox",
+      "shortName": "White Sox"
     },
     {
       "id": "mlb-cin",
       "league": "MLB",
       "abbreviation": "CIN",
-      "displayName": "Cincinnati Reds"
+      "displayName": "Cincinnati Reds",
+      "shortName": "Reds"
     },
     {
       "id": "mlb-cle",
       "league": "MLB",
       "abbreviation": "CLE",
-      "displayName": "Cleveland Guardians"
+      "displayName": "Cleveland Guardians",
+      "shortName": "Guardians"
     },
     {
       "id": "mlb-col",
       "league": "MLB",
       "abbreviation": "COL",
-      "displayName": "Colorado Rockies"
+      "displayName": "Colorado Rockies",
+      "shortName": "Rockies"
     },
     {
       "id": "mlb-det",
       "league": "MLB",
       "abbreviation": "DET",
-      "displayName": "Detroit Tigers"
+      "displayName": "Detroit Tigers",
+      "shortName": "Tigers"
     },
     {
       "id": "mlb-hou",
       "league": "MLB",
       "abbreviation": "HOU",
-      "displayName": "Houston Astros"
+      "displayName": "Houston Astros",
+      "shortName": "Astros"
     },
     {
       "id": "mlb-kc",
       "league": "MLB",
       "abbreviation": "KC",
-      "displayName": "Kansas City Royals"
+      "displayName": "Kansas City Royals",
+      "shortName": "Royals"
     },
     {
       "id": "mlb-laa",
       "league": "MLB",
       "abbreviation": "LAA",
-      "displayName": "Los Angeles Angels"
+      "displayName": "Los Angeles Angels",
+      "shortName": "Angels"
     },
     {
       "id": "mlb-lad",
       "league": "MLB",
       "abbreviation": "LAD",
-      "displayName": "Los Angeles Dodgers"
+      "displayName": "Los Angeles Dodgers",
+      "shortName": "Dodgers"
     },
     {
       "id": "mlb-mia",
       "league": "MLB",
       "abbreviation": "MIA",
-      "displayName": "Miami Marlins"
+      "displayName": "Miami Marlins",
+      "shortName": "Marlins"
     },
     {
       "id": "mlb-mil",
       "league": "MLB",
       "abbreviation": "MIL",
-      "displayName": "Milwaukee Brewers"
+      "displayName": "Milwaukee Brewers",
+      "shortName": "Brewers"
     },
     {
       "id": "mlb-min",
       "league": "MLB",
       "abbreviation": "MIN",
-      "displayName": "Minnesota Twins"
+      "displayName": "Minnesota Twins",
+      "shortName": "Twins"
     },
     {
       "id": "mlb-nym",
       "league": "MLB",
       "abbreviation": "NYM",
-      "displayName": "New York Mets"
+      "displayName": "New York Mets",
+      "shortName": "Mets"
     },
     {
       "id": "mlb-nyy",
       "league": "MLB",
       "abbreviation": "NYY",
-      "displayName": "New York Yankees"
+      "displayName": "New York Yankees",
+      "shortName": "Yankees"
     },
     {
       "id": "mlb-phi",
       "league": "MLB",
       "abbreviation": "PHI",
-      "displayName": "Philadelphia Phillies"
+      "displayName": "Philadelphia Phillies",
+      "shortName": "Phillies"
     },
     {
       "id": "mlb-pit",
       "league": "MLB",
       "abbreviation": "PIT",
-      "displayName": "Pittsburgh Pirates"
+      "displayName": "Pittsburgh Pirates",
+      "shortName": "Pirates"
     },
     {
       "id": "mlb-sd",
       "league": "MLB",
       "abbreviation": "SD",
-      "displayName": "San Diego Padres"
+      "displayName": "San Diego Padres",
+      "shortName": "Padres"
     },
     {
       "id": "mlb-sea",
       "league": "MLB",
       "abbreviation": "SEA",
-      "displayName": "Seattle Mariners"
+      "displayName": "Seattle Mariners",
+      "shortName": "Mariners"
     },
     {
       "id": "mlb-sf",
       "league": "MLB",
       "abbreviation": "SF",
-      "displayName": "San Francisco Giants"
+      "displayName": "San Francisco Giants",
+      "shortName": "Giants"
     },
     {
       "id": "mlb-stl",
       "league": "MLB",
       "abbreviation": "STL",
-      "displayName": "St. Louis Cardinals"
+      "displayName": "St. Louis Cardinals",
+      "shortName": "Cardinals"
     },
     {
       "id": "mlb-tb",
       "league": "MLB",
       "abbreviation": "TB",
-      "displayName": "Tampa Bay Rays"
+      "displayName": "Tampa Bay Rays",
+      "shortName": "Rays"
     },
     {
       "id": "mlb-tex",
       "league": "MLB",
       "abbreviation": "TEX",
-      "displayName": "Texas Rangers"
+      "displayName": "Texas Rangers",
+      "shortName": "Rangers"
     },
     {
       "id": "mlb-tor",
       "league": "MLB",
       "abbreviation": "TOR",
-      "displayName": "Toronto Blue Jays"
+      "displayName": "Toronto Blue Jays",
+      "shortName": "Blue Jays"
     },
     {
       "id": "mlb-wsh",
       "league": "MLB",
       "abbreviation": "WSH",
-      "displayName": "Washington Nationals"
+      "displayName": "Washington Nationals",
+      "shortName": "Nationals"
     },
     {
       "id": "nba-atl",
       "league": "NBA",
       "abbreviation": "ATL",
-      "displayName": "Atlanta Hawks"
+      "displayName": "Atlanta Hawks",
+      "shortName": "Hawks"
     },
     {
       "id": "nba-bkn",
       "league": "NBA",
       "abbreviation": "BKN",
-      "displayName": "Brooklyn Nets"
+      "displayName": "Brooklyn Nets",
+      "shortName": "Nets"
     },
     {
       "id": "nba-bos",
       "league": "NBA",
       "abbreviation": "BOS",
-      "displayName": "Boston Celtics"
+      "displayName": "Boston Celtics",
+      "shortName": "Celtics"
     },
     {
       "id": "nba-cha",
       "league": "NBA",
       "abbreviation": "CHA",
-      "displayName": "Charlotte Hornets"
+      "displayName": "Charlotte Hornets",
+      "shortName": "Hornets"
     },
     {
       "id": "nba-chi",
       "league": "NBA",
       "abbreviation": "CHI",
-      "displayName": "Chicago Bulls"
+      "displayName": "Chicago Bulls",
+      "shortName": "Bulls"
     },
     {
       "id": "nba-cle",
       "league": "NBA",
       "abbreviation": "CLE",
-      "displayName": "Cleveland Cavaliers"
+      "displayName": "Cleveland Cavaliers",
+      "shortName": "Cavaliers"
     },
     {
       "id": "nba-dal",
       "league": "NBA",
       "abbreviation": "DAL",
-      "displayName": "Dallas Mavericks"
+      "displayName": "Dallas Mavericks",
+      "shortName": "Mavericks"
     },
     {
       "id": "nba-den",
       "league": "NBA",
       "abbreviation": "DEN",
-      "displayName": "Denver Nuggets"
+      "displayName": "Denver Nuggets",
+      "shortName": "Nuggets"
     },
     {
       "id": "nba-det",
       "league": "NBA",
       "abbreviation": "DET",
-      "displayName": "Detroit Pistons"
+      "displayName": "Detroit Pistons",
+      "shortName": "Pistons"
     },
     {
       "id": "nba-gs",
       "league": "NBA",
       "abbreviation": "GS",
-      "displayName": "Golden State Warriors"
+      "displayName": "Golden State Warriors",
+      "shortName": "Warriors"
     },
     {
       "id": "nba-hou",
       "league": "NBA",
       "abbreviation": "HOU",
-      "displayName": "Houston Rockets"
+      "displayName": "Houston Rockets",
+      "shortName": "Rockets"
     },
     {
       "id": "nba-ind",
       "league": "NBA",
       "abbreviation": "IND",
-      "displayName": "Indiana Pacers"
+      "displayName": "Indiana Pacers",
+      "shortName": "Pacers"
     },
     {
       "id": "nba-lac",
       "league": "NBA",
       "abbreviation": "LAC",
-      "displayName": "LA Clippers"
+      "displayName": "LA Clippers",
+      "shortName": "Clippers"
     },
     {
       "id": "nba-lal",
       "league": "NBA",
       "abbreviation": "LAL",
-      "displayName": "Los Angeles Lakers"
+      "displayName": "Los Angeles Lakers",
+      "shortName": "Lakers"
     },
     {
       "id": "nba-mem",
       "league": "NBA",
       "abbreviation": "MEM",
-      "displayName": "Memphis Grizzlies"
+      "displayName": "Memphis Grizzlies",
+      "shortName": "Grizzlies"
     },
     {
       "id": "nba-mia",
       "league": "NBA",
       "abbreviation": "MIA",
-      "displayName": "Miami Heat"
+      "displayName": "Miami Heat",
+      "shortName": "Heat"
     },
     {
       "id": "nba-mil",
       "league": "NBA",
       "abbreviation": "MIL",
-      "displayName": "Milwaukee Bucks"
+      "displayName": "Milwaukee Bucks",
+      "shortName": "Bucks"
     },
     {
       "id": "nba-min",
       "league": "NBA",
       "abbreviation": "MIN",
-      "displayName": "Minnesota Timberwolves"
+      "displayName": "Minnesota Timberwolves",
+      "shortName": "Timberwolves"
     },
     {
       "id": "nba-no",
       "league": "NBA",
       "abbreviation": "NO",
-      "displayName": "New Orleans Pelicans"
+      "displayName": "New Orleans Pelicans",
+      "shortName": "Pelicans"
     },
     {
       "id": "nba-ny",
       "league": "NBA",
       "abbreviation": "NY",
-      "displayName": "New York Knicks"
+      "displayName": "New York Knicks",
+      "shortName": "Knicks"
     },
     {
       "id": "nba-okc",
       "league": "NBA",
       "abbreviation": "OKC",
-      "displayName": "Oklahoma City Thunder"
+      "displayName": "Oklahoma City Thunder",
+      "shortName": "Thunder"
     },
     {
       "id": "nba-orl",
       "league": "NBA",
       "abbreviation": "ORL",
-      "displayName": "Orlando Magic"
+      "displayName": "Orlando Magic",
+      "shortName": "Magic"
     },
     {
       "id": "nba-phi",
       "league": "NBA",
       "abbreviation": "PHI",
-      "displayName": "Philadelphia 76ers"
+      "displayName": "Philadelphia 76ers",
+      "shortName": "76ers"
     },
     {
       "id": "nba-phx",
       "league": "NBA",
       "abbreviation": "PHX",
-      "displayName": "Phoenix Suns"
+      "displayName": "Phoenix Suns",
+      "shortName": "Suns"
     },
     {
       "id": "nba-por",
       "league": "NBA",
       "abbreviation": "POR",
-      "displayName": "Portland Trail Blazers"
+      "displayName": "Portland Trail Blazers",
+      "shortName": "Trail Blazers"
     },
     {
       "id": "nba-sa",
       "league": "NBA",
       "abbreviation": "SA",
-      "displayName": "San Antonio Spurs"
+      "displayName": "San Antonio Spurs",
+      "shortName": "Spurs"
     },
     {
       "id": "nba-sac",
       "league": "NBA",
       "abbreviation": "SAC",
-      "displayName": "Sacramento Kings"
+      "displayName": "Sacramento Kings",
+      "shortName": "Kings"
     },
     {
       "id": "nba-tor",
       "league": "NBA",
       "abbreviation": "TOR",
-      "displayName": "Toronto Raptors"
+      "displayName": "Toronto Raptors",
+      "shortName": "Raptors"
     },
     {
       "id": "nba-utah",
       "league": "NBA",
       "abbreviation": "UTAH",
-      "displayName": "Utah Jazz"
+      "displayName": "Utah Jazz",
+      "shortName": "Jazz"
     },
     {
       "id": "nba-wsh",
       "league": "NBA",
       "abbreviation": "WSH",
-      "displayName": "Washington Wizards"
+      "displayName": "Washington Wizards",
+      "shortName": "Wizards"
     },
     {
       "id": "nfl-ari",
       "league": "NFL",
       "abbreviation": "ARI",
-      "displayName": "Arizona Cardinals"
+      "displayName": "Arizona Cardinals",
+      "shortName": "Cardinals"
     },
     {
       "id": "nfl-atl",
       "league": "NFL",
       "abbreviation": "ATL",
-      "displayName": "Atlanta Falcons"
+      "displayName": "Atlanta Falcons",
+      "shortName": "Falcons"
     },
     {
       "id": "nfl-bal",
       "league": "NFL",
       "abbreviation": "BAL",
-      "displayName": "Baltimore Ravens"
+      "displayName": "Baltimore Ravens",
+      "shortName": "Ravens"
     },
     {
       "id": "nfl-buf",
       "league": "NFL",
       "abbreviation": "BUF",
-      "displayName": "Buffalo Bills"
+      "displayName": "Buffalo Bills",
+      "shortName": "Bills"
     },
     {
       "id": "nfl-car",
       "league": "NFL",
       "abbreviation": "CAR",
-      "displayName": "Carolina Panthers"
+      "displayName": "Carolina Panthers",
+      "shortName": "Panthers"
     },
     {
       "id": "nfl-chi",
       "league": "NFL",
       "abbreviation": "CHI",
-      "displayName": "Chicago Bears"
+      "displayName": "Chicago Bears",
+      "shortName": "Bears"
     },
     {
       "id": "nfl-cin",
       "league": "NFL",
       "abbreviation": "CIN",
-      "displayName": "Cincinnati Bengals"
+      "displayName": "Cincinnati Bengals",
+      "shortName": "Bengals"
     },
     {
       "id": "nfl-cle",
       "league": "NFL",
       "abbreviation": "CLE",
-      "displayName": "Cleveland Browns"
+      "displayName": "Cleveland Browns",
+      "shortName": "Browns"
     },
     {
       "id": "nfl-dal",
       "league": "NFL",
       "abbreviation": "DAL",
-      "displayName": "Dallas Cowboys"
+      "displayName": "Dallas Cowboys",
+      "shortName": "Cowboys"
     },
     {
       "id": "nfl-den",
       "league": "NFL",
       "abbreviation": "DEN",
-      "displayName": "Denver Broncos"
+      "displayName": "Denver Broncos",
+      "shortName": "Broncos"
     },
     {
       "id": "nfl-det",
       "league": "NFL",
       "abbreviation": "DET",
-      "displayName": "Detroit Lions"
+      "displayName": "Detroit Lions",
+      "shortName": "Lions"
     },
     {
       "id": "nfl-gb",
       "league": "NFL",
       "abbreviation": "GB",
-      "displayName": "Green Bay Packers"
+      "displayName": "Green Bay Packers",
+      "shortName": "Packers"
     },
     {
       "id": "nfl-hou",
       "league": "NFL",
       "abbreviation": "HOU",
-      "displayName": "Houston Texans"
+      "displayName": "Houston Texans",
+      "shortName": "Texans"
     },
     {
       "id": "nfl-ind",
       "league": "NFL",
       "abbreviation": "IND",
-      "displayName": "Indianapolis Colts"
+      "displayName": "Indianapolis Colts",
+      "shortName": "Colts"
     },
     {
       "id": "nfl-jax",
       "league": "NFL",
       "abbreviation": "JAX",
-      "displayName": "Jacksonville Jaguars"
+      "displayName": "Jacksonville Jaguars",
+      "shortName": "Jaguars"
     },
     {
       "id": "nfl-kc",
       "league": "NFL",
       "abbreviation": "KC",
-      "displayName": "Kansas City Chiefs"
+      "displayName": "Kansas City Chiefs",
+      "shortName": "Chiefs"
     },
     {
       "id": "nfl-lac",
       "league": "NFL",
       "abbreviation": "LAC",
-      "displayName": "Los Angeles Chargers"
+      "displayName": "Los Angeles Chargers",
+      "shortName": "Chargers"
     },
     {
       "id": "nfl-lar",
       "league": "NFL",
       "abbreviation": "LAR",
-      "displayName": "Los Angeles Rams"
+      "displayName": "Los Angeles Rams",
+      "shortName": "Rams"
     },
     {
       "id": "nfl-lv",
       "league": "NFL",
       "abbreviation": "LV",
-      "displayName": "Las Vegas Raiders"
+      "displayName": "Las Vegas Raiders",
+      "shortName": "Raiders"
     },
     {
       "id": "nfl-mia",
       "league": "NFL",
       "abbreviation": "MIA",
-      "displayName": "Miami Dolphins"
+      "displayName": "Miami Dolphins",
+      "shortName": "Dolphins"
     },
     {
       "id": "nfl-min",
       "league": "NFL",
       "abbreviation": "MIN",
-      "displayName": "Minnesota Vikings"
+      "displayName": "Minnesota Vikings",
+      "shortName": "Vikings"
     },
     {
       "id": "nfl-ne",
       "league": "NFL",
       "abbreviation": "NE",
-      "displayName": "New England Patriots"
+      "displayName": "New England Patriots",
+      "shortName": "Patriots"
     },
     {
       "id": "nfl-no",
       "league": "NFL",
       "abbreviation": "NO",
-      "displayName": "New Orleans Saints"
+      "displayName": "New Orleans Saints",
+      "shortName": "Saints"
     },
     {
       "id": "nfl-nyg",
       "league": "NFL",
       "abbreviation": "NYG",
-      "displayName": "New York Giants"
+      "displayName": "New York Giants",
+      "shortName": "Giants"
     },
     {
       "id": "nfl-nyj",
       "league": "NFL",
       "abbreviation": "NYJ",
-      "displayName": "New York Jets"
+      "displayName": "New York Jets",
+      "shortName": "Jets"
     },
     {
       "id": "nfl-phi",
       "league": "NFL",
       "abbreviation": "PHI",
-      "displayName": "Philadelphia Eagles"
+      "displayName": "Philadelphia Eagles",
+      "shortName": "Eagles"
     },
     {
       "id": "nfl-pit",
       "league": "NFL",
       "abbreviation": "PIT",
-      "displayName": "Pittsburgh Steelers"
+      "displayName": "Pittsburgh Steelers",
+      "shortName": "Steelers"
     },
     {
       "id": "nfl-sea",
       "league": "NFL",
       "abbreviation": "SEA",
-      "displayName": "Seattle Seahawks"
+      "displayName": "Seattle Seahawks",
+      "shortName": "Seahawks"
     },
     {
       "id": "nfl-sf",
       "league": "NFL",
       "abbreviation": "SF",
-      "displayName": "San Francisco 49ers"
+      "displayName": "San Francisco 49ers",
+      "shortName": "49ers"
     },
     {
       "id": "nfl-tb",
       "league": "NFL",
       "abbreviation": "TB",
-      "displayName": "Tampa Bay Buccaneers"
+      "displayName": "Tampa Bay Buccaneers",
+      "shortName": "Buccaneers"
     },
     {
       "id": "nfl-ten",
       "league": "NFL",
       "abbreviation": "TEN",
-      "displayName": "Tennessee Titans"
+      "displayName": "Tennessee Titans",
+      "shortName": "Titans"
     },
     {
       "id": "nfl-wsh",
       "league": "NFL",
       "abbreviation": "WSH",
-      "displayName": "Washington Commanders"
+      "displayName": "Washington Commanders",
+      "shortName": "Commanders"
     },
     {
       "id": "nhl-ana",
       "league": "NHL",
       "abbreviation": "ANA",
-      "displayName": "Anaheim Ducks"
+      "displayName": "Anaheim Ducks",
+      "shortName": "Ducks"
     },
     {
       "id": "nhl-bos",
       "league": "NHL",
       "abbreviation": "BOS",
-      "displayName": "Boston Bruins"
+      "displayName": "Boston Bruins",
+      "shortName": "Bruins"
     },
     {
       "id": "nhl-buf",
       "league": "NHL",
       "abbreviation": "BUF",
-      "displayName": "Buffalo Sabres"
+      "displayName": "Buffalo Sabres",
+      "shortName": "Sabres"
     },
     {
       "id": "nhl-car",
       "league": "NHL",
       "abbreviation": "CAR",
-      "displayName": "Carolina Hurricanes"
+      "displayName": "Carolina Hurricanes",
+      "shortName": "Hurricanes"
     },
     {
       "id": "nhl-cbj",
       "league": "NHL",
       "abbreviation": "CBJ",
-      "displayName": "Columbus Blue Jackets"
+      "displayName": "Columbus Blue Jackets",
+      "shortName": "Blue Jackets"
     },
     {
       "id": "nhl-cgy",
       "league": "NHL",
       "abbreviation": "CGY",
-      "displayName": "Calgary Flames"
+      "displayName": "Calgary Flames",
+      "shortName": "Flames"
     },
     {
       "id": "nhl-chi",
       "league": "NHL",
       "abbreviation": "CHI",
-      "displayName": "Chicago Blackhawks"
+      "displayName": "Chicago Blackhawks",
+      "shortName": "Blackhawks"
     },
     {
       "id": "nhl-col",
       "league": "NHL",
       "abbreviation": "COL",
-      "displayName": "Colorado Avalanche"
+      "displayName": "Colorado Avalanche",
+      "shortName": "Avalanche"
     },
     {
       "id": "nhl-dal",
       "league": "NHL",
       "abbreviation": "DAL",
-      "displayName": "Dallas Stars"
+      "displayName": "Dallas Stars",
+      "shortName": "Stars"
     },
     {
       "id": "nhl-det",
       "league": "NHL",
       "abbreviation": "DET",
-      "displayName": "Detroit Red Wings"
+      "displayName": "Detroit Red Wings",
+      "shortName": "Red Wings"
     },
     {
       "id": "nhl-edm",
       "league": "NHL",
       "abbreviation": "EDM",
-      "displayName": "Edmonton Oilers"
+      "displayName": "Edmonton Oilers",
+      "shortName": "Oilers"
     },
     {
       "id": "nhl-fla",
       "league": "NHL",
       "abbreviation": "FLA",
-      "displayName": "Florida Panthers"
+      "displayName": "Florida Panthers",
+      "shortName": "Panthers"
     },
     {
       "id": "nhl-la",
       "league": "NHL",
       "abbreviation": "LA",
-      "displayName": "Los Angeles Kings"
+      "displayName": "Los Angeles Kings",
+      "shortName": "Kings"
     },
     {
       "id": "nhl-min",
       "league": "NHL",
       "abbreviation": "MIN",
-      "displayName": "Minnesota Wild"
+      "displayName": "Minnesota Wild",
+      "shortName": "Wild"
     },
     {
       "id": "nhl-mtl",
       "league": "NHL",
       "abbreviation": "MTL",
-      "displayName": "Montreal Canadiens"
+      "displayName": "Montreal Canadiens",
+      "shortName": "Canadiens"
     },
     {
       "id": "nhl-nj",
       "league": "NHL",
       "abbreviation": "NJ",
-      "displayName": "New Jersey Devils"
+      "displayName": "New Jersey Devils",
+      "shortName": "Devils"
     },
     {
       "id": "nhl-nsh",
       "league": "NHL",
       "abbreviation": "NSH",
-      "displayName": "Nashville Predators"
+      "displayName": "Nashville Predators",
+      "shortName": "Predators"
     },
     {
       "id": "nhl-nyi",
       "league": "NHL",
       "abbreviation": "NYI",
-      "displayName": "New York Islanders"
+      "displayName": "New York Islanders",
+      "shortName": "Islanders"
     },
     {
       "id": "nhl-nyr",
       "league": "NHL",
       "abbreviation": "NYR",
-      "displayName": "New York Rangers"
+      "displayName": "New York Rangers",
+      "shortName": "Rangers"
     },
     {
       "id": "nhl-ott",
       "league": "NHL",
       "abbreviation": "OTT",
-      "displayName": "Ottawa Senators"
+      "displayName": "Ottawa Senators",
+      "shortName": "Senators"
     },
     {
       "id": "nhl-phi",
       "league": "NHL",
       "abbreviation": "PHI",
-      "displayName": "Philadelphia Flyers"
+      "displayName": "Philadelphia Flyers",
+      "shortName": "Flyers"
     },
     {
       "id": "nhl-pit",
       "league": "NHL",
       "abbreviation": "PIT",
-      "displayName": "Pittsburgh Penguins"
+      "displayName": "Pittsburgh Penguins",
+      "shortName": "Penguins"
     },
     {
       "id": "nhl-sea",
       "league": "NHL",
       "abbreviation": "SEA",
-      "displayName": "Seattle Kraken"
+      "displayName": "Seattle Kraken",
+      "shortName": "Kraken"
     },
     {
       "id": "nhl-sj",
       "league": "NHL",
       "abbreviation": "SJ",
-      "displayName": "San Jose Sharks"
+      "displayName": "San Jose Sharks",
+      "shortName": "Sharks"
     },
     {
       "id": "nhl-stl",
       "league": "NHL",
       "abbreviation": "STL",
-      "displayName": "St. Louis Blues"
+      "displayName": "St. Louis Blues",
+      "shortName": "Blues"
     },
     {
       "id": "nhl-tb",
       "league": "NHL",
       "abbreviation": "TB",
-      "displayName": "Tampa Bay Lightning"
+      "displayName": "Tampa Bay Lightning",
+      "shortName": "Lightning"
     },
     {
       "id": "nhl-tor",
       "league": "NHL",
       "abbreviation": "TOR",
-      "displayName": "Toronto Maple Leafs"
+      "displayName": "Toronto Maple Leafs",
+      "shortName": "Maple Leafs"
     },
     {
       "id": "nhl-utah",
       "league": "NHL",
       "abbreviation": "UTAH",
-      "displayName": "Utah Mammoth"
+      "displayName": "Utah Mammoth",
+      "shortName": "Mammoth"
     },
     {
       "id": "nhl-van",
       "league": "NHL",
       "abbreviation": "VAN",
-      "displayName": "Vancouver Canucks"
+      "displayName": "Vancouver Canucks",
+      "shortName": "Canucks"
     },
     {
       "id": "nhl-vgk",
       "league": "NHL",
       "abbreviation": "VGK",
-      "displayName": "Vegas Golden Knights"
+      "displayName": "Vegas Golden Knights",
+      "shortName": "Golden Knights"
     },
     {
       "id": "nhl-wpg",
       "league": "NHL",
       "abbreviation": "WPG",
-      "displayName": "Winnipeg Jets"
+      "displayName": "Winnipeg Jets",
+      "shortName": "Jets"
     },
     {
       "id": "nhl-wsh",
       "league": "NHL",
       "abbreviation": "WSH",
-      "displayName": "Washington Capitals"
+      "displayName": "Washington Capitals",
+      "shortName": "Capitals"
     }
   ]
 }

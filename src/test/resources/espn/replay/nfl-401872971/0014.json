@@ -1,0 +1,57 @@
+{
+ "events": [
+  {
+   "id": "401872971",
+   "date": "2026-10-04T17:00Z",
+   "shortName": "NE @ BUF",
+   "season": {
+    "type": 2
+   },
+   "competitions": [
+    {
+     "status": {
+      "clock": 499.0,
+      "displayClock": "8:19",
+      "period": 1,
+      "type": {
+       "id": "2",
+       "name": "STATUS_IN_PROGRESS",
+       "state": "in",
+       "completed": false,
+       "description": "In Progress",
+       "detail": "8:19 - 1st Quarter",
+       "shortDetail": "8:19 - 1st"
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "BUF",
+        "displayName": "Buffalo Bills",
+        "logo": "https://a.espncdn.com/i/teamlogos/nfl/500/scoreboard/buf.png"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "NE",
+        "displayName": "New England Patriots",
+        "logo": "https://a.espncdn.com/i/teamlogos/nfl/500/scoreboard/ne.png"
+       }
+      }
+     ],
+     "situation": {
+      "outs": null,
+      "lastPlay": {
+       "text": " D.Maye pass incomplete short right to R.Stevenson (D.Igbinosun)."
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "_note": "captured live: recording nfl/20261004T171325Z.json.gz, trimmed to one game by scripts/trim-espn-fixture.py"
+}

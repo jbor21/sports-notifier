@@ -60,11 +60,6 @@ public final class AlertCatalog {
         return out;
     }
 
-    /** The league's scoring alerts (category {@code scoring}), in catalog order. */
-    public List<String> scoringTypes(String league) {
-        return forLeague(league).stream().filter(t -> "scoring".equals(t.category())).map(AlertType::type).toList();
-    }
-
     /**
      * Why this switch can't be saved on this follow: {@code unknown_type}, {@code not_for_this_follow},
      * {@code bad_option}; empty if it can.

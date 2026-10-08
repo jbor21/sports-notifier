@@ -137,12 +137,43 @@ class PollDecisionTest {
     }
 
     @Test
-    void clockOnlyChangeIsNothing() {
-        assertTrue(PollDecision.decide(record("IN_PROGRESS", 50, 48, LIVE_SEQ), snap(LIVE, "IN_PROGRESS", 50, 48), NOW).isEmpty());
+    void clockOnlyChangeSendsGameSync() {
+        // 3.3's detectors need the clock (close game late, a failed NFL try), so a moving clock is a play.
+        assertEquals("GAME_SYNC", decide(record("IN_PROGRESS", 50, 48, LIVE_SEQ), snap(LIVE, "IN_PROGRESS", 50, 48)).getEventType());
+    }
+
+    @Test
+    void sameSeqSendsNothing() {
+        GameSnapshot s = snap(LIVE, "IN_PROGRESS", 50, 48);
+        assertTrue(PollDecision.decide(record("IN_PROGRESS", 50, 48, String.valueOf(Seq.of(s))), s, NOW).isEmpty());
     }
 
     @Test
     void finalSeenAgainIsNothing() {
-        assertTrue(PollDecision.decide(record("FINAL", 101, 99, LIVE_SEQ), snap(FINAL, "FINAL", 101, 99), NOW).isEmpty());
+        GameSnapshot s = snap(FINAL, "FINAL", 101, 99);
+        assertTrue(PollDecision.decide(record("FINAL", 101, 99, String.valueOf(Seq.of(s))), s, NOW).isEmpty());
+    }
+
+    @Test
+    void firstSightStillQuiet() {
+        assertEquals("GAME_SYNC", decide(Map.of(), snap(LIVE, "IN_PROGRESS", 50, 48)).getEventType());
+    }
+
+    @Test
+    void eventCarriesPosition() {
+        GameSnapshot s = new GameSnapshot("nhl-9", "NHL", "BOS", "NYR", 2, 2, LIVE, 5, Half.TOP, 1234, 0,
+            Stage.IN_PLAY, "IN_PROGRESS", NOW, 2, "SO");
+        GameEvent e = PollDecision.decide(record("IN_PROGRESS", 2, 2, LIVE_SEQ), s, NOW).orElseThrow();
+        assertEquals("LIVE", e.getPhase());
+        assertEquals(5, e.getPeriod());
+        assertEquals(1234, e.getClockTenths());
+        assertEquals("TOP", e.getHalf());
+        assertEquals(0, e.getOuts());
+        assertEquals("IN_PLAY", e.getStage());
+        assertEquals(2, e.getSeasonType());
+        assertEquals("SO", e.getDetail());
+        GameEvent v = e.withVersion(7);
+        assertEquals(5, v.getPeriod());
+        assertEquals("SO", v.getDetail());
     }
 }

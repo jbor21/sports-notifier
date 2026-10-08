@@ -42,6 +42,8 @@ def main():
                 "league": league,
                 "abbreviation": abbr,
                 "displayName": t["displayName"],
+                # "Red Sox", "Bears": what alert text calls the team.
+                "shortName": t.get("shortDisplayName") or abbr,
             })
     teams.sort(key=lambda t: (t["league"], t["id"]))
     ids = [t["id"] for t in teams]

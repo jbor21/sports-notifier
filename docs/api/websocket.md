@@ -38,12 +38,12 @@ A new alert for this user, as one push: a headline plus anything merged into it.
 {
   "type": "notification",
   "notification": {
-    "id": "n_5521",
+    "id": "nfl-401872948:SCORE:away:3",
     "kind": "game_moment",
     "leagueId": "NFL",
     "createdAt": "2026-10-04T20:01:14Z",
-    "headline": { "type": "TOUCHDOWN", "text": "TD Raiders! Extra point pending." },
-    "extras": [{ "type": "LEAD_CHANGE", "text": "Raiders take the lead." }],
+    "headline": { "type": "TOUCHDOWN", "text": "Touchdown Raiders! Extra point pending. Raiders 20, Bears 17 · Q4 4:12" },
+    "extras": [{ "type": "LEAD_CHANGE", "text": "Raiders take the lead. Raiders 20, Bears 17 · Q4 4:12" }],
     "game": {
       "id": "nfl-401872948",
       "home": { "team": { "id": "nfl-chi", "abbreviation": "CHI", "displayName": "Chicago Bears" }, "score": 17 },

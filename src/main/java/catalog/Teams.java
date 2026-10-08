@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -15,7 +16,8 @@ import java.util.TreeMap;
 /** The team list in {@code catalog/teams.json}, written by {@code scripts/fetch-teams.py}. */
 public final class Teams {
 
-    public record Team(String id, String league, String abbreviation, String displayName) {}
+    /** {@code shortName} is what alert text calls the team ("Red Sox"); the abbreviation if teams.json has none. */
+    public record Team(String id, String league, String abbreviation, String displayName, String shortName) {}
 
     private final Map<String, Team> byId;
 
@@ -30,7 +32,8 @@ public final class Teams {
             for (JsonElement el : JsonParser.parseReader(r).getAsJsonObject().getAsJsonArray("teams")) {
                 JsonObject t = el.getAsJsonObject();
                 Team team = new Team(t.get("id").getAsString(), t.get("league").getAsString(),
-                        t.get("abbreviation").getAsString(), t.get("displayName").getAsString());
+                        t.get("abbreviation").getAsString(), t.get("displayName").getAsString(),
+                        t.has("shortName") ? t.get("shortName").getAsString() : t.get("abbreviation").getAsString());
                 byId.put(team.id(), team);
             }
             return new Teams(byId);
@@ -41,6 +44,10 @@ public final class Teams {
 
     public Optional<Team> find(String teamId) {
         return teamId == null ? Optional.empty() : Optional.ofNullable(byId.get(teamId));
+    }
+
+    public Collection<Team> all() {
+        return byId.values();
     }
 
     public Map<String, Long> countsByLeague() {

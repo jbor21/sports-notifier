@@ -1,0 +1,57 @@
+{
+ "events": [
+  {
+   "id": "401891831",
+   "date": "2026-10-03T00:00Z",
+   "shortName": "BOS @ WPG",
+   "season": {
+    "type": 2
+   },
+   "competitions": [
+    {
+     "status": {
+      "clock": 567.0,
+      "displayClock": "9:27",
+      "period": 2,
+      "type": {
+       "id": "2",
+       "name": "STATUS_IN_PROGRESS",
+       "state": "in",
+       "completed": false,
+       "description": "In Progress",
+       "detail": "9:27 - 2nd Period",
+       "shortDetail": "9:27 - 2nd"
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "2",
+       "team": {
+        "abbreviation": "WPG",
+        "displayName": "Winnipeg Jets",
+        "logo": "https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/wpg.png"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "2",
+       "team": {
+        "abbreviation": "BOS",
+        "displayName": "Boston Bruins",
+        "logo": "https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/bos.png"
+       }
+      }
+     ],
+     "situation": {
+      "outs": null,
+      "lastPlay": {
+       "text": "Goalie Stopped"
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "_note": "captured live: recording nhl/20261003T013617Z.json.gz, trimmed to one game by scripts/trim-espn-fixture.py"
+}

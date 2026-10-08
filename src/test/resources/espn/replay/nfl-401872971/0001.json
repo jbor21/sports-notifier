@@ -1,0 +1,51 @@
+{
+ "events": [
+  {
+   "id": "401872971",
+   "date": "2026-10-04T17:00Z",
+   "shortName": "NE @ BUF",
+   "season": {
+    "type": 2
+   },
+   "competitions": [
+    {
+     "status": {
+      "clock": 0.0,
+      "displayClock": "0:00",
+      "period": 0,
+      "type": {
+       "id": "1",
+       "name": "STATUS_SCHEDULED",
+       "state": "pre",
+       "completed": false,
+       "description": "Scheduled",
+       "detail": "Sun, October 4th at 1:00 PM EDT",
+       "shortDetail": "10/4 - 1:00 PM EDT"
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "BUF",
+        "displayName": "Buffalo Bills",
+        "logo": "https://a.espncdn.com/i/teamlogos/nfl/500/scoreboard/buf.png"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "NE",
+        "displayName": "New England Patriots",
+        "logo": "https://a.espncdn.com/i/teamlogos/nfl/500/scoreboard/ne.png"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "_note": "captured live: recording nfl/20261002T192750Z.json.gz, trimmed to one game by scripts/trim-espn-fixture.py"
+}

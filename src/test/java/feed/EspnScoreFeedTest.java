@@ -174,4 +174,41 @@ class EspnScoreFeedTest {
         assertEquals("IN_PROGRESS", g.status());
         assertEquals(3000, g.clockTenths());
     }
+
+    private static String liveNfl(String extraEvent, String status) {
+        return "{\"events\":[{\"id\":\"5\",\"date\":\"2026-10-04T17:00Z\"" + extraEvent + ",\"competitions\":[{"
+            + "\"status\":" + status + ","
+            + "\"competitors\":[{\"homeAway\":\"home\",\"score\":\"7\",\"team\":{\"abbreviation\":\"CHI\"}},"
+            + "{\"homeAway\":\"away\",\"score\":\"3\",\"team\":{\"abbreviation\":\"LV\"}}]}]}]}";
+    }
+
+    @Test
+    void readsSeasonTypeAndDetail() {
+        GameSnapshot g = EspnScoreFeed.parse(liveNfl(",\"season\":{\"year\":2026,\"type\":3}",
+            "{\"clock\":300.0,\"period\":6,\"type\":{\"name\":\"STATUS_IN_PROGRESS\",\"state\":\"in\",\"completed\":false,\"shortDetail\":\"2nd OT\"}}"),
+            "NFL").get(0);
+        assertEquals(3, g.seasonType());
+        assertEquals("2nd OT", g.detail());
+    }
+
+    @Test
+    void missingSeasonAndDetailDefault() {
+        GameSnapshot g = EspnScoreFeed.parse(liveNfl("",
+            "{\"clock\":300.0,\"period\":2,\"type\":{\"name\":\"STATUS_IN_PROGRESS\",\"state\":\"in\",\"completed\":false}}"),
+            "NFL").get(0);
+        assertEquals(2, g.seasonType());
+        assertNull(g.detail());
+    }
+
+    @Test
+    void missingClockIsMinusOne() {
+        // 0 would read as 0:00 left: late enough for "close game late" at the start of a 4th quarter.
+        GameSnapshot g = EspnScoreFeed.parse(liveNfl("",
+            "{\"period\":4,\"type\":{\"name\":\"STATUS_IN_PROGRESS\",\"state\":\"in\",\"completed\":false}}"),
+            "NFL").get(0);
+        assertEquals(-1, g.clockTenths());
+        GameSnapshot zero = new GameSnapshot(g.gameId(), g.league(), g.homeTeam(), g.awayTeam(), g.homeScore(), g.awayScore(),
+            g.phase(), g.period(), g.half(), 0, g.outs(), g.stage(), g.status(), g.startTimeMillis(), g.seasonType(), g.detail());
+        assertEquals(Seq.of(zero), Seq.of(g));
+    }
 }

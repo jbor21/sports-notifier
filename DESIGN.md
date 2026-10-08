@@ -2,7 +2,7 @@
 
 This is the map of the project: what it does today, what we are changing it into, and every decision we made on the way. It is written so you can explain the system without reading the code line by line.
 
-Last updated 2026-10-07. Phases 1, 2, 3.1, and 3.2 are built (see "Build order"). "What exists today" describes the course version as it was before the redesign.
+Last updated 2026-10-08. Phases 1, 2, 3.1, and 3.2 are merged; 3.3 is built (see "Build order"). "What exists today" describes the course version as it was before the redesign.
 
 Revised 2026-09-28: hosting moved from one always-on Hetzner VM to Kubernetes, run on your laptop (k3d) and on AWS (EKS) only when you want it up. Kafka gets three brokers in the cloud. The evidence step became a correctness checker plus a chaos suite. Decisions 2, 6, 7, and 9 changed; 12 through 14 are new.
 
@@ -14,6 +14,8 @@ Revised 2026-10-02: Phase 2 built (live-game check and merge pending); the fix l
 
 Revised 2026-10-07: Phase 3 is split into 3.1–3.4 (build order). 3.1, the Kafka pipeline, is built. Decision 5's crash window closes with an outbox in Redis and one unsent play per game; the script heals an ESPN clock that runs ahead of reality; a per-game `version` counter orders accepted plays.
 
+
+Revised 2026-10-07 (Phase 3.3 spec): decision 15's detectors run in Stage 1 with their memory in `det:<gameId>`; the poller sends every change of game position; a score's alert id counts scoring alerts fired, which never goes down; a push's id is its headline alert's id and the final is sent after the moment's push; "most specific follow wins" uses `sub:<kind>:<target>:ANY` sets.
 ---
 
 ## The full picture
@@ -490,26 +492,26 @@ The catalog promises only these.
 
 **Detection that does not depend on catching a brief moment:**
 
-- **Period ends** are detected from the period number going up, not from ESPN's short "end of period" status, which a poll can miss.
-- **Clock thresholds** (5:00, 2:00) count as crossed when one snapshot is above and the next is at or below, even if no snapshot shows the exact time.
+- **Period ends** are detected from whichever comes first: ESPN's short "end of period" or halftime status, or the period number going up (the status can fall between polls). One flag per period stops the second sighting, and halftime always ends the 2nd quarter, even when ESPN already shows period 3.
+- **Clock thresholds** (5:00, 2:00) are judged on snapshots, not on an exact crossing. Close game late and a failed NFL try need the condition on two plays in a row, because a single snapshot can carry a wrong clock (seen: 0:00 mid-period).
 
-**Score corrections.** When a touchdown is overturned or a stat is corrected, the score goes down. That sends no alert. Detectors update their state from the corrected score, and the score counter keeps counting up, so a later real score still alerts.
+**Score corrections.** When a goal or touchdown is overturned, the score goes down. Once the lower score has held (60 seconds of game clock, MLB two more plays, a new period, or the final), the same followers get "Rangers goal overturned" with the corrected score, under the scoring switch it undoes, and its id takes the next value of the scoring counter. A drop that comes back first was an ESPN glitch: it sends nothing, and the goal is not announced twice. The recordings show both: real overturns drop at the stopped clock of the review and stay down; glitches drop while the clock runs and are back within seconds (up to 27 seen). Revised 2026-10-08 (Phase 3.3); it used to send nothing.
 
 **No alert is sent twice.** Every alert has a deterministic id built from the game, the alert type, and what makes it distinct:
 
 - the period, for a period end;
 - the inning, for an end of inning or a no-hitter update;
-- the scoring team and that team's count of scoring events this game, for a score;
+- the scoring team and how many scoring alerts that team has fired this game, for a score. A counter, not the score: after an overturned goal (3 → 2) the next real goal is the score's "3rd" again, and an id built from the score would be dropped as a duplicate;
 - the lead change's sequence number, for a lead change;
 - nothing extra, for once-per-game alerts.
 
-Retries, repeated snapshots, and two pollers overlapping during a rolling update all produce the same id. The "already fired" flags live with the game state in Redis and are claimed atomically. The per-user dedup key is `notif:<alertId>:<userId>` (decision 5), so a crash and retry after a partial delivery does not notify anyone twice.
+Retries, repeated snapshots, and two pollers overlapping during a rolling update all produce the same id. The "already fired" flags and the counters live in Stage 1's per-game memory, `det:<gameId>`, written only if the play's version is higher, after the play's notifications are confirmed; a re-read finds the same alerts with the same ids. A push's id is its headline alert's id, and the per-user dedup key is `notif:<alertId>:<userId>` (decision 5), so a crash and retry after a partial delivery does not notify anyone twice. When one snapshot produces a push and the final for the same user, the final is sent after it in the user's lane.
 
 #### How alerts are detected
 
 ESPN gives facts: a score, a clock, a status. "Close game," "lead change," and "comeback on" are not in the feed. They come from comparing this snapshot with the previous one for the same game. That comparison is a set of small detectors, one per alert type. Each is a pure function of (previous state, current state) → alerts, so each one is unit-tested without Redis or Kafka.
 
-The previous state and the "already fired" flags live with the game state in Redis, next to the score the Lua script owns. Detection is correct because every snapshot for a game is handled in order: `game-events` is keyed by game id, so one worker owns a game at a time (decision 4). The exact place the detectors run, and how they survive a crash between detection and produce, is settled in the Phase 3 spec.
+The previous state and the "already fired" flags live with the game state in Redis, next to the score the Lua script owns. Detection is correct because every snapshot for a game is handled in order: `game-events` is keyed by game id, so one worker owns a game at a time (decision 4). The detectors run in Stage 1. Their memory for a game is `det:<gameId>` in Redis, written after the play's notifications are confirmed and only if the play's version is higher, so a crash between detection and produce re-detects the same alerts with the same ids. The poller sends a play on every change of game position, not only on scores, so clock and period facts reach the detectors (Phase 3.3 spec).
 
 Starting soon and the daily league summary are not triggered by a snapshot. They come from a small scheduler that reads the schedule and each user's timezone, which is stored with their preferences.
 
@@ -523,7 +525,9 @@ At fan-out, the audience for an alert in one game is built in a few set operatio
 2. Plus the two teams' sets, minus anyone who follows this game.
 3. Plus the league's set, minus anyone who follows this game or either team.
 
-The result is already filtered, and a user reached through several follows appears once. This removes the per-subscriber `SISMEMBER` loop from the fix list. The sets can be rebuilt from Postgres like the rest of Redis (decision 8). Chosen innings for MLB are checked at delivery, because they are rare and small.
+"Anyone who follows" is a set per target, `sub:<kind>:<target>:ANY`, written with the others.
+
+The result is already filtered, and a user reached through several follows appears once. This removes the per-subscriber `SISMEMBER` loop from the fix list. The sets can be rebuilt from Postgres like the rest of Redis (decision 8). Chosen innings for MLB are sets of their own (`…:END_OF_INNING:<n>`), written at save time, so delivery looks nothing up.
 
 #### Gave up, why, and build order
 
@@ -613,9 +617,9 @@ We implement in this order. The system runs at the end of each step. Everything 
 1. **Foundation.** Flatten `com3810/`. One Dockerfile, `SERVICE` picks the main. A Helm chart running the current services and Redis on k3d. Tests in GitHub Actions. **Done.**
 2. **Correctness and security.** The bugs above, retries, the provider interface, poller snapshots in Redis, poller ids from ESPN's data. **Done** (PR #2, 2026-10-02). Fixes from 60 hours of recorded ESPN data followed in PR #4. Issue #3, the by-hand live-game check, was closed 2026-10-07 as covered by those recordings and the smoke test's WebSocket check; the full live check happens with the new UI.
 3. **The new pipeline**, split into four sub-phases, each with its own spec, plan, and PR:
-   - **3.1 Kafka pipeline.** Kafka through Strimzi with one broker, the two topics, script-then-produce with the outbox, Stage 1 and Stage 2 consumer groups, per-user dedup, gateway routing (decision 13). **Built** 2026-10-07 (spec and plan `2026-10-06-phase-3-1-kafka-pipeline`).
-   - **3.2 Postgres.** Accounts, follows shaped for decision 15, notification history, Redis subscriber sets rebuilt on startup, the `/auth`, `/me`, `/follows`, `/notifications` endpoints of `docs/api/`. The course UI stops working here; the new UI arrives in 3b. **Built** 2026-10-07 (spec and plan `2026-10-07-phase-3-2-postgres`; history writers are their own consumer group; follow saves commit to Postgres before Redis).
-   - **3.3 Alerts, wave 1.** The detector framework and wave 1 detectors in Stage 1, most-specific-follow set math, combining, deterministic alert ids (decision 15).
+   - **3.1 Kafka pipeline.** Kafka through Strimzi with one broker, the two topics, script-then-produce with the outbox, Stage 1 and Stage 2 consumer groups, per-user dedup, gateway routing (decision 13). **Merged** (PR #6, 2026-10-07; spec and plan `2026-10-06-phase-3-1-kafka-pipeline`).
+   - **3.2 Postgres.** Accounts, follows shaped for decision 15, notification history, Redis subscriber sets rebuilt on startup, the `/auth`, `/me`, `/follows`, `/notifications` endpoints of `docs/api/`. The course UI stops working here; the new UI arrives in 3b. **Merged** (PR #13, 2026-10-07; spec and plan `2026-10-07-phase-3-2-postgres`; history writers are their own consumer group; follow saves commit to Postgres before Redis).
+   - **3.3 Alerts, wave 1.** The detector framework and wave 1 detectors in Stage 1, most-specific-follow set math, combining, deterministic alert ids (decision 15). **Built** 2026-10-08 (spec and plan `2026-10-07-phase-3-3-alerts-wave-1`; detectors replayed against the ESPN recordings; overturns alert once they hold).
    - **3.4 Live API.** `/games`, `/leagues`, the alert catalog, and live `game_update` over the WebSocket through a per-game channel.
 3b. **New UI.** A full redesign of the web UI, frontend only: it calls the gateway's API and WebSocket and has no database, auth, or server code of its own. The code lives in `web/` and ships as static files in the same Helm chart. It is built against the API spec in `docs/api/`, written before Phase 3 and implemented by Phase 3, so the UI can start early against a mock server. Built as an installable web app (PWA) so Phase 7's Web Push can reach a phone. Screens can be designed any time; the build lands after Phase 3.
 4. **Proof tools.** Recorded-game replay, the correctness checker, OpenTelemetry traces, Prometheus and Grafana for lag and latency. Alert waves 2 and 3, each detector tested against recorded games.

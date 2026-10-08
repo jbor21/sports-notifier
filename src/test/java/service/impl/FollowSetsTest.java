@@ -86,9 +86,70 @@ class FollowSetsTest {
         return out;
     }
 
+    /** The enabled switches' sets, plus the follow's ANY set. */
     private static Set<String> enabledKeys(Follow f) {
         Set<String> out = new TreeSet<>();
         f.alerts().forEach((type, s) -> { if (s.enabled()) out.add(FollowSets.key(f.kind(), f.targetId(), type)); });
+        out.add(FollowSets.key(f.kind(), f.targetId(), "ANY"));
         return out;
+    }
+
+    private void patch(Follow f, String json) {
+        assertEquals(200, follows.patch(bob, f.id(), FollowServiceTest.body(json)).status());
+    }
+
+    @Test
+    void anySetHoldsEveryFollower() {
+        Follow f = follows.create(bob, "team", "mlb-chw").body();
+        StringBuilder off = new StringBuilder("{\"alerts\":{");
+        f.alerts().keySet().forEach(t -> off.append('"').append(t).append("\":{\"enabled\":false},"));
+        off.setLength(off.length() - 1);
+        patch(f, off.append("}}").toString());
+        assertEquals(Set.of("sub:team:mlb-chw:ANY"), memberOf());
+    }
+
+    @Test
+    void deleteRemovesFromAny() {
+        Follow f = follows.create(bob, "team", "mlb-chw").body();
+        assertTrue(jedis.sismember("sub:team:mlb-chw:ANY", bob));
+        follows.delete(bob, f.id());
+        assertFalse(jedis.sismember("sub:team:mlb-chw:ANY", bob));
+    }
+
+    @Test
+    void chosenInningsGoInInningSets() {
+        Follow f = follows.create(bob, "team", "mlb-chw").body();
+        patch(f, "{\"alerts\":{\"END_OF_INNING\":{\"enabled\":true,\"options\":{\"innings\":[3,7]}}}}");
+        Set<String> in = memberOf();
+        assertTrue(in.contains("sub:team:mlb-chw:END_OF_INNING:3"));
+        assertTrue(in.contains("sub:team:mlb-chw:END_OF_INNING:7"));
+        assertFalse(in.contains("sub:team:mlb-chw:END_OF_INNING"));
+        assertFalse(in.contains("sub:team:mlb-chw:END_OF_INNING:4"));
+    }
+
+    @Test
+    void everyInningGoesInPlainSet() {
+        Follow f = follows.create(bob, "team", "mlb-chw").body();
+        patch(f, "{\"alerts\":{\"END_OF_INNING\":{\"enabled\":true}}}");
+        Set<String> in = memberOf();
+        assertTrue(in.contains("sub:team:mlb-chw:END_OF_INNING"));
+        assertTrue(in.stream().noneMatch(k -> k.startsWith("sub:team:mlb-chw:END_OF_INNING:")));
+    }
+
+    @Test
+    void switchingFromChosenToEveryMovesSets() {
+        Follow f = follows.create(bob, "team", "mlb-chw").body();
+        patch(f, "{\"alerts\":{\"END_OF_INNING\":{\"enabled\":true,\"options\":{\"innings\":[3]}}}}");
+        patch(f, "{\"alerts\":{\"END_OF_INNING\":{\"enabled\":true,\"options\":{\"innings\":[]}}}}");
+        Set<String> in = memberOf();
+        assertTrue(in.contains("sub:team:mlb-chw:END_OF_INNING"));
+        assertFalse(in.contains("sub:team:mlb-chw:END_OF_INNING:3"));
+    }
+
+    @Test
+    void disabledInningsAreInNoInningSet() {
+        Follow f = follows.create(bob, "team", "mlb-chw").body();
+        patch(f, "{\"alerts\":{\"END_OF_INNING\":{\"enabled\":false,\"options\":{\"innings\":[3]}}}}");
+        assertTrue(memberOf().stream().noneMatch(k -> k.contains("END_OF_INNING")));
     }
 }

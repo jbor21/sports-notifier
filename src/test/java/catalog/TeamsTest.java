@@ -37,4 +37,12 @@ class TeamsTest {
         assertTrue(TEAMS.find("mlb-xyz").isEmpty());
         assertTrue(TEAMS.find(null).isEmpty());
     }
+
+    @Test
+    void everyTeamHasAShortName() {
+        assertEquals("Red Sox", TEAMS.find("mlb-bos").orElseThrow().shortName());
+        assertEquals("Bears", TEAMS.find("nfl-chi").orElseThrow().shortName());
+        for (String league : TEAMS.countsByLeague().keySet()) assertNotNull(league);
+        assertTrue(TEAMS.all().stream().allMatch(t -> t.shortName() != null && !t.shortName().isBlank()));
+    }
 }

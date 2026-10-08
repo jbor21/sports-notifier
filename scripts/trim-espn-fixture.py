@@ -37,6 +37,7 @@ fixture = {
         "id": event["id"],
         "date": event.get("date"),
         "shortName": event.get("shortName"),
+        "season": {"type": (event.get("season") or {}).get("type")},
         "competitions": [trimmed_comp],
     }],
     "_note": f"captured live: recording {os.path.basename(os.path.dirname(src))}/{os.path.basename(src)}, "

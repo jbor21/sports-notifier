@@ -1,0 +1,16 @@
+1st 20:00 nhl-401891831:GAME_START Puck drop: Bruins at Jets.
+1st 15:08 nhl-401891831:SCORE:home:1 Goal Jets! Jets 1, Bruins 0 · 1st 15:08
+1st 10:37 nhl-401891831:SCORE:away:1 Goal Bruins! Bruins 1, Jets 1 · 1st 10:37
+1st 4:40 nhl-401891831:SCORE:away:2 Goal Bruins! Bruins 2, Jets 1 · 1st 4:40
+1st 4:40 nhl-401891831:LEAD_CHANGE:1 Bruins take the lead. Bruins 2, Jets 1 · 1st 4:40
+1st - nhl-401891831:END_OF_PERIOD:1 End of 1st: Bruins 2, Jets 1
+2nd 18:10 nhl-401891831:SCORE:home:2 Goal Jets! Bruins 2, Jets 2 · 2nd 18:10
+2nd 0:00 nhl-401891831:SCORE:home:3 Goal Jets! Jets 3, Bruins 2 · 2nd 0:00
+2nd 0:00 nhl-401891831:LEAD_CHANGE:2 Jets take the lead. Jets 3, Bruins 2 · 2nd 0:00
+2nd - nhl-401891831:END_OF_PERIOD:2 End of 2nd: Jets 3, Bruins 2
+3rd 4:22 nhl-401891831:CLOSE_LATE Close game late: Jets 3, Bruins 2 · 3rd 4:22
+3rd 1:38 nhl-401891831:SCORE:away:3 Goal Bruins! Bruins 3, Jets 3 · 3rd 1:38
+OT 5:00 nhl-401891831:OVERTIME:4 Overtime: Bruins 3, Jets 3
+OT - nhl-401891831:SCORE:away:4 Goal Bruins! Bruins 4, Jets 3 · OT
+OT - nhl-401891831:LEAD_CHANGE:3 Bruins take the lead. Bruins 4, Jets 3 · OT
+- - nhl-401891831:FINAL Final (OT): Bruins 4, Jets 3. Bruins win.

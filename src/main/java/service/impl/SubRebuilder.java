@@ -23,6 +23,7 @@ import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 
 /**
  * Rebuilds the sub:* sets from Postgres whenever the {@code sub:built} marker is missing, and once a
@@ -40,16 +41,35 @@ public final class SubRebuilder {
     /** Runs once, after the first target's follows are read and before its set is written. Tests pause here. */
     private final Runnable afterFirstRead;
 
+    /** Reads Redis's run_id, which changes whenever Redis restarts. Tests substitute their own. */
+    private final Function<Jedis, String> runId;
+    /** The run_id seen at the last check; null until the first. */
+    private String lastRunId;
+
     public SubRebuilder(DataSource db, JedisPool pool, BooleanSupplier rebuildOwed, Runnable clearOwed) {
         this(db, pool, rebuildOwed, clearOwed, () -> {});
     }
 
     SubRebuilder(DataSource db, JedisPool pool, BooleanSupplier rebuildOwed, Runnable clearOwed, Runnable afterFirstRead) {
+        this(db, pool, rebuildOwed, clearOwed, afterFirstRead, SubRebuilder::redisRunId);
+    }
+
+    SubRebuilder(DataSource db, JedisPool pool, BooleanSupplier rebuildOwed, Runnable clearOwed, Runnable afterFirstRead,
+                 Function<Jedis, String> runId) {
         this.db = db;
         this.pool = pool;
         this.rebuildOwed = rebuildOwed;
         this.clearOwed = clearOwed;
         this.afterFirstRead = afterFirstRead;
+        this.runId = runId;
+    }
+
+    /** The {@code run_id:} line of {@code INFO server}. */
+    static String redisRunId(Jedis jedis) {
+        for (String line : jedis.info("server").split("\r?\n")) {
+            if (line.startsWith("run_id:")) return line.substring("run_id:".length()).trim();
+        }
+        return null;
     }
 
     /** Retries a marker delete a save couldn't do, then rebuilds if the marker is missing. True if it rebuilt. */
@@ -59,6 +79,14 @@ public final class SubRebuilder {
                 jedis.del(RedisKeys.SUB_BUILT);
                 clearOwed.run();
             }
+            // A Redis that restarted from its AOF can keep sub:built but lose the last second of SADD/SREM
+            // (fsync every second). Its run_id changes on every start, so a new one means: rebuild.
+            String id = runId.apply(jedis);
+            if (lastRunId != null && id != null && !id.equals(lastRunId)) {
+                System.out.println("[SubRebuilder] Redis restarted (run_id changed); rebuilding");
+                jedis.del(RedisKeys.SUB_BUILT);
+            }
+            if (id != null) lastRunId = id;
             if (jedis.exists(RedisKeys.SUB_BUILT)) return false;
         }
         return rebuildNow(false);
@@ -127,9 +155,9 @@ public final class SubRebuilder {
                         members.clear();
                     }
                     target = thisTarget;
-                    f.alerts().forEach((type, s) -> {
-                        if (s.enabled()) members.computeIfAbsent(type, t -> new ArrayList<>()).add(f.userId());
-                    });
+                    for (String name : FollowSets.memberships(f)) {
+                        members.computeIfAbsent(name, t -> new ArrayList<>()).add(f.userId());
+                    }
                 }
                 if (target != null) {
                     if (!firstWritten) afterFirstRead.run();

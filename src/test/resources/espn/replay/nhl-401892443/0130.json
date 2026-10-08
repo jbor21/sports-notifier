@@ -1,0 +1,57 @@
+{
+ "events": [
+  {
+   "id": "401892443",
+   "date": "2026-10-04T22:00Z",
+   "shortName": "UTA @ NYR",
+   "season": {
+    "type": 2
+   },
+   "competitions": [
+    {
+     "status": {
+      "clock": 863.0,
+      "displayClock": "14:23",
+      "period": 3,
+      "type": {
+       "id": "2",
+       "name": "STATUS_IN_PROGRESS",
+       "state": "in",
+       "completed": false,
+       "description": "In Progress",
+       "detail": "14:23 - 3rd Period",
+       "shortDetail": "14:23 - 3rd"
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "2",
+       "team": {
+        "abbreviation": "NYR",
+        "displayName": "New York Rangers",
+        "logo": "https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/nyr.png"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "1",
+       "team": {
+        "abbreviation": "UTA",
+        "displayName": "Utah Mammoth",
+        "logo": "https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/uta.png"
+       }
+      }
+     ],
+     "situation": {
+      "outs": null,
+      "lastPlay": {
+       "text": "Goalie Stopped"
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "_note": "captured live: recording nhl/20261005T001031Z.json.gz, trimmed to one game by scripts/trim-espn-fixture.py"
+}

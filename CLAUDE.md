@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-10-07.
+asks. Last updated 2026-10-08.
 
 ---
 
@@ -34,9 +34,9 @@ still counts. Where it reflects **course scope**, ignore it.
 A real-time sports notification platform. Users create accounts, follow teams /
 leagues / specific games, turn alert switches on or off per follow (the catalog of
 `DESIGN.md` decision 15), and receive live push notifications over WebSocket as
-those moments occur. Until Phase 3.3's detectors, the pipeline still produces the
-three 3.1 play types (`GAME_START`, `SCORE_UPDATE`, `GAME_END`), which Stage 1 maps
-onto catalog switches.
+those moments occur. Stage 1's detectors turn each game's snapshots into decision 15's
+wave 1 alerts (start, scores with the NFL try, period ends, lead change, close game
+late, overtime, shootout, delays, overturns, final), one push per user per moment.
 
 ## Architecture
 
@@ -55,9 +55,10 @@ Event Processing (8083) ──► atomic Lua: duplicate · pending · newer (seq
       │ produce game-events (key = gameId, 12 lanes); confirmation clears the outbox;
       │ a retry loop re-sends leftovers
       ▼
-Stage 1 (8085, group stage1) ──► version dedup; waits while sub:built is missing;
-      │                          audience = union of sub:<target>:<ALERT> sets
-      │ produce notifications (key = userId, 48 lanes), one message per user
+Stage 1 (8085, group stage1) ──► detectors over det:<gameId> (version dedup + memory);
+      │                          waits while sub:built is missing; audience: most
+      │                          specific follow wins (sub:<target>:<ALERT>, :ANY)
+      │ produce notifications (key = userId, 48 lanes), one per user per moment, final last
       ├──────────────────────────────────────────────┐
       ▼                                              ▼
 Stage 2 (8086, group stage2) ──► one Lua script:   History (8088, group history)
@@ -82,7 +83,7 @@ Browser ◄── WebSocket ◄── Gateway (8080) ◄── SUBSCRIBE gw:<its
 **Stack:** Java 17 · Maven · Javalin 6.1.6 · Jedis 4.4.7 · Gson · jbcrypt ·
 kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · PostgreSQL 17 · HikariCP ·
 Flyway · Testcontainers 2.0.5
-**Size:** ~6,000 lines Java · the course's 1,851-line `index.html` (broken since 3.2; the new UI is 3b) · 276 tests
+**Size:** ~8,000 lines Java · the course's 1,851-line `index.html` (broken since 3.2; the new UI is 3b) · 455 tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -124,15 +125,12 @@ finds the audience, Stage 2 delivers) plus the `sub:*` inverted index.
 
 ## Open problems (found by review, not by the professor)
 
-Phases 2, 3.1, and 3.2 fixed most of the review's list (see `DESIGN.md`,
+Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
 "Security and correctness still to fix"). Still true of the code on disk:
 
-1. **Interim alerts until 3.3** — Stage 1 maps the three 3.1 play types onto
-   catalog switches: an NFL touchdown and field goal look alike (headline
-   `SCORE`), and "most specific follow wins" is not implemented yet.
-2. **An early "final" from ESPN** becomes the bar for the rest of the game; the
+1. **An early "final" from ESPN** becomes the bar for the rest of the game; the
    clock heals cover only the same period. Never observed.
-3. **Network policies need an engine on EKS** — k3s enforces them; EKS ignores
+2. **Network policies need an engine on EKS** — k3s enforces them; EKS ignores
    them unless a policy engine is enabled (Phase 5).
 
 ---
@@ -177,7 +175,23 @@ Phases 2, 3.1, and 3.2 fixed most of the review's list (see `DESIGN.md`,
   `docs/superpowers/specs/2026-10-07-phase-3-2-postgres-design.md`, plan
   `docs/superpowers/plans/2026-10-07-phase-3-2-postgres.md`. The course UI is
   broken from here (no adapter endpoints); the new UI is 3b.
-- **Next step: Phase 3.3 (alerts, wave 1)**, starting with its brainstorm.
+- **Phase 3.3 (alerts, wave 1) is built** on branch `phase-3-3-alerts`: spec
+  `docs/superpowers/specs/2026-10-07-phase-3-3-alerts-wave-1-design.md`, plan
+  `docs/superpowers/plans/2026-10-07-phase-3-3-alerts-wave-1.md`.
+- **Next step: Phase 3.4 (live API)**, starting with its brainstorm.
+- **New in Phase 3.3:** detectors in `src/main/java/alerts/` (pure functions of
+  memory + play; `Detectors.standard`). Stage 1 keeps each game's memory in
+  `det:<gameId>` (replaces `s1:last:`), written set-if-higher after the messages are
+  confirmed. Alert ids are `<gameId>:<TYPE>[:...]`; a score's number is a counter that
+  never goes down; a push's id is its headline alert's id. The audience is
+  `MomentFanout` + `AlertAudience`: game ∪ (teams − game followers) ∪ (league −
+  game/team followers), using `sub:<kind>:<target>:ANY`; chosen innings live in
+  `…:END_OF_INNING:<n>` sets. The poller sends a play on every position change; plays
+  carry period, clock, half, outs, stage, season type. A score drop is an overturn only
+  after 60 s of game clock (ESPN glitches come back sooner). The simulator is a scripted
+  `ScoreFeed` through the real poller, with new game ids every run
+  (`<league>-sim<start>-<slot>`). `make replay-detectors` runs the ESPN recordings
+  through the detectors; four golden timelines are in `src/test/resources/espn/replay/`.
 - **New in Phase 3.2:** `/api/v1/auth`, `/me`, `/follows`, `/notifications`
   (`gateway/ApiV1Routes`). Follows carry decision-15 switches (catalog in
   `src/main/resources/catalog/alerts.json`, teams in `teams.json`, team ids

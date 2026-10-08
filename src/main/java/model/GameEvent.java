@@ -40,6 +40,22 @@ public class GameEvent {
      * {@code seq}, because healing a bad ESPN clock can lower {@code seq}.
      */
     private long version;
+    /** Before, during, or after the game: {@code PRE}, {@code LIVE}, or {@code FINAL}. Null if the sender didn't say. */
+    private String phase;
+    /** Quarter, period, or inning; overtime keeps counting. 0 before the game. */
+    private int period;
+    /** Tenths of a second left in the period; 0 for MLB; -1 if the feed sent no clock. */
+    private int clockTenths;
+    /** MLB half-inning: {@code TOP}, {@code MIDDLE}, {@code BOTTOM}, {@code END}; {@code TOP} elsewhere. */
+    private String half;
+    /** MLB outs in the half-inning. */
+    private int outs;
+    /** {@code IN_PLAY}, {@code DELAYED}, {@code END_PERIOD}, or {@code HALFTIME}. */
+    private String stage;
+    /** 1 preseason, 2 regular season, 3 postseason. */
+    private int seasonType;
+    /** The feed's short status text, e.g. {@code Bot 4th}; null if none. */
+    private String detail;
 
     public GameEvent() {}
 
@@ -86,12 +102,49 @@ public class GameEvent {
     public String getLeague() { return league; }
     public long getSeq() { return seq; }
     public long getVersion() { return version; }
+    public String getPhase() { return phase; }
+    public int getPeriod() { return period; }
+    public int getClockTenths() { return clockTenths; }
+    public String getHalf() { return half; }
+    public int getOuts() { return outs; }
+    public String getStage() { return stage; }
+    public int getSeasonType() { return seasonType; }
+    public String getDetail() { return detail; }
 
     /** A copy of this play with its accept counter set. */
     public GameEvent withVersion(long version) {
-        GameEvent copy = new GameEvent(gameId, eventId, eventType, team, timestamp, description,
-            homeTeam, awayTeam, homeScore, awayScore, gameStatus, league, seq);
+        GameEvent copy = copy();
         copy.version = version;
         return copy;
+    }
+
+    /** A copy of this play with its position in the game set. */
+    public GameEvent withPosition(String phase, int period, int clockTenths, String half, int outs,
+                                  String stage, int seasonType, String detail) {
+        GameEvent copy = copy();
+        copy.phase = phase;
+        copy.period = period;
+        copy.clockTenths = clockTenths;
+        copy.half = half;
+        copy.outs = outs;
+        copy.stage = stage;
+        copy.seasonType = seasonType;
+        copy.detail = detail;
+        return copy;
+    }
+
+    private GameEvent copy() {
+        GameEvent c = new GameEvent(gameId, eventId, eventType, team, timestamp, description,
+            homeTeam, awayTeam, homeScore, awayScore, gameStatus, league, seq);
+        c.version = version;
+        c.phase = phase;
+        c.period = period;
+        c.clockTenths = clockTenths;
+        c.half = half;
+        c.outs = outs;
+        c.stage = stage;
+        c.seasonType = seasonType;
+        c.detail = detail;
+        return c;
     }
 }

@@ -1,0 +1,51 @@
+{
+ "events": [
+  {
+   "id": "401891831",
+   "date": "2026-10-03T00:00Z",
+   "shortName": "BOS @ WPG",
+   "season": {
+    "type": 2
+   },
+   "competitions": [
+    {
+     "status": {
+      "clock": 0.0,
+      "displayClock": "0:00",
+      "period": 4,
+      "type": {
+       "id": "3",
+       "name": "STATUS_FINAL",
+       "state": "post",
+       "completed": true,
+       "description": "Final",
+       "detail": "Final/OT",
+       "shortDetail": "Final/OT"
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "3",
+       "team": {
+        "abbreviation": "WPG",
+        "displayName": "Winnipeg Jets",
+        "logo": "https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/wpg.png"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "4",
+       "team": {
+        "abbreviation": "BOS",
+        "displayName": "Boston Bruins",
+        "logo": "https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/bos.png"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "_note": "captured live: recording nhl/20261003T030008Z.json.gz, trimmed to one game by scripts/trim-espn-fixture.py"
+}
