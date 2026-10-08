@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import model.GameSnapshot;
+import model.LinePeriod;
 import model.GameSnapshot.Half;
 import model.GameSnapshot.Phase;
 import model.GameSnapshot.Stage;
@@ -78,12 +79,14 @@ public final class EspnScoreFeed implements ScoreFeed {
 
         String home = null, away = null;
         Integer homeScore = null, awayScore = null;
+        List<Integer> homeLines = List.of(), awayLines = List.of();
         for (JsonElement c : competitors) {
             JsonObject competitor = c.getAsJsonObject();
             String abbr = str(obj(competitor, "team"), "abbreviation");
             Integer score = parseScore(str(competitor, "score"));
-            if ("home".equals(str(competitor, "homeAway"))) { home = abbr; homeScore = score; }
-            else                                            { away = abbr; awayScore = score; }
+            List<Integer> lines = lineValues(competitor);
+            if ("home".equals(str(competitor, "homeAway"))) { home = abbr; homeScore = score; homeLines = lines; }
+            else                                            { away = abbr; awayScore = score; awayLines = lines; }
         }
         if (home == null || away == null) return null;
 
@@ -113,7 +116,28 @@ public final class EspnScoreFeed implements ScoreFeed {
 
         return new GameSnapshot(GameIds.of(league, id), league, home, away, homeScore, awayScore,
             m.phase, period, half, mlb ? 0 : clockTenths, outs, m.stage, m.status,
-            startMillis(date), seasonType(event), str(type, "shortDetail"));
+            startMillis(date), seasonType(event), str(type, "shortDetail"), lineScore(homeLines, awayLines));
+    }
+
+    /** ESPN's per-period points for one side, in period order; empty when it sends none. */
+    private static List<Integer> lineValues(JsonObject competitor) {
+        JsonArray lines = arr(competitor, "linescores");
+        if (lines == null) return List.of();
+        List<Integer> out = new ArrayList<>();
+        for (JsonElement l : lines) {
+            JsonObject o = l.getAsJsonObject();
+            out.add(o.has("value") && !o.get("value").isJsonNull() ? (int) Math.round(o.get("value").getAsDouble()) : 0);
+        }
+        return out;
+    }
+
+    /** Pairs the two sides by period; a side with fewer columns scored 0 in the rest. */
+    private static List<LinePeriod> lineScore(List<Integer> home, List<Integer> away) {
+        List<LinePeriod> out = new ArrayList<>();
+        for (int i = 0; i < Math.max(home.size(), away.size()); i++) {
+            out.add(new LinePeriod(i + 1, i < home.size() ? home.get(i) : 0, i < away.size() ? away.get(i) : 0));
+        }
+        return out;
     }
 
     private record Mapped(String status, Phase phase, Stage stage) {}

@@ -77,6 +77,7 @@ public final class PollDecision {
         return new GameEvent(snap.gameId(), snap.gameId() + ":" + seq, type, team, now, description,
             snap.homeTeam(), snap.awayTeam(), snap.homeScore(), snap.awayScore(),
             snap.status(), snap.league(), seq)
+            .withSchedule(snap.startTimeMillis(), snap.lineScore())
             .withPosition(snap.phase().name(), snap.period(), snap.clockTenths(), snap.half().name(), snap.outs(),
                 snap.stage().name(), snap.seasonType(), snap.detail());
     }

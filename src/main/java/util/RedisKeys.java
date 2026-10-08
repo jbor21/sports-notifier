@@ -13,6 +13,14 @@ public final class RedisKeys {
 
     /** Sorted set of recently updated game ids, scored by Redis time in seconds: {@code games:recent} */
     public static final String GAMES_RECENT = "games:recent";
+    /** Every known game by scheduled start (epoch millis), for the day lists; trimmed to the last 3 days. */
+    public static final String GAMES_START = "games:start";
+    /** ESPN's schedule entry for a game (Phase 3.4): a listing, never the score. */
+    public static final String SCHED_PREFIX = "sched:";
+    /** Channel the accept script publishes each accepted play on, per game. */
+    public static final String LIVE_CHANNEL_PREFIX = "live:";
+    /** The user's unread count, a cache of Postgres's. */
+    public static final String UNREAD_PREFIX = "unread:";
 
     /** SET NX dedup guard per event: {@code processed:<eventId>} */
     public static final String PROCESSED_PREFIX = "processed:";

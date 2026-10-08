@@ -1,5 +1,7 @@
 package model;
 
+import java.util.List;
+
 /**
  * One game at one moment, as read from a score feed, independent of which feed it came from.
  *
@@ -20,11 +22,25 @@ package model;
  * @param startTimeMillis scheduled start, epoch milliseconds; 0 if unknown
  * @param seasonType      1 preseason, 2 regular season, 3 postseason (ESPN's season.type); 2 if unknown
  * @param detail          the feed's short status text, e.g. {@code Bot 4th}, {@code Final/SO}; null if none
+ * @param lineScore       points per period so far, in order; empty if the feed sent none
  */
 public record GameSnapshot(String gameId, String league, String homeTeam, String awayTeam,
                            int homeScore, int awayScore, Phase phase, int period, Half half,
                            int clockTenths, int outs, Stage stage, String status, long startTimeMillis,
-                           int seasonType, String detail) {
+                           int seasonType, String detail, List<LinePeriod> lineScore) {
+
+    public GameSnapshot {
+        lineScore = lineScore == null ? List.of() : List.copyOf(lineScore);
+    }
+
+    /** A snapshot with no line score. */
+    public GameSnapshot(String gameId, String league, String homeTeam, String awayTeam,
+                        int homeScore, int awayScore, Phase phase, int period, Half half,
+                        int clockTenths, int outs, Stage stage, String status, long startTimeMillis,
+                        int seasonType, String detail) {
+        this(gameId, league, homeTeam, awayTeam, homeScore, awayScore, phase, period, half,
+            clockTenths, outs, stage, status, startTimeMillis, seasonType, detail, List.of());
+    }
 
     /** A regular-season snapshot with no status text. */
     public GameSnapshot(String gameId, String league, String homeTeam, String awayTeam,

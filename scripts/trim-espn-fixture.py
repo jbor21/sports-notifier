@@ -26,8 +26,13 @@ trimmed_comp = {
         "homeAway": c["homeAway"],
         "score": c.get("score"),
         "team": {k: c["team"].get(k) for k in ("abbreviation", "displayName", "logo")},
+        "linescores": [{"value": l.get("value")} for l in c.get("linescores", [])],
     } for c in comp["competitors"]],
 }
+if "venue" in comp:
+    trimmed_comp["venue"] = {"fullName": comp["venue"].get("fullName")}
+if comp.get("broadcasts"):
+    trimmed_comp["broadcasts"] = [{"names": b.get("names")} for b in comp["broadcasts"]]
 if "situation" in comp:
     s = comp["situation"]
     trimmed_comp["situation"] = {"outs": s.get("outs"), "lastPlay": {"text": (s.get("lastPlay") or {}).get("text")}}

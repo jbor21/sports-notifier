@@ -1,6 +1,7 @@
 package feed;
 
 import model.GameSnapshot;
+import model.LinePeriod;
 import model.GameSnapshot.Half;
 import model.GameSnapshot.Phase;
 import model.GameSnapshot.Stage;
@@ -210,5 +211,20 @@ class EspnScoreFeedTest {
         GameSnapshot zero = new GameSnapshot(g.gameId(), g.league(), g.homeTeam(), g.awayTeam(), g.homeScore(), g.awayScore(),
             g.phase(), g.period(), g.half(), 0, g.outs(), g.stage(), g.status(), g.startTimeMillis(), g.seasonType(), g.detail());
         assertEquals(Seq.of(zero), Seq.of(g));
+    }
+
+    @Test
+    void lineScoreAndStartTime() throws IOException {
+        GameSnapshot g = only("nfl-final-linescore.json", "NFL");
+        assertEquals(List.of(new LinePeriod(1, 6, 0), new LinePeriod(2, 0, 10), new LinePeriod(3, 7, 10), new LinePeriod(4, 0, 10)),
+            g.lineScore());
+        assertEquals(g.homeScore(), g.lineScore().stream().mapToInt(LinePeriod::home).sum());
+        assertEquals(g.awayScore(), g.lineScore().stream().mapToInt(LinePeriod::away).sum());
+        assertTrue(g.startTimeMillis() > 0);
+    }
+
+    @Test
+    void missingLinescoresIsEmpty() throws IOException {
+        assertEquals(List.of(), only("nfl-final.json", "NFL").lineScore());
     }
 }

@@ -208,4 +208,37 @@ class EventProcessingServiceImplTest {
         assertEquals(2, state.getHomeScore());
         assertEquals("BOS", state.getAwayTeam());
     }
+
+    private static final long DAY = 86_400_000L;
+
+    private GameEvent scheduled(String gameId, String eventId, long seq, long startTime) {
+        return new GameEvent(gameId, eventId, "GAME_SYNC", "LAL", 1000L, "desc",
+            "LAL", "BOS", 3, 1, "IN_PROGRESS", "NBA", seq)
+            .withSchedule(startTime, List.of(new model.LinePeriod(1, 3, 1)));
+    }
+
+    @Test
+    void savesStartTimeAndLineScore() {
+        long start = System.currentTimeMillis() - 3_600_000L;
+        assertEquals(ProcessResult.ACCEPTED, service.processEvent(scheduled("g1", "e1", 10, start)));
+        assertEquals(String.valueOf(start), jedis.hget("game:g1", "startTime"));
+        assertEquals("[{\"period\":1,\"home\":3,\"away\":1}]", jedis.hget("game:g1", "lineScore"));
+    }
+
+    @Test
+    void indexesGamesStartAndTrims() {
+        long now = System.currentTimeMillis();
+        service.processEvent(scheduled("old", "o1", 10, now - 4 * DAY));
+        service.processEvent(scheduled("recent", "r1", 10, now - 2 * DAY));
+        service.processEvent(scheduled("g1", "e1", 10, now));
+        assertNull(jedis.zscore("games:start", "old"), "starts older than 3 days are trimmed");
+        assertEquals((double) (now - 2 * DAY), jedis.zscore("games:start", "recent"));
+        assertEquals((double) now, jedis.zscore("games:start", "g1"));
+    }
+
+    @Test
+    void zeroStartTimeNotIndexed() {
+        service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+        assertNull(jedis.zscore("games:start", "g1"));
+    }
 }
