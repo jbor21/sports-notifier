@@ -23,6 +23,9 @@ public final class Detectors {
     public static Detectors standard(GameLabels labels) {
         return new Detectors(List.of(
             new GameStartDetector(labels),
+            new ScoreDetector(labels),
+            new LeadChangeDetector(labels),
+            new CloseLateDetector(labels),
             new PeriodEndDetector(labels),
             new OvertimeDetector(labels),
             new ShootoutDetector(labels),
