@@ -1,7 +1,6 @@
 package service.impl;
 
 import model.GameEvent;
-import model.GameState;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -202,11 +201,11 @@ class EventProcessingServiceImplTest {
     @Test
     void savedStateIsReadableThroughGameStateService() {
         service.processEvent(ev("e1", 10, 2, 1, "SCORE_UPDATE"));
-        GameState state = new GameStateServiceImpl(pool).getGameState("g1");
-        assertNotNull(state);
-        assertEquals("IN_PROGRESS", state.getStatus());
-        assertEquals(2, state.getHomeScore());
-        assertEquals("BOS", state.getAwayTeam());
+        com.google.gson.JsonObject game = new GameStateServiceImpl(pool, new games.GameSummaries(catalog.Teams.load()))
+            .detail("g1").orElseThrow();
+        assertEquals("in_progress", game.get("status").getAsString());
+        assertEquals(2, game.getAsJsonObject("home").get("score").getAsInt());
+        assertEquals("BOS", game.getAsJsonObject("away").getAsJsonObject("team").get("abbreviation").getAsString());
     }
 
     private static final long DAY = 86_400_000L;

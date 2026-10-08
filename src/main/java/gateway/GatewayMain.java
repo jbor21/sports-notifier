@@ -12,6 +12,7 @@ import util.JedisPoolHolder;
 import util.SimpleHttp;
 
 import java.net.InetAddress;
+import java.time.Instant;
 import java.net.URLEncoder;
 import java.net.UnknownHostException;
 import java.net.http.HttpResponse;
@@ -69,6 +70,7 @@ public final class GatewayMain {
         app.get("/health", ctx -> ctx.json(Collections.singletonMap("status", "ok")));
 
         ApiV1Routes.register(app, pool, loginThrottle, USER_PREF_URL, NOTIFICATION_URL);
+        GameRoutes.register(app, pool, GAME_STATE_URL, USER_PREF_URL, Instant::now);
 
         // --- Game state ---
         app.get("/api/games", gameListingHandler::handleList);
