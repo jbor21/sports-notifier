@@ -141,6 +141,22 @@ class NotificationHistoryTest {
         assertEquals(1000, history.unreadCount(bob));
     }
 
+    /**
+     * created_at is Stage 1's clock (the Kafka timestamp), which can run a little ahead of Postgres's
+     * now(). "Seen" and "clear" use the later of now() and the newest row, so such a row is neither
+     * left unread after "seen" nor shown after "clear".
+     */
+    @Test
+    void seenAndClearCoverRowsStampedAheadOfPostgresClock() throws Exception {
+        row(bob, "mlb-1", 1, "MLB", "mlb-chw", "mlb-cle", Instant.now().plusSeconds(5));   // Stage 1's clock is 5 s ahead
+        assertEquals(1, history.unreadCount(bob));
+        history.markSeen(bob);
+        assertEquals(0, history.unreadCount(bob), "seen covers the row stamped ahead");
+        history.clear(bob);
+        row(bob, "mlb-1", 2, "MLB", "mlb-chw", "mlb-cle", Instant.now().plusSeconds(4));   // a catch-up row, also ahead
+        assertEquals(List.of(), ids(history.list(bob, null, null, null, null, 20)), "clear hides it");
+    }
+
     @Test
     void retentionDeletesOver30DaysInBatches() throws Exception {
         Instant now = Instant.now();

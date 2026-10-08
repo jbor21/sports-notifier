@@ -102,11 +102,15 @@ public final class NotificationHistory {
         }
     }
 
+    /**
+     * The later of now() and the user's newest row: created_at is Stage 1's clock (the Kafka
+     * timestamp), which can run a little ahead of Postgres's, and such a row must not stay unread.
+     */
     public void markSeen(String userId) {
         UUID user = uuidOrNull(userId);
         if (user == null) return;
-        update("INSERT INTO notification_reads (user_id, last_seen_at) VALUES (?, now())"
-                + " ON CONFLICT (user_id) DO UPDATE SET last_seen_at = now()", user);
+        update("INSERT INTO notification_reads (user_id, last_seen_at) VALUES (?, " + NOW_OR_NEWEST + ")"
+                + " ON CONFLICT (user_id) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at", user, user);
     }
 
     /** Deletes the user's rows and records the time, so rows the history writer inserts later for older alerts stay hidden. */
@@ -116,10 +120,12 @@ public final class NotificationHistory {
         try (Connection c = db.getConnection()) {
             c.setAutoCommit(false);
             try {
+                // Same clock-skew reason as markSeen, and computed before the delete below.
                 try (PreparedStatement ps = c.prepareStatement(
-                        "INSERT INTO notification_reads (user_id, cleared_at) VALUES (?, now())"
-                                + " ON CONFLICT (user_id) DO UPDATE SET cleared_at = now()")) {
+                        "INSERT INTO notification_reads (user_id, cleared_at) VALUES (?, " + NOW_OR_NEWEST + ")"
+                                + " ON CONFLICT (user_id) DO UPDATE SET cleared_at = EXCLUDED.cleared_at")) {
                     ps.setObject(1, user);
+                    ps.setObject(2, user);
                     ps.executeUpdate();
                 }
                 // Every row, not only those before now(): created_at is Stage 1's clock, which can run a
@@ -164,9 +170,12 @@ public final class NotificationHistory {
     private static final String CLEARED_AT =
             "COALESCE((SELECT r.cleared_at FROM notification_reads r WHERE r.user_id = ?), 'epoch'::timestamptz)";
 
-    private void update(String sql, UUID user) {
+    private static final String NOW_OR_NEWEST =
+            "GREATEST(now(), (SELECT max(n.created_at) FROM notifications n WHERE n.user_id = ?))";
+
+    private void update(String sql, UUID... params) {
         try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setObject(1, user);
+            for (int i = 0; i < params.length; i++) ps.setObject(i + 1, params[i]);
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("updating notification_reads failed", e);
