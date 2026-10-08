@@ -57,7 +57,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      *    - no-score heal: same phase, period, half, and score, still "older" after 30 seconds.
      *      staleSince records when that started; any accepted play clears it.
      *    Either heal lowers lastSeq to the play's seq. Both apply only to game positions (below
-     *    10^14): the simulator's seq orders runs, so its leading digits mean nothing as a period.
+     *    10^14). A seq at or above that isn't a position (the course-era simulator sent such seqs to
+     *    order its runs), so its leading digits mean nothing as a period.
      *    This check comes after "pending", so a play that will not be considered never starts
      *    the 30-second timer.
      * 4. Only then claim the id, add 1 to the game's version, and write the full state. Every
