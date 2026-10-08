@@ -30,6 +30,11 @@ metadata:
   name: postgres
   labels:
     {{- include "sports-notifier.labels" "postgres" | nindent 4 }}
+  annotations:
+    # helm uninstall keeps the Secret: the Postgres volume outlives the release, and a reinstall
+    # with a newly generated password would lock every service out of the old data. The kept
+    # Secret is adopted again by the next install of the same release, and lookup reuses it.
+    helm.sh/resource-policy: keep
 type: Opaque
 stringData:
   password: {{ $password | quote }}
