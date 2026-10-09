@@ -1,4 +1,4 @@
-import useSWR, { type SWRResponse } from 'swr'
+import useSWR, { type Cache, type SWRResponse } from 'swr'
 import { fetcher, type ApiError } from './api/client'
 import type { User } from './api/types'
 
@@ -23,4 +23,23 @@ export function signInPath(next: string): string {
  */
 export function useMe(): SWRResponse<User, ApiError> {
   return useSWR<User, ApiError>('/me', fetcher, { shouldRetryOnError: false })
+}
+
+/** Cached answers that belong to the signed-in user; paged lists carry SWR's `$inf$` prefix. */
+function isUserKey(key: string): boolean {
+  const path = key.replace(/^\$inf\$/, '')
+  return (
+    path.startsWith('/follows') ||
+    path.startsWith('/notifications') ||
+    path.includes('following=true')
+  )
+}
+
+/**
+ * On sign-out: drop the user's cached follows, history, and followed games, so the next user on
+ * this tab never sees them before their own load. /me is cleared by the caller (with a mutate,
+ * so the screens watching it hear about it).
+ */
+export function forgetUserData(cache: Cache): void {
+  for (const key of [...cache.keys()]) if (isUserKey(key)) cache.delete(key)
 }

@@ -1,31 +1,16 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router'
 import { LoadState } from './components/LoadState'
-import { Modal } from './components/Modal'
 import { Shell } from './components/Shell'
+import { AddFollow } from './screens/AddFollow'
+import { FollowSettings } from './screens/FollowSettings'
+import { Following } from './screens/Following'
 import { GameDay } from './screens/GameDay'
 import { GamePage } from './screens/GamePage'
+import { Notifications } from './screens/Notifications'
+import { Settings } from './screens/Settings'
 import { SignIn } from './screens/SignIn'
 import { SignUp } from './screens/SignUp'
 import { signInPath, useMe } from './session'
-
-// Placeholders until the screens land (Task 8): swap each for its screen's import.
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div className="page-heading">
-      <div>
-        <h1>{title}</h1>
-      </div>
-    </div>
-  )
-}
-
-function AddFollowPlaceholder({ onClose }: { onClose: () => void }) {
-  return (
-    <Modal title="Add a follow" onClose={onClose}>
-      <p>Follow a team, a league, or a game.</p>
-    </Modal>
-  )
-}
 
 export function AppRoutes() {
   return (
@@ -35,13 +20,13 @@ export function AppRoutes() {
         <Route path="/signup" element={<SignUp />} />
       </Route>
       <Route element={<RequireSignIn />}>
-        <Route element={<Shell addFollow={(close) => <AddFollowPlaceholder onClose={close} />} />}>
+        <Route element={<Shell addFollow={(close) => <AddFollow onClose={close} />} />}>
           <Route index element={<GameDay />} />
           <Route path="/games/:id" element={<GamePage />} />
-          <Route path="/following" element={<Placeholder title="Following" />} />
-          <Route path="/following/:id" element={<Placeholder title="Alert switches" />} />
-          <Route path="/notifications" element={<Placeholder title="Notifications" />} />
-          <Route path="/settings" element={<Placeholder title="Settings" />} />
+          <Route path="/following" element={<Following />} />
+          <Route path="/following/:id" element={<FollowSettings />} />
+          <Route path="/notifications" element={<Notifications />} />
+          <Route path="/settings" element={<Settings />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

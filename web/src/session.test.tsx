@@ -38,7 +38,9 @@ describe('the sign-in guard', () => {
 
   it('signedInRendersShell', async () => {
     const app = renderApp('/following')
-    expect(await screen.findByRole('heading', { name: 'Following', level: 1 })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Your sidelines.', level: 1 }),
+    ).toBeInTheDocument()
     expect(screen.getByText('YOUR PLAYBOOK')).toBeInTheDocument()
     expect(screen.getByText('FIND YOUR GAME')).toBeInTheDocument()
     expect(screen.getByText(user.username)).toBeInTheDocument()
