@@ -84,7 +84,7 @@ public final class FollowStore {
         UUID followId = uuidOrNull(id);
         if (followId == null) return Optional.empty();
         try (PreparedStatement ps = c.prepareStatement(
-                "UPDATE follows SET alerts = alerts || ?::jsonb WHERE id = ? AND user_id = ? RETURNING " + COLUMNS)) {
+                "UPDATE follows SET alerts = alerts || ?::jsonb, updated_at = now() WHERE id = ? AND user_id = ? RETURNING " + COLUMNS)) {
             ps.setString(1, alertsJson(patch));
             ps.setObject(2, followId);
             ps.setObject(3, UUID.fromString(userId));

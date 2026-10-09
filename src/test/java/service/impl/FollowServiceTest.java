@@ -224,4 +224,43 @@ class FollowServiceTest {
                     });
             });
     }
+
+    /** {created_at, updated_at} of one follow, read straight from Postgres (only the checker reads updated_at). */
+    private static java.time.Instant[] stamps(String followId) throws Exception {
+        try (java.sql.Connection c = PostgresTestSupport.dataSource().getConnection();
+             java.sql.PreparedStatement ps = c.prepareStatement("SELECT created_at, updated_at FROM follows WHERE id = ?")) {
+            ps.setObject(1, java.util.UUID.fromString(followId));
+            try (java.sql.ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                return new java.time.Instant[] {rs.getTimestamp(1).toInstant(), rs.getTimestamp(2).toInstant()};
+            }
+        }
+    }
+
+    @Test
+    void newFollowHasUpdatedAtEqualToCreatedAt() throws Exception {
+        String id = follows.create(bob, "team", "mlb-chw").body().id();
+        java.time.Instant[] t = stamps(id);
+        assertEquals(t[0], t[1]);
+    }
+
+    @Test
+    void switchChangeSetsUpdatedAt() throws Exception {
+        String id = follows.create(bob, "team", "mlb-chw").body().id();
+        Thread.sleep(20);
+        follows.patch(bob, id, body("{\"alerts\":{\"LEAD_CHANGE\":{\"enabled\":true}}}"));
+        java.time.Instant[] t = stamps(id);
+        assertTrue(t[1].isAfter(t[0]), "a switch change moves updated_at past created_at");
+    }
+
+    @Test
+    void deleteAndRecreateGetsNewIdAndTimestamps() throws Exception {
+        String first = follows.create(bob, "team", "mlb-chw").body().id();
+        java.time.Instant created = stamps(first)[0];
+        Thread.sleep(20);
+        follows.delete(bob, first);
+        String second = follows.create(bob, "team", "mlb-chw").body().id();
+        assertNotEquals(first, second);
+        assertTrue(stamps(second)[0].isAfter(created));
+    }
 }
