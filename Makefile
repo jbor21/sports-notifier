@@ -49,7 +49,15 @@ cluster:
 up:
 	@k3d cluster get $(CLUSTER) >/dev/null 2>&1 || { echo "Cluster $(CLUSTER) not found. Run: make cluster"; exit 1; }
 	docker build -t sports-notifier:$(TAG) .
-	k3d image import sports-notifier:$(TAG) -c $(CLUSTER)
+	@# k3d can report "Successfully imported" when its helper lost the tarball first ("no such file
+	@# or directory", seen in CI on PR #32); the pods then wait for an image that isn't there. So check
+	@# the node really has it, and retry.
+	@for i in 1 2 3; do \
+		k3d image import sports-notifier:$(TAG) -c $(CLUSTER) && \
+		docker exec k3d-$(CLUSTER)-server-0 ctr -n k8s.io images ls -q | grep -q "sports-notifier:$(TAG)$$" && exit 0; \
+		echo "Image sports-notifier:$(TAG) is not on the node after import (attempt $$i)"; \
+	done; \
+	echo "k3d image import failed 3 times"; exit 1
 	helm upgrade --install --kube-context $(KUBE_CONTEXT) $(RELEASE) $(CHART) -f $(CHART)/values-local.yaml --set image.tag=$(TAG) $(HELM_ARGS) --wait --timeout 5m
 	kubectl --context $(KUBE_CONTEXT) wait kafka/$(RELEASE) --for=condition=Ready --timeout=5m
 

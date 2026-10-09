@@ -45,6 +45,13 @@ public class DetectorMemory {
         }
     }
 
+    /** Drops a game's memory, so its next play starts from a baseline (unreadable memory, issue #15). */
+    public void forget(String gameId) {
+        try (Jedis jedis = pool.getResource()) {
+            jedis.del(RedisKeys.DETECTOR_PREFIX + gameId);
+        }
+    }
+
     /** @return true if {@code version} was higher and the memory is now stored */
     public boolean writeIfHigher(String gameId, long version, GameMemory memory) {
         try (Jedis jedis = pool.getResource()) {

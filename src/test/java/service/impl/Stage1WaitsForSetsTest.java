@@ -89,7 +89,7 @@ class Stage1WaitsForSetsTest {
         alerts.GameLabels labels = new alerts.GameLabels(catalog.Teams.load());
         Stage1Worker w = new Stage1Worker(new DetectorMemory(pool), alerts.Detectors.standard(labels),
                 new MomentFanout(pool, new AlertAudience(), labels), consumer, producer, notifications,
-                () -> { try (Jedis j = pool.getResource()) { return j.exists(RedisKeys.SUB_BUILT); } });
+                notifications + "-dlq", () -> { try (Jedis j = pool.getResource()) { return j.exists(RedisKeys.SUB_BUILT); } });
         Thread loop = new Thread(() -> { try { w.run(health); } finally { w.close(); } }, "stage1-test");
         health.attach(loop);
         loop.start();

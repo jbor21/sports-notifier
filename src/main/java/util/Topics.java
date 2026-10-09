@@ -9,6 +9,8 @@ public final class Topics {
     public static final String GAME_EVENTS = "game-events";
     /** One message per user per play, keyed by user id (48 partitions). */
     public static final String NOTIFICATIONS = "notifications";
+    /** Plays Stage 1 gave up on after repeated non-I/O failures, for a person to look at (issue #15). */
+    public static final String GAME_EVENTS_DLQ = "game-events-dlq";
 
     public static final String STAGE1_GROUP = "stage1";
     public static final String STAGE2_GROUP = "stage2";

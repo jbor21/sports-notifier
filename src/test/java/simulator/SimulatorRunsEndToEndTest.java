@@ -125,7 +125,7 @@ class SimulatorRunsEndToEndTest {
         KafkaProducer<String, String> producer = new KafkaProducer<>(KafkaSettings.fanoutProducer(KafkaTestSupport.bootstrap()));
         GameLabels labels = new GameLabels(Teams.load());
         return new Stage1Worker(new DetectorMemory(pool), Detectors.standard(labels),
-            new MomentFanout(pool, new AlertAudience(), labels), consumer, producer, notifications, () -> {
+            new MomentFanout(pool, new AlertAudience(), labels), consumer, producer, notifications, notifications + "-dlq", () -> {
             try (Jedis j = pool.getResource()) {
                 return j.exists(RedisKeys.SUB_BUILT);
             }
