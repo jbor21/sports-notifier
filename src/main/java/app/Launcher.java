@@ -38,6 +38,7 @@ public final class Launcher {
         m.put("simulator", EventSimulatorMain::main);
         m.put("espn-poller", EspnPollerMain::main);
         m.put("replay", ReplayMain::main);
+        m.put("checker", tools.Checker::main);
         SERVICES = Collections.unmodifiableMap(m);
     }
 

@@ -114,7 +114,7 @@ public final class FollowStore {
         return GSON.toJson(out);
     }
 
-    static Follow read(ResultSet rs) throws SQLException {
+    public static Follow read(ResultSet rs) throws SQLException {
         Map<String, Map<String, Object>> raw = GSON.fromJson(rs.getString("alerts"), ALERTS);
         Map<String, AlertSetting> alerts = new LinkedHashMap<>();
         raw.forEach((type, v) -> {

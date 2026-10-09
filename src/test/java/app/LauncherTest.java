@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class LauncherTest {
 
     private static final List<String> NAMES = List.of("gateway", "user-pref", "game-state",
-        "event-processing", "stage1-worker", "stage2-worker", "notification", "history", "simulator", "espn-poller", "replay");
+        "event-processing", "stage1-worker", "stage2-worker", "notification", "history", "simulator", "espn-poller", "replay", "checker");
     private static final String VALID = "Valid values: " + String.join(", ", NAMES);
 
     @Test
@@ -39,5 +39,10 @@ class LauncherTest {
     @Test
     void replayIsAService() {
         assertNotNull(Launcher.resolve("replay"));
+    }
+
+    @Test
+    void checkerIsAService() {
+        assertNotNull(Launcher.resolve("checker"));
     }
 }
