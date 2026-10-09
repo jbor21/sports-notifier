@@ -18,7 +18,8 @@
     "types:gen": "openapi-typescript ../docs/api/openapi.yaml -o src/api/schema.d.ts",
     "types:check": "pnpm types:gen && git diff --exit-code -- src/api/schema.d.ts",
     "icons": "pwa-assets-generator",
-    "test:pwa": "VITE_BUILD_ID=one vite build --outDir dist-pwa/one && VITE_BUILD_ID=two vite build --outDir dist-pwa/two && playwright test -c e2e --project=pwa"
+    "test:pwa": "VITE_BUILD_ID=one vite build --outDir dist-pwa/one && VITE_BUILD_ID=two vite build --outDir dist-pwa/two && playwright test -c e2e --project=pwa",
+    "test:e2e": "playwright test -c e2e --project=cluster"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.3.0",
