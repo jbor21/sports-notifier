@@ -10,6 +10,7 @@ import service.impl.Stage2WorkerMain;
 import service.impl.UserPreferenceServiceMain;
 import simulator.EspnPollerMain;
 import simulator.EventSimulatorMain;
+import simulator.ReplayMain;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -36,6 +37,8 @@ public final class Launcher {
         m.put("history", HistoryWriterMain::main);
         m.put("simulator", EventSimulatorMain::main);
         m.put("espn-poller", EspnPollerMain::main);
+        m.put("replay", ReplayMain::main);
+        m.put("checker", tools.Checker::main);
         SERVICES = Collections.unmodifiableMap(m);
     }
 

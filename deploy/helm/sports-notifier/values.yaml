@@ -99,3 +99,20 @@ espnPoller:
 simulator:
   intervalMs: 2000
   waves: 3
+
+# Recorded ESPN games (src/main/resources/replay/<set>.jsonl.gz) through the real poller: make replay.
+replay:
+  set: evening
+  speed: 10
+
+# The correctness checker (tools.Checker): make check runs one Job with these defaults; the make
+# command line overrides them (SET, SPEED, USERS, SEED). It holds a socket per synthetic user and
+# keeps every socket's log in memory, hence more memory than a service.
+checker:
+  set: ci
+  speed: 10
+  users: 500
+  seed: 1
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { memory: 1Gi }

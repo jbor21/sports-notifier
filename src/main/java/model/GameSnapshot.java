@@ -50,6 +50,13 @@ public record GameSnapshot(String gameId, String league, String homeTeam, String
             clockTenths, outs, stage, status, startTimeMillis, 2, null);
     }
 
+    /** The same moment under another game id, its start time moved by {@code shiftMillis} (a replay). */
+    public GameSnapshot rebased(String newGameId, long shiftMillis) {
+        return new GameSnapshot(newGameId, league, homeTeam, awayTeam, homeScore, awayScore, phase, period, half,
+            clockTenths, outs, stage, status, startTimeMillis > 0 ? startTimeMillis + shiftMillis : 0,
+            seasonType, detail, lineScore);
+    }
+
     /** Digit = ordinal: 0 before, 1 live, 2 final. */
     public enum Phase { PRE, LIVE, FINAL }
 

@@ -89,7 +89,7 @@ class Stage1WaitsForSetsTest {
         alerts.GameLabels labels = new alerts.GameLabels(catalog.Teams.load());
         Stage1Worker w = new Stage1Worker(new DetectorMemory(pool), alerts.Detectors.standard(labels),
                 new MomentFanout(pool, new AlertAudience(), labels), consumer, producer, notifications,
-                notifications + "-dlq", () -> { try (Jedis j = pool.getResource()) { return j.exists(RedisKeys.SUB_BUILT); } });
+                notifications + "-dlq", () -> { try (Jedis j = pool.getResource()) { return FollowSets.isBuilt(j); } });
         Thread loop = new Thread(() -> { try { w.run(health); } finally { w.close(); } }, "stage1-test");
         health.attach(loop);
         loop.start();
@@ -150,7 +150,7 @@ class Stage1WaitsForSetsTest {
         assertEquals(0, committedTotal(), "the play is not committed while waiting");
         assertEquals(0, revocations.get(), "no rebalance: still polling, still in the group");
 
-        jedis.set(RedisKeys.SUB_BUILT, "now");
+        FollowSets.markBuilt(jedis, "test");
         long deadline = System.currentTimeMillis() + 10_000;
         while (committedTotal() < 1 && System.currentTimeMillis() < deadline) Thread.sleep(200);
         assertEquals(1, committedTotal());
@@ -169,7 +169,7 @@ class Stage1WaitsForSetsTest {
         assertEquals(0, notificationCount(Duration.ofSeconds(1)), "neither worker handled the play");
         assertEquals(0, committedTotal());
 
-        jedis.set(RedisKeys.SUB_BUILT, "now");
+        FollowSets.markBuilt(jedis, "test");
         long deadline = System.currentTimeMillis() + 15_000;
         while (committedTotal() < 1 && System.currentTimeMillis() < deadline) Thread.sleep(200);
         assertEquals(1, notificationCount(Duration.ofSeconds(2)));

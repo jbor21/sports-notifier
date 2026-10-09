@@ -152,4 +152,20 @@ class FollowSetsTest {
         patch(f, "{\"alerts\":{\"END_OF_INNING\":{\"enabled\":false,\"options\":{\"innings\":[3]}}}}");
         assertTrue(memberOf().stream().noneMatch(k -> k.contains("END_OF_INNING")));
     }
+
+    @Test
+    void isBuiltNeedsCurrentVersion() {
+        assertFalse(FollowSets.isBuilt(jedis));
+        jedis.hset(util.RedisKeys.SUB_BUILT, "version", "1");
+        assertFalse(FollowSets.isBuilt(jedis));
+        FollowSets.markBuilt(jedis, "R");
+        assertTrue(FollowSets.isBuilt(jedis));
+        assertEquals("2", jedis.hget(util.RedisKeys.SUB_BUILT, "version"));
+    }
+
+    @Test
+    void legacyStringMarkerIsNotBuilt() {
+        jedis.set(util.RedisKeys.SUB_BUILT, "2026-10-08T12:00:00Z");
+        assertFalse(FollowSets.isBuilt(jedis));
+    }
 }

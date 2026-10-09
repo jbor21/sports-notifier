@@ -15,7 +15,7 @@ export KUBE_CONTEXT
 # A new tag per build so Kubernetes always rolls pods onto new code. Uncommitted changes get a unique suffix.
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
-.PHONY: test cluster up simulate smoke e2e logs down replay-detectors
+.PHONY: test cluster up simulate replay check check-clean check-selftest smoke e2e logs down replay-detectors
 
 # Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
 # until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
@@ -63,6 +63,36 @@ up:
 
 simulate:
 	@scripts/simulate.sh
+
+# Recorded ESPN games through the real poller and pipeline, e.g. make replay SET=ci SPEED=60.
+SET   ?= evening
+SPEED ?= 10
+replay:
+	@scripts/run-job.sh replay REPLAY_SET=$(SET) REPLAY_SPEED=$(SPEED)
+
+# The correctness checker: synthetic users follow the replayed games, then every push is checked in
+# history and on every socket. Prints a report and exits 0 only on PASS, e.g.
+#   make check SET=ci SPEED=60 [USERS=500] [SEED=1] [KEEP=1] [FAULT=srem|dup|follow]
+# USERS, SEED, KEEP and FAULT are passed only when given; otherwise the chart's checker defaults apply.
+# KEEP=1 leaves the run's users in place (it prints one username; password checker-pass) to look at
+# in the UI; make check-clean removes every leftover synthetic user.
+CHECK_OPTS = $(if $(USERS),CHECK_USERS=$(USERS)) $(if $(SEED),CHECK_SEED=$(SEED)) \
+             $(if $(KEEP),CHECK_KEEP=$(KEEP)) $(if $(FAULT),CHECK_FAULT=$(FAULT))
+check:
+	@scripts/run-job.sh checker CHECK_SET=$(SET) CHECK_SPEED=$(SPEED) $(CHECK_OPTS)
+
+check-clean:
+	@scripts/run-job.sh checker CHECK_MODE=clean
+
+# Proof the checker can fail: three ci runs at 60x, each injecting one fault (a lost sub:* write, a
+# push delivered twice, a follow changed mid-run). Each run exits 0 only if it reports that fault.
+check-selftest:
+	@for fault in srem dup follow; do \
+		echo "=== check-selftest: FAULT=$$fault ==="; \
+		scripts/run-job.sh checker CHECK_SET=ci CHECK_SPEED=60 CHECK_FAULT=$$fault \
+			$(if $(USERS),CHECK_USERS=$(USERS)) $(if $(SEED),CHECK_SEED=$(SEED)) \
+			|| { echo "check-selftest: FAULT=$$fault was not caught"; exit 1; }; \
+	done
 
 smoke:
 	@scripts/smoke-test.sh
