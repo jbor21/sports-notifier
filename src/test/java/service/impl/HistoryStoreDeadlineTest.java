@@ -46,8 +46,11 @@ class HistoryStoreDeadlineTest {
         store.insertBatch(List.of(row()));   // warm: the pool has an open connection before the freeze
         PostgresTestSupport.pause();
         long start = System.nanoTime();
-        assertThrows(SQLException.class, () -> store.insertBatch(List.of(row())));
+        SQLException e = assertThrows(SQLException.class, () -> store.insertBatch(List.of(row())));
         Duration took = Duration.ofNanos(System.nanoTime() - start);
+        // Not some other failure: Hikari's own 5 s connection check would also fail inside the bound.
+        assertTrue(e.getMessage().contains("deadline"), "failed for another reason: " + e);
+        assertTrue(took.compareTo(Duration.ofSeconds(2)) >= 0, "failed before the deadline: " + took);
         assertTrue(took.compareTo(Duration.ofSeconds(8)) < 0, "failed after " + took + ", deadline 2 s");
         PostgresTestSupport.unpause();
         assertEquals(1, store.insertBatch(List.of(row())), "the store works again once Postgres is back");

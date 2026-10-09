@@ -9,8 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -25,11 +24,16 @@ public final class HistoryStore {
     private static final int COLUMNS = 8;
 
     /** Aborts inserts that pass their deadline; one daemon thread for every store. */
-    private static final ScheduledExecutorService DEADLINES = Executors.newSingleThreadScheduledExecutor(r -> {
+    private static final ScheduledThreadPoolExecutor DEADLINES = new ScheduledThreadPoolExecutor(1, r -> {
         Thread t = new Thread(r, "history-insert-deadline");
         t.setDaemon(true);
         return t;
     });
+
+    static {
+        // Almost every insert finishes in time: drop its cancelled watchdog now, not when it would have fired.
+        DEADLINES.setRemoveOnCancelPolicy(true);
+    }
 
     private final DataSource db;
     private final Duration deadline;
@@ -38,7 +42,10 @@ public final class HistoryStore {
         this(db, Duration.ofSeconds(10));
     }
 
-    /** {@code deadline}: an insert still running after this is aborted and the batch fails (issue #29). */
+    /**
+     * {@code deadline}: an INSERT statement still running after this is aborted and the batch fails
+     * (issue #29). Getting the connection is bounded separately, by the pool's connection timeout.
+     */
     public HistoryStore(DataSource db, Duration deadline) {
         this.db = db;
         this.deadline = deadline;
