@@ -48,7 +48,9 @@ Fresh game ids also mean every run starts from empty state (`game:`, `det:`, `ou
 
 **Problem.** The recordings (`~/sportsnotifier-recordings/<league>/<UTC time>.json.gz`, every 30 s, 2026-10-02 to 2026-10-05, 81 MB) are whole scoreboards, most of them unchanged from the one before, and live only on the Mac.
 
-**Fix.** `scripts/pack-replay.py <set> <league>:<espnId> ...` trims each recording to the chosen games (reusing `trim-espn-fixture.py`'s trimming), drops a board when every chosen game in it is unchanged from the previous board, and writes `src/main/resources/replay/<set>.jsonl.gz`: one line per kept board, `{"t": <recorded epoch ms>, "league": "NFL", "board": {...}}`, in time order. The file is in the JAR, so the image carries it to the cluster and to EKS.
+**Fix.** `scripts/pack-replay.py <set> <league>:<espnId>[@<offsetMinutes>] ...` trims each recording to the chosen games (the trimming `trim-espn-fixture.py` uses, now `scripts/espn_trim.py`) and writes `src/main/resources/replay/<set>.jsonl.gz`: one line per kept snapshot, `{"game": "nfl-401872971", "league": "NFL", "t": <ms>, "event": {...}}`, in time order. The file is in the JAR, so the image carries it to the cluster and to EKS.
+
+Each game has its **own timeline** (revised in the plan, 2026-10-09): it starts at the game's offset at its first kept snapshot; a snapshot is kept when the game's trimmed event changed; and a gap longer than 60 s is cut to 60 s. A recording starts hours before kickoff and NHL intermissions are 18 minutes of nothing, so whole-board recorder time would make a run sit through them, and games recorded on different days (the four golden games span three) could never overlap. Offsets spread the games out the way a real evening does.
 
 The script refuses a game whose recording does not start before the game (status scheduled) and run through its final: the replay primes on the pre-game board (section 2.3) and the checker waits for every game to be final (section 5).
 
@@ -63,10 +65,10 @@ Two sets, chosen in the plan from the recordings:
 
 A `ScoreFeed` (in `feed/`) over one replay set, used through the real `Poller` exactly as `SimulatedScoreFeed` is:
 
-- **Virtual clock.** `t = setStart + (now − runStart) × SPEED`. `fetch(league)` returns that league's latest board with `t_board ≤ t`, as `GameSnapshot`s parsed by the same code as `EspnScoreFeed` (one parser, shared).
+- **Virtual clock.** Replay time `e = (now − clockStart) × SPEED`. `fetch(league)` returns, for each of that league's games, its latest snapshot with `t ≤ e` (a game whose timeline has not begun is absent), as `GameSnapshot`s parsed by `EspnScoreFeed.parse` (one parser, shared).
 - **Ids.** Every game id becomes `<league>-rp<runId>-<espnId>`.
-- **Times.** Every start time is shifted by `runStart − setStart`, so replayed games show as today in `/games` and the UI can be used to watch a run.
-- **`done()`** is true once `t` is past the set's last board; **`gameIds()`** lists the run's game ids.
+- **Times.** Each game's scheduled start is moved to when its own timeline begins (run start + its offset at SPEED), so replayed games show as today in `/games` and the UI can be used to watch a run.
+- **`done()`** is true once `e` is past the set's last snapshot; **`gameIds()`** lists the run's game ids.
 
 The poller polls every `30 s / SPEED` (the recorder's cadence, sped up), at least 500 ms.
 
@@ -74,7 +76,7 @@ The poller polls every `30 s / SPEED` (the recorder's cadence, sped up), at leas
 
 **Problem.** A game follow needs the game's `game:` record (`FollowService` looks up its league), and that record is written only when the accept script takes the game's first play. But the follows must exist, frozen, before the replay starts (section 3).
 
-**Fix.** A replay runs in two steps. **Prime:** with the virtual clock held at each game's first board, the poller sends one pass, so every game gets its pre-game play (`GAME_SYNC`, accepted, no alerts) and its `game:` record. **Run:** the clock starts. The checker creates its users and follows between the two. The primed plays are part of the run: they are on `game-events` with the run's game ids, and the oracle reads them like any other play.
+**Fix.** A replay runs in two steps. **Prime:** before the clock starts, the feed answers each game's first snapshot, the poller sends one pass, so every game gets its pre-game play (`GAME_SYNC`, accepted, no alerts) and its `game:` record. **Run:** the clock starts. The checker creates its users and follows between the two. The primed plays are part of the run: they are on `game-events` with the run's game ids, and the oracle reads them like any other play.
 
 ### 2.4 Running a replay on its own
 
