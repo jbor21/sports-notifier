@@ -116,6 +116,9 @@ grep -q '"type":"hello"' "$carol_ws" || fail "Carol's WebSocket got no hello: $(
 # 4. Play one wave of games. Stop any simulator still running first: each run has its own game ids
 #    (<league>-sim<run start>-<slot>), so an older run still going would only add noise to histories.
 k delete jobs -l app.kubernetes.io/name=simulator --cascade=foreground --wait=true --ignore-not-found >/dev/null
+# Only this run's games count: an earlier run stopped mid-game (by the line above, or by make e2e)
+# leaves its game in_progress forever, with no more updates. Game ids carry the run's start second.
+run_start=$(( $(date +%s) - 5 ))
 job=$("$repo_root/scripts/simulate.sh" SIM_WAVES=1)
 echo "simulator job: $job"
 
@@ -125,7 +128,8 @@ echo "simulator job: $job"
 sim_game=""
 for _ in $(seq 1 60); do
   sim_game=$(curl -fsS "$BASE_URL/api/v1/games?date=$(date -u +%F)&tz=UTC&league=NFL" \
-    | jq -r '[.items[] | select((.id | startswith("nfl-sim")) and .status != "final")][-1].id // empty')
+    | jq -r --argjson since "$run_start" '[.items[] | select((.id | startswith("nfl-sim"))
+        and .status != "final" and ((.id | capture("^nfl-sim(?<s>[0-9]+)-").s | tonumber) >= $since))][-1].id // empty')
   [[ -n "$sim_game" ]] && break
   sleep 1
 done
