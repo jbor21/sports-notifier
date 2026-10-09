@@ -91,7 +91,7 @@ kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · PostgreSQL 17 · Hi
 Flyway · Testcontainers 2.0.5 · web: Vite 8 · React 19 · TypeScript 5 · React Router ·
 SWR · vite-plugin-pwa (Workbox) · Vitest · Playwright · pnpm 12 · Node 24
 **Size:** ~9,500 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
-design) · ~550 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
+design) · 553 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
