@@ -149,6 +149,7 @@ A class with no React, so fake timers can drive it. States: `connecting → open
 | close 4000 | Retry after 0–1 s of jitter only. |
 | close 1013, 1000, anything else, error | Back off 1, 2, 4, 8, 16, 30, 30… s, each plus 0–1 s of jitter. |
 | `online` event, or the tab becomes visible, while waiting | Retry now. A laptop that slept 20 minutes shouldn't sit out its backoff. |
+| the tab becomes visible while open | Send a `ping` at once. Chrome runs timers in a tab hidden more than 5 minutes about once a minute, which can stretch the 25 s ping past the server's 60 s idle close; a ping on return makes sure the server hears from the tab right away. |
 | message | Parse; drop anything malformed or with an unknown `type`; dispatch `hello`, `notification`, `unread_count`, `game_update`, `pong`. |
 | `setGames(ids)` | Keep the set (first 100); if open, send `subscribe_games` when it changed. |
 
@@ -247,7 +248,7 @@ Chosen in the visual companion (option B):
 Fixtures come from the examples in `openapi.yaml` (parsed at test time), so a contract change breaks the tests rather than drifting.
 
 - **Client:** Error shape mapped with `fields` and `Retry-After`; bare 500 text and a Traefik 502 HTML page → `server_error`; network failure → `network`; 204 → `undefined`; 401 calls the signed-out hook except for login.
-- **Connection** (fake socket, fake timers): each close code row of 5.2; the backoff sequence and the 0–1 s jitter bounds; reset after 60 s open; ping every 25 s; `subscribe_games` re-sent after a reconnect and `onReconnected` called only on reconnects; immediate retry on `online` and on becoming visible; a malformed frame and an unknown `type` change nothing; `hello` after a `notification` and an `unread_count` (#24).
+- **Connection** (fake socket, fake timers): each close code row of 5.2; the backoff sequence and the 0–1 s jitter bounds; reset after 60 s open; ping every 25 s; a ping sent at once when the tab becomes visible while open; `subscribe_games` re-sent after a reconnect and `onReconnected` called only on reconnects; immediate retry on `online` and on becoming visible; a malformed frame and an unknown `type` change nothing; `hello` after a `notification` and an `unread_count` (#24).
 - **Game store:** equal and lower versions dropped; an HTTP copy older than a socket copy is dropped; version 0 replaced; delta and "changed at" recorded.
 - **Badge:** last count wins in either order; seen → 0.
 - **Notifications:** a push is inserted at the top of matching cached lists without a fetch, once per id; unknown headline type skipped; unknown extras dropped; an answering type (`TOUCHDOWN_OVERTURNED`) is known.
@@ -290,6 +291,7 @@ The last task; it blocks the merge unless the user waives it in the PR. The chec
 - Each account gets its own team's alerts and the other team's scores; turning a switch off mid-game stops that alert.
 - Close the laptop lid for 2 minutes and open it: the banner, a reconnect, a refetch, and no duplicated notification.
 - Two tabs of one account: opening Notifications in one clears the badge in both.
+- Hide the tab (switch to another tab) for 10 minutes, then come back: the socket did not cycle in the meantime (count the reconnects: the app logs each one to the console, and the network tab lists one `ws` connection). If it did cycle, the fix is to run the ping timer in a Web Worker, whose timers Chrome doesn't throttle the same way; that is a follow-up, not part of 3b.
 - Changing the timezone in Settings shifts the shown times; the final shows `Final`.
 - Install the app from Chrome on the Mac; it opens standalone.
 
@@ -327,3 +329,4 @@ Then the final review, one fix pass, and the PR; merge when CI is green and the 
 - **Logos load from ESPN's image host,** because that is what the API returns.
 - **Phone install** is untested until Phase 5.
 - **#24, #25, and the badge's off-by-one** are tolerated, not fixed.
+- **A hidden tab's ping can be throttled.** Chrome runs a hidden tab's timers about once a minute after 5 minutes, so the 25 s ping may miss the server's 60 s idle close and the socket may close and reconnect in the background. The ping on return to visible covers the user-visible case; if the live check shows the socket cycling, the ping moves into a Web Worker.
