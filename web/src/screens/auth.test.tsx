@@ -158,10 +158,14 @@ describe('sign in', () => {
     const left = Number(button.textContent!.match(/\d+/)![0])
     expect(left).toBeGreaterThan(25)
     expect(left).toBeLessThanOrEqual(30)
+    // The countdown re-renders once a second from when its timer started, which on a slow runner
+    // can be just after the read above: wait for the drop rather than expect it on one exact tick.
     act(() => vi.advanceTimersByTime(1000))
-    const after = screen.getByRole('button', { name: /^Try again in \d+ s$/ })
-    expect(Number(after.textContent!.match(/\d+/)![0])).toBeLessThan(left)
-    expect(after).toBeDisabled()
+    await waitFor(() => {
+      const after = screen.getByRole('button', { name: /^Try again in \d+ s$/ })
+      expect(Number(after.textContent!.match(/\d+/)![0])).toBeLessThan(left)
+      expect(after).toBeDisabled()
+    })
     act(() => vi.advanceTimersByTime(30_000))
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
   })
