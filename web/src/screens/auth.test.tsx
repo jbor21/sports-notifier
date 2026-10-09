@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { user } from '../test/fixtures'
 import { renderApp, unauthenticated, type Reply, type Routes } from '../test/renderApp'
@@ -151,23 +151,12 @@ describe('sign in', () => {
     })
     await fill('jacob', 'abcdefgh9')
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
-    // The clock also moves with real time here (shouldAdvanceTime), so read the count rather than
-    // assume no second has passed yet on a slow machine.
+    // The countdown itself is tested in useSecondsLeft.test.ts with fully controlled timers.
     const button = await screen.findByRole('button', { name: /^Try again in \d+ s$/ })
     expect(button).toBeDisabled()
     const left = Number(button.textContent!.match(/\d+/)![0])
     expect(left).toBeGreaterThan(25)
     expect(left).toBeLessThanOrEqual(30)
-    // The countdown re-renders once a second from when its timer started, which on a slow runner
-    // can be just after the read above: wait for the drop rather than expect it on one exact tick.
-    act(() => vi.advanceTimersByTime(1000))
-    await waitFor(() => {
-      const after = screen.getByRole('button', { name: /^Try again in \d+ s$/ })
-      expect(Number(after.textContent!.match(/\d+/)![0])).toBeLessThan(left)
-      expect(after).toBeDisabled()
-    })
-    act(() => vi.advanceTimersByTime(30_000))
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
   })
 
   it('links to sign up, keeping next', async () => {

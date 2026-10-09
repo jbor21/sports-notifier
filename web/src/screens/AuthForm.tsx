@@ -1,11 +1,12 @@
 import { Bell, Radio, ShieldCheck } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useSWRConfig } from 'swr'
 import { ApiError, request } from '../api/client'
 import type { User } from '../api/types'
 import { Logo } from '../components/Logo'
 import { forgetUserData, isUserKey } from '../session'
+import { useSecondsLeft } from '../useSecondsLeft'
 
 // The same rules as openapi.yaml's Credentials, so a bad value never costs a request.
 const USERNAME = /^[a-z0-9_]{3,20}$/
@@ -24,17 +25,6 @@ function safeNext(next: string | null): string {
 }
 
 /** Whole seconds left until `until` (a Date.now() time), redrawn every second while above 0. */
-function useSecondsLeft(until: number): number {
-  const [, setTick] = useState(0)
-  const left = Math.max(0, Math.ceil((until - Date.now()) / 1000))
-  const counting = left > 0
-  useEffect(() => {
-    if (!counting) return
-    const timer = setInterval(() => setTick((n) => n + 1), 1000)
-    return () => clearInterval(timer)
-  }, [until, counting])
-  return left
-}
 
 type Field = 'username' | 'password'
 
