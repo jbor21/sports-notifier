@@ -5,6 +5,7 @@ import { Toasts } from './components/Toasts'
 import { usePaused } from './components/ReconnectBanner'
 import type { SocketLike } from './live/connection'
 import { LiveProvider, useConnection } from './live/LiveProvider'
+import { useUpdatePrompt } from './pwa/useUpdatePrompt'
 import { AppRoutes } from './routes'
 import { applyTheme, useTheme } from './theme'
 
@@ -29,6 +30,7 @@ function Root() {
   const theme = useTheme()
 
   useEffect(() => applyTheme(theme), [theme])
+  useUpdatePrompt()
 
   // `stale` greys live labels and scores while the reconnect banner shows.
   return (
