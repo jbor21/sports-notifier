@@ -353,9 +353,12 @@ class Stage1WorkerTest {
         sendToLaneZero(play("nhl-1", 2, 0, 1));   // the poison play
         sendToLaneZero(play("nhl-2", 1, 0, 0));
         sendToLaneZero(play("nhl-2", 2, 0, 1));   // another game in the same lane: its goal must arrive
-        sendToLaneZero(play("nhl-1", 3, 0, 2));   // the poisoned game goes on too
         Stage1Worker w = worker("s1-" + UUID.randomUUID(), new DetectorMemory(pool), () -> true, new Detectors(chain));
-        pollThroughFailures(w, 5);
+        pollThroughFailures(w, 4);
+        // det: moved past the poison play, so a re-read after a crash skips it instead of dead-lettering it again.
+        assertEquals("2", jedis.hget("det:nhl-1", "version"));
+        sendToLaneZero(play("nhl-1", 3, 0, 2));   // the poisoned game goes on too
+        pollThroughFailures(w, 1);
 
         List<String> ids = messages().stream().map(NotificationMessage::getMessageId).toList();
         assertTrue(ids.stream().anyMatch(i -> i.startsWith("nhl-2:SCORE")), "nhl-2's goal arrived: " + ids);
@@ -366,6 +369,85 @@ class Stage1WorkerTest {
         assertEquals(2, GameEventParser.parse(dead.get(0).value()).getVersion());
         String error = new String(dead.get(0).headers().lastHeader("error").value(), java.nio.charset.StandardCharsets.UTF_8);
         assertTrue(error.contains("detector bug"), error);
+        String source = new String(dead.get(0).headers().lastHeader("source").value(), java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(gameEvents + "-0@1", source);
+        assertEquals(1, w.deadLettered());
+    }
+
+    /** Review of #34: a game whose stored memory can't be read is not dead-lettered over and over. */
+    @Test
+    void unreadableMemoryIsForgottenAndTheLaneMovesOn() throws Exception {
+        follow("bos-fan", "BOS", "GOAL");
+        jedis.hset("det:nhl-1", Map.of("version", "1", "memory", "{not json"));
+        sendToLaneZero(play("nhl-1", 2, 0, 1));
+        sendToLaneZero(play("nhl-2", 1, 0, 0));
+        sendToLaneZero(play("nhl-2", 2, 0, 1));
+        Stage1Worker w = worker("s1-" + UUID.randomUUID());
+        pollThroughFailures(w, 3);
+        assertEquals(1, KafkaTestSupport.readAll(deadLetters, Duration.ofSeconds(2)).size(), "dead-lettered once");
+        assertEquals(1, w.deadLettered());
+        assertFalse(jedis.exists("det:nhl-1"), "the broken memory is gone; the game's next play starts from a baseline");
+        assertTrue(messages().stream().anyMatch(m -> m.getMessageId().startsWith("nhl-2:SCORE")));
+    }
+
+    /** Review of #34: a Redis error reply that will never change is a bad play, not an outage. */
+    @Test
+    void aRedisCommandErrorIsPoisonButLoadingIsAnOutage() throws Exception {
+        follow("bos-fan", "BOS", "GOAL");
+        send(play(1, 0, 0));
+        DetectorMemory wrongArgs = new DetectorMemory(pool) {
+            @Override public Stored read(String gameId) {
+                throw new redis.clients.jedis.exceptions.JedisDataException("ERR wrong number of arguments for 'sunionstore' command");
+            }
+        };
+        pollThroughFailures(worker("s1-" + UUID.randomUUID(), wrongArgs), 1);
+        assertEquals(1, KafkaTestSupport.readAll(deadLetters, Duration.ofSeconds(2)).size());
+
+        java.util.concurrent.atomic.AtomicInteger loading = new java.util.concurrent.atomic.AtomicInteger(10);
+        DetectorMemory restarting = new DetectorMemory(pool) {
+            @Override public Stored read(String gameId) {
+                if (loading.getAndDecrement() > 0)
+                    throw new redis.clients.jedis.exceptions.JedisDataException("LOADING Redis is loading the dataset in memory");
+                return super.read(gameId);
+            }
+        };
+        pollThroughFailures(worker("s1-" + UUID.randomUUID(), restarting), 1);
+        assertEquals(1, KafkaTestSupport.readAll(deadLetters, Duration.ofSeconds(2)).size(), "LOADING never dead-letters");
+    }
+
+    /** Review of #34: outages don't use up a play's tries; only its own failures do. */
+    @Test
+    void outagesDoNotUseUpThePlaysTries() throws Exception {
+        follow("bos-fan", "BOS", "GOAL");
+        send(play(1, 0, 0));
+        send(play(2, 0, 1));
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        DetectorMemory mixed = new DetectorMemory(pool) {
+            @Override public Stored read(String gameId) {
+                int n = calls.incrementAndGet();
+                if (n <= 4) throw new redis.clients.jedis.exceptions.JedisConnectionException("Redis is down");
+                if (n == 5) throw new IllegalStateException("one odd failure");
+                return super.read(gameId);
+            }
+        };
+        Stage1Worker w = worker("s1-" + UUID.randomUUID(), mixed);
+        pollThroughFailures(w, 2);
+        assertEquals(0, w.deadLettered());
+        assertEquals(1, messages().size());
+    }
+
+    /** Review of #34: a detector that recurses forever is a bad play, not a reason to crash every lane. */
+    @Test
+    void stackOverflowIsPoison() throws Exception {
+        Detector recurses = new Detector() {
+            @Override public void detect(GameMemory before, alerts.Play now, GameMemory after, List<alerts.Alert> out) {
+                if (now.version() == 2) throw new StackOverflowError();
+            }
+        };
+        send(play(1, 0, 0));
+        send(play(2, 0, 1));
+        Stage1Worker w = worker("s1-" + UUID.randomUUID(), new DetectorMemory(pool), () -> true, new Detectors(List.of(recurses)));
+        pollThroughFailures(w, 2);
         assertEquals(1, w.deadLettered());
     }
 

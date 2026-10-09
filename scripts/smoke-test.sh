@@ -222,7 +222,7 @@ if probe_user_pref netpol-probe; then
   fail "a pod outside the allow lists reached user-pref:8081 (network policies not enforced). If the cluster was just restarted, k3s may not have started its policy controller: check 'docker logs k3d-sports-notifier-server-0 | grep \"network policy controller\"', then 'k3d cluster stop sports-notifier && make cluster'"
 fi
 
-# 8. Kafka. Both topics exist in Kafka with the partition counts the chart asks for. The KafkaTopic
+# 8. Kafka. The topics exist in Kafka with the partition counts the chart asks for. The KafkaTopic
 #    status has no partition count, but Strimzi marks it Ready only once the real topic matches the
 #    spec it last read (observedGeneration), so Ready for the current spec is the answer.
 k wait kafka/sports-notifier --for=condition=Ready --timeout=300s >/dev/null \
