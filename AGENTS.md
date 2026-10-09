@@ -91,7 +91,7 @@ kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · PostgreSQL 17 · Hi
 Flyway · Testcontainers 2.0.5 · web: Vite 8 · React 19 · TypeScript 5 · React Router ·
 SWR · vite-plugin-pwa (Workbox) · Vitest · Playwright · pnpm 12 · Node 24
 **Size:** ~9,500 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
-design) · 544 Java tests · 173 web unit tests · 2 PWA and 1 end-to-end browser tests
+design) · ~550 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -202,10 +202,14 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   `docs/superpowers/specs/2026-10-08-phase-3b-ui-design.md`, plan
   `docs/superpowers/plans/2026-10-08-phase-3b-ui.md`. The issue #3 live check is the
   last step before merge.
-- **Next step: Phase 4 (proof tools).** First the must-fix issues: #15 and #29 before
-  Phase 4, #16 before Phase 5. Other deferred minors are issues #17–#27. CI: #29,
-  HistoryWriterTest can hang while Postgres is paused (a watchdog dumps threads after
-  12 min; suspected unbounded socket write).
+- **Next step: Phase 4 (proof tools).** #29 and #15 are fixed (PR #33, #34); #16 is
+  still a must-fix before Phase 5. Other deferred minors are issues #17–#27, #31, #35.
+- **Fixed after 3.4:** #29: `Db.create` passed `socketTimeout` as a number, which the
+  Postgres driver silently ignores, so no connection had a read timeout; now a string
+  (`DbTest`), and `HistoryStore` aborts a statement past `HISTORY_INSERT_DEADLINE_MS`
+  (10 s). #15: Stage 1 sends a play that fails 3 times for a non-I/O reason to
+  `game-events-dlq` and moves on; Redis and Kafka outages are retried, never
+  dead-lettered; `/health` shows `deadLettered`.
 - **New in Phase 3b:** the Sideline UI in `web/` (Vite + React), rebuilt from the
   user's v0 design (`~/Desktop/projects/sports-notification-app-frontend-v0`, a
   read-only reference; its demo mode was dropped). A Dockerfile stage builds it; the
