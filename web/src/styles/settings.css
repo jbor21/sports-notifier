@@ -1,0 +1,52 @@
+.settings-panel {
+  max-width: 760px;
+}
+.settings-panel h2 {
+  font-size: 17px;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 0;
+}
+.settings-row h3 {
+  font-size: 12px;
+  margin-bottom: 7px;
+}
+.settings-row p {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+  line-height: 1.7;
+}
+.settings-panel form {
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+  padding-top: 8px;
+}
+.connection-info {
+  padding: 18px;
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.connection-info code {
+  color: var(--text);
+  font-size: 12px;
+}
+.connection-info small {
+  font-size: 11px;
+  line-height: 1.8;
+}
+@media (max-width: 720px) {
+  .settings-row p {
+    font-size: 11px;
+  }
+}

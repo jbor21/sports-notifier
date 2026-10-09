@@ -88,8 +88,10 @@ Browser ◄── /api/v1/ws ◄── Gateway (8080) ◄── SUBSCRIBE gw:<it
 
 **Stack:** Java 17 · Maven · Javalin 6.1.6 · Jedis 4.4.7 · Gson · jbcrypt ·
 kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · PostgreSQL 17 · HikariCP ·
-Flyway · Testcontainers 2.0.5
-**Size:** ~9,000 lines Java · the course's 1,851-line `index.html` (broken since 3.2; the new UI is 3b) · 529 tests
+Flyway · Testcontainers 2.0.5 · web: Vite 8 · React 19 · TypeScript 5 · React Router ·
+SWR · vite-plugin-pwa (Workbox) · Vitest · Playwright · pnpm 12 · Node 24
+**Size:** ~9,500 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
+design) · 553 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -148,8 +150,10 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   that way. (The course version originally lived at
   `Yeshiva-University-CS/Borenstein_Jacob_800755097`.)
 - **Layout:** everything at the repo root: `pom.xml`, `src/`, `Dockerfile`,
-  `Makefile`, `scripts/`, `deploy/helm/sports-notifier/`, `.github/workflows/`.
-  One shaded JAR; `app.Launcher` reads `SERVICE` and runs that service's main.
+  `Makefile`, `scripts/`, `deploy/helm/sports-notifier/`, `.github/workflows/`, `web/`
+  (the Sideline UI). One shaded JAR; `app.Launcher` reads `SERVICE` and runs that
+  service's main. The image also holds the built UI in `/app/web`, which the gateway
+  serves at `/`.
 - **Test:** `make test`. It starts a throwaway Redis on `localhost:6379` (the
   tests use DB 1 and flush it) and removes it afterwards. Kafka tests start a
   broker through Testcontainers, so Docker must be running; stopping the laptop
@@ -165,9 +169,16 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   `make down` deletes the cluster but not accounts: Postgres keeps its data in
   `~/.sportsnotifier/postgres` on the Mac, mounted into k3d by `make cluster`
   (laptop password fixed in `values-local.yaml`). `scripts/persistence-check.sh`
-  proves it.
-- **CI:** GitHub Actions runs the tests, then `make cluster up smoke` on a
-  throwaway k3d cluster, on every push and pull request.
+  proves it. `make e2e` drives the UI in Chromium against the cluster.
+- **UI dev:** in `web/`, `pnpm dev` (Vite on :5173, proxying `/api/v1` and the socket
+  to the cluster at :8080) or `pnpm dev:mock` (Prism on :4010 behind the same proxy,
+  with a `sid` cookie added; no socket). `pnpm test`, `pnpm typecheck`,
+  `pnpm format:check`, `pnpm types:check` (types generated from `docs/api/openapi.yaml`;
+  never edit `src/api/schema.d.ts` by hand), `pnpm test:pwa`.
+- **CI:** GitHub Actions runs the Java tests and, in parallel, the `web` job (format,
+  types, unit tests, build, PWA update test); then `make cluster up smoke e2e` on a
+  throwaway k3d cluster, on every push and pull request. A failed browser run uploads
+  Playwright traces.
 - **Phase 2 (Correctness and security) is merged** (PR #2, 2026-10-02). Fixes
   from 60 hours of recorded ESPN data are in PR #4. Issue #3 (live-game
   check) closed 2026-10-07 as covered by the recordings and the smoke test's
@@ -187,10 +198,33 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
 - **Phase 3.4 (live API) is merged** (PR #28, 2026-10-08): spec
   `docs/superpowers/specs/2026-10-08-phase-3-4-live-api-design.md`, plan
   `docs/superpowers/plans/2026-10-08-phase-3-4-live-api.md`.
-- **Next step: Phase 3b (new UI)**, against the now fully served `docs/api/`.
-  Deferred minors are issues #15–#27 (#15 must be fixed before Phase 4, #16 before
-  Phase 5). CI: #29, HistoryWriterTest can hang while Postgres is paused (a watchdog
-  dumps threads after 12 min; suspected unbounded socket write).
+- **Phase 3b (new UI) is built** on branch `phase-3b-ui`: spec
+  `docs/superpowers/specs/2026-10-08-phase-3b-ui-design.md`, plan
+  `docs/superpowers/plans/2026-10-08-phase-3b-ui.md`. The issue #3 live check is the
+  last step before merge.
+- **Next step: Phase 4 (proof tools).** #29 and #15 are fixed (PR #33, #34); #16 is
+  still a must-fix before Phase 5. Other deferred minors are issues #17–#27, #31, #35.
+- **Fixed after 3.4:** #29: `Db.create` passed `socketTimeout` as a number, which the
+  Postgres driver silently ignores, so no connection had a read timeout; now a string
+  (`DbTest`), and `HistoryStore` aborts a statement past `HISTORY_INSERT_DEADLINE_MS`
+  (10 s). #15: Stage 1 sends a play that fails 3 times for a non-I/O reason to
+  `game-events-dlq` and moves on; Redis and Kafka outages are retried, never
+  dead-lettered; `/health` shows `deadLettered`.
+- **New in Phase 3b:** the Sideline UI in `web/` (Vite + React), rebuilt from the
+  user's v0 design (`~/Desktop/projects/sports-notification-app-frontend-v0`, a
+  read-only reference; its demo mode was dropped). A Dockerfile stage builds it; the
+  gateway's `WebFiles` serves `WEB_DIR` from its 404 handler (app routes fall back to
+  `index.html`, never under `/api/`; `/assets/*` immutable, the rest `no-cache`; a CSP
+  whose `connect-src` names the request's validated host for older Safari). The
+  course `index.html` and `/ui` are gone. Client core: `src/api/client.ts` (every error
+  one `ApiError`, bare 500s included), `src/live/connection.ts` (websocket.md's close
+  codes, backoff with jitter, ping every 25 s and on return to visible, re-subscribe
+  and refetch after a reconnect), `src/live/games.ts` (highest version wins, HTTP
+  included), pushed notifications merged into history by id. Every screen needs
+  sign-in. PWA: `src/sw.ts` precaches the app; a waiting worker shows "New version",
+  and an unanswered one is applied on the next in-app navigation. A gateway rollout
+  can answer 504 for a few seconds (no drain delay before shutdown); the UI tolerates
+  it.
 - **New in Phase 3.4:** `/api/v1/ws` (`gateway/LiveSocket`): `hello` with the unread
   count, 4401 without a session, ping/pong, idle close after 60 s, notifications in the
   API shape, `unread_count`, `game_update`. The accept script saves start time and line

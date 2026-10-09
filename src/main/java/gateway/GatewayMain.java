@@ -7,7 +7,6 @@ import catalog.Teams;
 import com.google.gson.JsonParser;
 import games.GameSummaries;
 import io.javalin.Javalin;
-import io.javalin.http.staticfiles.Location;
 import redis.clients.jedis.JedisPool;
 import util.GsonJsonMapper;
 import util.JedisPoolHolder;
@@ -18,6 +17,7 @@ import java.time.Instant;
 import java.net.URLEncoder;
 import java.net.UnknownHostException;
 import java.net.http.HttpResponse;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.UUID;
@@ -60,20 +60,14 @@ public final class GatewayMain {
         Javalin app = Javalin.create(cfg -> {
             cfg.jsonMapper(new GsonJsonMapper());
             LiveSocket.configure(cfg);
-            cfg.staticFiles.add(staticCfg -> {
-                staticCfg.hostedPath = "/ui";
-                staticCfg.directory = "/public";
-                staticCfg.location = Location.CLASSPATH;
-            });
         }).start(port);
-
-        app.get("/", ctx -> ctx.redirect("/ui/"));
 
         app.get("/health", ctx -> ctx.json(Collections.singletonMap("status", "ok")));
 
         ApiV1Routes.register(app, pool, loginThrottle, USER_PREF_URL, NOTIFICATION_URL);
         GameRoutes.register(app, pool, GAME_STATE_URL, USER_PREF_URL, Instant::now);
         ReferenceRoutes.register(app, Leagues.load(), Teams.load(), AlertCatalog.load());
+        WebFiles.register(app, Path.of(System.getenv().getOrDefault("WEB_DIR", "/app/web")));
 
         // --- Live socket: /api/v1/ws ---
         GameSubscriptions games = new GameSubscriptions(pool, channel, new GameSummaries(Teams.load()), SUBSCRIBE_CONFIRM_MILLIS);

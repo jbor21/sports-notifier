@@ -35,7 +35,15 @@ Status: **final for Phase 3, 2026-10-06.** Reviewed against the backend design i
 
 ## Running the mock
 
-From the repo root (needs Node):
+For the UI, from `web/`:
+
+```
+pnpm dev:mock
+```
+
+It starts Prism on port 4010 and the UI's dev server on 5173. The dev server forwards `/api/v1/*` to Prism with the prefix removed and a `sid` cookie added, so the UI calls its own origin as it does against the real backend, and the signed-in screens work. The socket can't connect to the mock, so the UI shows its reconnecting state.
+
+For other tools, from the repo root (needs Node):
 
 ```
 npx @stoplight/prism-cli mock docs/api/openapi.yaml -p 4010

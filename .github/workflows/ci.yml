@@ -70,6 +70,41 @@ jobs:
           path: target/kafka-diagnostics/
           if-no-files-found: ignore
 
+  # The web app: format, types (generated from docs/api/openapi.yaml), unit tests, production build,
+  # and the PWA update test (two builds, a static server, Chromium; no cluster).
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      # Reads the pnpm version from web/package.json ("packageManager").
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm types:check
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:pwa
+      - name: Save the Playwright trace
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pwa-test-results
+          path: web/test-results/
+          if-no-files-found: ignore
+
   # Deploy to a throwaway k3d cluster with the same make targets used on the laptop.
   deploy-check:
     needs: test
@@ -82,7 +117,27 @@ jobs:
       - uses: azure/setup-helm@v5
         with:
           version: ${{ env.HELM_VERSION }}
-      - run: make cluster up smoke
+      # For make e2e: the web UI in a real browser against the cluster.
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Install the browser for make e2e
+        working-directory: web
+        run: pnpm install --frozen-lockfile && pnpm exec playwright install --with-deps chromium
+      - run: make cluster up smoke e2e
       - name: Show pods and logs
         if: failure()
         run: make logs
+      # Screenshots, network, and socket frames of a failed browser run.
+      - name: Save Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces
+          path: web/test-results/
+          if-no-files-found: ignore

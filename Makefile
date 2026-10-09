@@ -15,7 +15,7 @@ export KUBE_CONTEXT
 # A new tag per build so Kubernetes always rolls pods onto new code. Uncommitted changes get a unique suffix.
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
-.PHONY: test cluster up simulate smoke logs down replay-detectors
+.PHONY: test cluster up simulate smoke e2e logs down replay-detectors
 
 # Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
 # until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
@@ -48,7 +48,7 @@ cluster:
 # Helm's --wait covers our pods; Strimzi reports the broker ready in the Kafka resource's status.
 up:
 	@k3d cluster get $(CLUSTER) >/dev/null 2>&1 || { echo "Cluster $(CLUSTER) not found. Run: make cluster"; exit 1; }
-	docker build -t sports-notifier:$(TAG) .
+	docker build --build-arg BUILD_ID=$(TAG) -t sports-notifier:$(TAG) .
 	@# k3d can report "Successfully imported" when its helper lost the tarball first ("no such file
 	@# or directory", seen in CI on PR #32); the pods then wait for an image that isn't there. So check
 	@# the node really has it, and retry.
@@ -66,6 +66,11 @@ simulate:
 
 smoke:
 	@scripts/smoke-test.sh
+
+# The web UI end to end in a browser against the cluster (web/e2e/cluster.spec.ts): sign up, follow,
+# a live touchdown, a gateway restart mid-game, history, sign out. Run after `make up`.
+e2e:
+	cd web && pnpm install --frozen-lockfile && pnpm exec playwright install chromium && pnpm test:e2e
 
 logs:
 	-kubectl --context $(KUBE_CONTEXT) get pods -o wide

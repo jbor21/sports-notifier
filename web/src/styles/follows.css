@@ -1,0 +1,195 @@
+.segmented {
+  background: var(--hover);
+  padding: 4px;
+  display: flex;
+  border-radius: 8px;
+  margin: 22px 0;
+}
+.segmented > button {
+  flex: 1;
+  text-transform: capitalize;
+  padding: 8px;
+  font-size: 12px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+.segmented > button.active {
+  background: var(--surface);
+  color: var(--green);
+  box-shadow: 0 1px 4px #0001;
+}
+.search-input {
+  display: flex;
+  border: 1px solid var(--border);
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  border-radius: 7px;
+  color: var(--muted);
+  margin: 20px 0 10px;
+}
+.search-input input {
+  flex: 1;
+  border: 0;
+  background: none;
+  outline: 0;
+  padding-left: 0;
+  font-size: 12px;
+}
+.discover-list {
+  min-height: 150px;
+}
+.discover-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 0;
+}
+.discover-row > strong {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 550;
+}
+.discover-row > button {
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.follows-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.follow-panel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  margin: 0;
+}
+.follow-panel h2 {
+  font-size: 15px;
+  margin-bottom: 7px;
+}
+.follow-panel p {
+  margin: 0;
+  font-size: 10px;
+  text-transform: capitalize;
+  color: var(--muted);
+}
+.follow-panel > svg {
+  margin-left: auto;
+  color: var(--muted);
+}
+.follow-panel .league-icon {
+  width: 38px;
+  height: 43px;
+  font-size: 12px;
+}
+.alert-settings {
+  max-width: 850px;
+  padding: 0 25px;
+}
+.alert-setting {
+  padding: 25px 0;
+  border-bottom: 1px solid var(--border);
+}
+.alert-setting:last-child {
+  border-bottom: 0;
+}
+.setting-main {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+.setting-main > div {
+  flex: 1;
+}
+.setting-main h3 {
+  font-size: 13px;
+  margin-bottom: 7px;
+}
+.setting-main p {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.7;
+  margin: 0;
+}
+.setting-main small {
+  color: var(--muted);
+  font-size: 10px;
+  display: block;
+  margin-top: 8px;
+}
+.setting-icon {
+  display: grid;
+  place-items: center;
+  background: var(--hover);
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  color: #839589;
+  flex-shrink: 0;
+}
+.soon {
+  font-family: 'DM Sans Variable', sans-serif;
+  font-size: 8px;
+  color: var(--muted);
+  background: var(--hover);
+  padding: 4px 7px;
+  border-radius: 4px;
+  margin-left: 6px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.innings {
+  border: 0;
+  padding: 18px 0 0 55px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.innings legend {
+  font-size: 11px;
+}
+.innings legend small {
+  color: var(--muted);
+}
+.innings label {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+@media (max-width: 1020px) {
+  .follows-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 720px) {
+  .alert-settings {
+    padding: 0 18px;
+  }
+  .setting-main {
+    gap: 11px;
+  }
+  .setting-icon {
+    width: 30px;
+    height: 30px;
+  }
+  .setting-main h3 {
+    font-size: 12px;
+  }
+  .setting-main p {
+    font-size: 10px;
+  }
+  .innings {
+    padding-left: 0;
+  }
+  .discover-row > strong {
+    font-size: 11px;
+  }
+  .follow-panel h2 {
+    font-size: 13px;
+  }
+}

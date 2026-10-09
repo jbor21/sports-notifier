@@ -1,0 +1,119 @@
+.auth-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 650px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.auth-story {
+  background: #eaf1ea;
+  padding: 42px 35px;
+  color: #264231;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.auth-story .brand {
+  margin: 0 0 65px;
+}
+.auth-story .eyebrow {
+  font-size: 8px;
+  color: #72917c;
+}
+.auth-story h1 {
+  font-size: 42px;
+  line-height: 1.2;
+  letter-spacing: -2px;
+}
+.auth-story > p {
+  font-size: 12px;
+  line-height: 1.9;
+  color: #7a8d7e;
+  margin-top: 12px;
+}
+.auth-features {
+  display: flex;
+  flex-direction: column;
+  gap: 21px;
+  margin-top: 28px;
+}
+.auth-features span {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+}
+.auth-features svg {
+  height: 18px;
+  width: 18px;
+  color: #709377;
+}
+.auth-form {
+  padding: 45px 40px;
+  align-self: center;
+}
+.auth-form h2 {
+  font-size: 25px;
+  letter-spacing: -0.8px;
+  margin-bottom: 10px;
+}
+.auth-form > p {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.8;
+}
+.auth-form > p:last-child {
+  text-align: center;
+  margin-top: 24px;
+}
+.auth-submit {
+  width: 100%;
+  margin-top: 12px;
+}
+[data-theme='dark'] .auth-story {
+  background: #243e30;
+  color: #d4e8d9;
+}
+/* Sign in and sign up stand alone, without the shell. */
+.auth-page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+@media (max-width: 1190px) {
+  .auth-story {
+    padding: 30px 24px;
+  }
+  .auth-form {
+    padding: 30px 24px;
+  }
+  .auth-story h1 {
+    font-size: 34px;
+  }
+}
+@media (max-width: 1020px) {
+  .auth-layout {
+    grid-template-columns: 1fr;
+  }
+  .auth-story {
+    display: none;
+  }
+  .auth-form {
+    max-width: 440px;
+    width: 100%;
+    margin: 0 auto;
+  }
+}
+@media (max-width: 720px) {
+  .auth-page {
+    padding: 24px 16px;
+  }
+  .auth-layout {
+    min-height: 520px;
+  }
+  .auth-form {
+    padding: 30px 24px;
+  }
+}

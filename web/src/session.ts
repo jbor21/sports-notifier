@@ -1,0 +1,46 @@
+import useSWR, { type Cache, type SWRResponse } from 'swr'
+import { fetcher, type ApiError } from './api/client'
+import type { User } from './api/types'
+
+const PUBLIC_PATHS = ['/signin', '/signup']
+
+/** The screens a signed-out user may see. */
+export function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.includes(pathname)
+}
+
+/** Where a lost session goes: sign in, then back to `next` (path and query). */
+export function signInPath(next: string): string {
+  const pathname = next.split(/[?#]/)[0]
+  // From sign in or sign up, a second hop would only bury the original next.
+  if (isPublicPath(pathname)) return '/signin'
+  return '/signin?next=' + encodeURIComponent(next)
+}
+
+/**
+ * The signed-in user. No retry on error: a 401 is an answer, and retrying it on /signin would
+ * be a request loop.
+ */
+export function useMe(): SWRResponse<User, ApiError> {
+  return useSWR<User, ApiError>('/me', fetcher, { shouldRetryOnError: false })
+}
+
+/** Cached answers that belong to the signed-in user; paged lists carry SWR's `$inf$` prefix. */
+export function isUserKey(key: unknown): boolean {
+  if (typeof key !== 'string') return false
+  const path = key.replace(/^\$inf\$/, '')
+  return (
+    path.startsWith('/follows') ||
+    path.startsWith('/notifications') ||
+    path.includes('following=true')
+  )
+}
+
+/**
+ * On sign-out: drop the user's cached follows, history, and followed games, so the next user on
+ * this tab never sees them before their own load. /me is cleared by the caller (with a mutate,
+ * so the screens watching it hear about it).
+ */
+export function forgetUserData(cache: Cache): void {
+  for (const key of [...cache.keys()]) if (isUserKey(key)) cache.delete(key)
+}
