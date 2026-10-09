@@ -1,0 +1,54 @@
+# Never fires on its own (suspend: true). It holds the correctness checker's image and settings in one
+# place; `make check` (scripts/run-job.sh) stamps a one-off Job from it, with the make command line's
+# SET, SPEED, USERS, SEED, KEEP, FAULT as env overrides. One Job is one run: sign up synthetic users,
+# replay recorded games through the real pipeline, hold their sockets, then verify history and every
+# socket against the expected pushes (Phase 4.1 spec, section 9). Exit 0 PASS, 1 FAIL, 2 SETUP FAILED.
+# It talks to the gateway, Event Processing, Kafka, Postgres and Redis; network-policies.yaml and
+# kafka.yaml let a pod labelled checker through to each.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: checker
+  labels:
+    {{- include "sports-notifier.labels" "checker" | nindent 4 }}
+spec:
+  suspend: true
+  schedule: "0 0 1 1 *"
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "sports-notifier.labels" "checker" | nindent 8 }}
+    spec:
+      # A failed check is an answer, not something to retry.
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            {{- include "sports-notifier.labels" "checker" | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: checker
+              image: {{ include "sports-notifier.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              env:
+                - name: SERVICE
+                  value: checker
+                {{- include "sports-notifier.baseEnv" . | nindent 16 }}
+                {{- include "sports-notifier.postgresEnv" . | nindent 16 }}
+                {{- include "sports-notifier.kafkaEnv" . | nindent 16 }}
+                - name: GATEWAY_URL
+                  value: http://gateway:{{ .Values.services.gateway.port }}
+                - name: EPS_URL
+                  value: http://event-processing:{{ index .Values.services "event-processing" "port" }}
+                - name: CHECK_SET
+                  value: {{ .Values.checker.set | quote }}
+                - name: CHECK_SPEED
+                  value: {{ .Values.checker.speed | quote }}
+                - name: CHECK_USERS
+                  value: {{ .Values.checker.users | quote }}
+                - name: CHECK_SEED
+                  value: {{ .Values.checker.seed | quote }}
+              resources:
+                {{- toYaml .Values.checker.resources | nindent 16 }}

@@ -32,7 +32,8 @@ spec:
       # The only client port. No TLS or auth inside the cluster yet (Phase 5); instead Strimzi writes
       # a NetworkPolicy from networkPolicyPeers so only these workloads (and Strimzi's own pods,
       # which use other ports) can open a connection. The list is every service with kafka: true in
-      # values.yaml, so a new Kafka client can't be left off it.
+      # values.yaml, so a new Kafka client can't be left off it, plus the checker Job (make check),
+      # which reads game-events and the consumer groups' lag.
       - name: plain
         port: 9092
         type: internal
@@ -48,6 +49,7 @@ spec:
                     - {{ $name }}
                     {{- end }}
                     {{- end }}
+                    - checker
     config:
       # A misspelled topic name fails instead of quietly creating a new topic.
       auto.create.topics.enable: false

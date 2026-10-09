@@ -20,6 +20,8 @@ spec:
   policyTypes: [Ingress]
 ---
 # The only door from outside: Traefik (k3d's ingress controller, in kube-system) to the gateway.
+# The checker Job (make check) also comes in here, from inside: it signs its users up and holds
+# their sockets through the gateway, as a browser would.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -36,6 +38,8 @@ spec:
             matchLabels: { kubernetes.io/metadata.name: kube-system }
           podSelector:
             matchLabels: { app.kubernetes.io/name: traefik }
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: checker }
       ports:
         - port: {{ .Values.services.gateway.port }}
 {{- /* Internal HTTP services and the only workloads allowed to call each one. */}}
@@ -84,7 +88,8 @@ spec:
       ports:
         - port: 6379
 ---
-# Postgres: only the services that use it. (history is the Phase 3.2 history writer, added later.)
+# Postgres: only the services that use it, and the checker Job (it reads follows and history to
+# verify a run, and deletes its synthetic users afterwards).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -99,6 +104,6 @@ spec:
     - from:
         - podSelector:
             matchExpressions:
-              - { key: app.kubernetes.io/name, operator: In, values: [user-pref, notification, history] }
+              - { key: app.kubernetes.io/name, operator: In, values: [user-pref, notification, history, checker] }
       ports:
         - port: 5432

@@ -129,7 +129,8 @@ jobs:
       - name: Install the browser for make e2e
         working-directory: web
         run: pnpm install --frozen-lockfile && pnpm exec playwright install --with-deps chromium
-      - run: make cluster up smoke e2e
+      # check: the correctness checker on the ci replay set at 60x (about 4 minutes); its report is in this log.
+      - run: make cluster up smoke check e2e SET=ci SPEED=60
       - name: Show pods and logs
         if: failure()
         run: make logs
