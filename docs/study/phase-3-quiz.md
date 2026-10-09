@@ -783,3 +783,139 @@ Three real bugs: ESPN shows HALFTIME with the period already at 3, which sent "E
 **Model answer:** "Reference counts under one lock, commands in order on one connection, and a re-check after any wait."
 
 </details>
+
+## 3b New UI
+
+| # | Topic | First run |
+|---|---|---|
+| 1 | Why the gateway serves the UI | **Not yet taken** |
+| 2 | Why the CSP names the socket's host | **Not yet taken** |
+| 3 | The close codes, and why each does what it does | **Not yet taken** |
+| 4 | Why the backoff has jitter | **Not yet taken** |
+| 5 | One store, and why HTTP goes through the version check too | **Not yet taken** |
+| 6 | Why a pushed notification isn't refetched | **Not yet taken** |
+| 7 | Shipping a new version to a tab that is already open | **Not yet taken** |
+| 8 | The hidden-tab ping | **Not yet taken** |
+
+---
+
+### 3b-1. Why the gateway serves the UI
+
+> The UI is static files. Why serve them from a Java gateway instead of nginx or a CDN?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** the session is an `HttpOnly`, `SameSite=Lax` cookie, and the live socket is `/api/v1/ws`. If the page came from another origin, every call would need CORS with credentials, and the socket would need its own origin checks. **Fix:** a Docker stage builds `web/dist` into the same image, and the gateway serves it at `/` from its 404 handler: only GETs that matched no route, outside `/api/`, reach the files. App routes fall back to `index.html`; a missing `/assets/x.js` stays a 404 so a stale page never gets HTML for a script. **Cost:** a UI change restarts the gateways, but with one image every deploy restarts everything anyway, and tabs reconnect on close code 4000.
+
+**Model answer:** "Same origin makes the cookie and the socket just work. One image keeps one deploy path. A CDN is an optimization I'd add when the numbers say so."
+
+</details>
+
+---
+
+### 3b-2. Why the CSP names the socket's host
+
+> `connect-src 'self'` should cover the WebSocket. Why does the gateway write `ws://<host> wss://<host>` from the request?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** older Safari doesn't treat `ws:`/`wss:` as `'self'`, so the socket would be blocked. Writing a bare `ws:` would allow sockets to *any* host, which defeats the policy. **Fix:** name the request's own host, but only if the `Host` header matches a hostname pattern; otherwise fall back to `'self'` alone, so a forged `Host` can't inject directives into the header.
+
+**Model answer:** "Name exactly the host the page came from, and never trust a header into another header without checking it."
+
+</details>
+
+---
+
+### 3b-3. The close codes
+
+> The socket closed. What does the UI do for 4401, 4000, 1013, and anything else?
+
+<details>
+<summary>Model answer</summary>
+
+- **4401** (not signed in): go to sign in, no retry. Retrying can't fix a missing session.
+- **4000** (this gateway is shutting down): reconnect after only 0–1 s of jitter. Another gateway is ready now; waiting would only make scores stale.
+- **1013** (the tab fell too far behind), **1000 idle**, network errors: back off 1, 2, 4, 8, 16, 30 s, each plus 0–1 s. Something is wrong; hammering makes it worse.
+- After any reconnect: send `subscribe_games` again and refetch over HTTP, because nothing missed is replayed. The backoff resets only after a minute connected, so a socket that opens and drops at once keeps growing its wait.
+
+**Model answer:** "Each code tells me whether retrying helps and how soon. And a reconnect is a fresh start: re-subscribe and refetch."
+
+</details>
+
+---
+
+### 3b-4. Why the backoff has jitter
+
+> Exponential backoff already spreads retries out. Why add a random second?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** when a gateway restarts, every tab on it loses its socket at the same instant. With pure exponential backoff they all retry at 1 s, then all at 2 s: a thundering herd hitting the new gateway in waves. **Fix:** add 0–1 s at random to each wait, so a thousand tabs arrive over a second instead of in one millisecond.
+
+**Model answer:** "Backoff decides how long; jitter decides that we don't all come back together."
+
+</details>
+
+---
+
+### 3b-5. One store, and why HTTP goes through the version check too
+
+> The socket's `game_update` carries a `version`; stale ones are dropped. Why does the HTTP game list go through the same check?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** the list refetches every 60 s and after reconnects. A response can be computed before a socket update that arrives first; if the list overwrote the screen, the score would jump back. **Fix:** one store, game id → highest-version copy. Both HTTP and socket copies go through `accept()`; equal or lower versions are dropped. Schedule games have version 0, so the first live update replaces them.
+
+**Model answer:** "Version is the order of truth, whatever the transport. Everything that writes the screen obeys it."
+
+</details>
+
+---
+
+### 3b-6. Why a pushed notification isn't refetched
+
+> A notification arrives on the socket. Why not just refetch `GET /notifications`?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** history is written by its own consumer group (the history writer), batched, so it can lag the push by a second or two. A refetch right away often doesn't contain the item that triggered it. **Fix:** keep this session's pushes in a small store; each history list merges them with what it fetched, one copy per id (the notification id is the same in both), newest first.
+
+**Model answer:** "Two paths, two speeds. The UI merges by id instead of assuming the slower one has caught up."
+
+</details>
+
+---
+
+### 3b-7. Shipping a new version to a tab that is already open
+
+> You deploy. A user has had the app open for six hours. How do they get the new code?
+
+<details>
+<summary>Model answer</summary>
+
+The service worker precaches the app's files, so an open tab keeps running old code until something changes. **Fix:** the app asks the browser to check for a new `sw.js` when the tab becomes visible and every 30 minutes (`sw.js` is served `no-cache`). A new worker installs and waits; the app shows "New version — Reload". Reload tells it to activate (`SKIP_WAITING`) and reloads when it takes control. If the user ignores the toast, the next in-app navigation activates it and does a full page load of that route. A Playwright test builds two versions and proves an old tab picks up the new build id.
+
+**Model answer:** "Never swap code under a running page by surprise; ask, and if ignored, switch at the next natural break."
+
+</details>
+
+---
+
+### 3b-8. The hidden-tab ping
+
+> The UI pings every 25 s and the server closes after 60 s of silence. How can a hidden tab still get closed?
+
+<details>
+<summary>Model answer</summary>
+
+**Problem:** Chrome throttles timers in a tab hidden for more than 5 minutes to about once a minute, so the 25 s ping can stretch past the server's 60 s idle close; the socket then closes and reconnects in the background. **Fix:** ping at once when the tab becomes visible again, so the user never sees a stale socket. The live check hides a tab for 10 minutes and counts reconnects; if it cycles, the ping timer moves into a Web Worker, whose timers aren't throttled the same way.
+
+**Model answer:** "Background timers aren't guaranteed. Cover the moment the user returns, and measure before adding a worker."
+
+</details>
