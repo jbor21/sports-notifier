@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-10-08.
+asks. Last updated 2026-10-09.
 
 ---
 
@@ -182,7 +182,7 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
 - **Phase 2 (Correctness and security) is merged** (PR #2, 2026-10-02). Fixes
   from 60 hours of recorded ESPN data are in PR #4. Issue #3 (live-game
   check) closed 2026-10-07 as covered by the recordings and the smoke test's
-  WebSocket check; the full live check happens with the new UI (3b).
+  WebSocket check; the full live check with the new UI is issue #36.
 - **Phase 3 is split into 3.1–3.4** (`DESIGN.md` build order). **3.1 Kafka
   pipeline is merged** (PR #6, 2026-10-07): spec
   `docs/superpowers/specs/2026-10-06-phase-3-1-kafka-pipeline-design.md`, plan
@@ -198,12 +198,13 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
 - **Phase 3.4 (live API) is merged** (PR #28, 2026-10-08): spec
   `docs/superpowers/specs/2026-10-08-phase-3-4-live-api-design.md`, plan
   `docs/superpowers/plans/2026-10-08-phase-3-4-live-api.md`.
-- **Phase 3b (new UI) is built** on branch `phase-3b-ui`: spec
+- **Phase 3b (new UI) is merged** (PR #32, 2026-10-09): spec
   `docs/superpowers/specs/2026-10-08-phase-3b-ui-design.md`, plan
-  `docs/superpowers/plans/2026-10-08-phase-3b-ui.md`. The issue #3 live check is the
-  last step before merge.
-- **Next step: Phase 4 (proof tools).** #29 and #15 are fixed (PR #33, #34); #16 is
-  still a must-fix before Phase 5. Other deferred minors are issues #17–#27, #31, #35.
+  `docs/superpowers/plans/2026-10-08-phase-3b-ui.md`. The live-game check (from #3)
+  was waived for the merge and is issue #36.
+- **Next step: Phase 4 (proof tools).** #29 and #15 are fixed (PR #33, #34). Must-fix
+  before Phase 5: #16 and #36 (the live check). Other deferred minors are issues
+  #17–#27, #31, #35, #37–#45.
 - **Fixed after 3.4:** #29: `Db.create` passed `socketTimeout` as a number, which the
   Postgres driver silently ignores, so no connection had a read timeout; now a string
   (`DbTest`), and `HistoryStore` aborts a statement past `HISTORY_INSERT_DEADLINE_MS`
