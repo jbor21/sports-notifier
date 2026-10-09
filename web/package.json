@@ -1,0 +1,51 @@
+{
+  "name": "sideline-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@12.10.1+sha512.ba40a37eb1a370d60fea8c4cf1d364c13bcccef518e98ad2bcee954f539d38da37458e58261a3fa55e06523450ea0ffff9f497b135be41f2c15c1642bacace6c",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "dev:mock": "node scripts/dev-mock.mjs",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "types:gen": "openapi-typescript ../docs/api/openapi.yaml -o src/api/schema.d.ts",
+    "types:check": "pnpm types:gen && git diff --exit-code -- src/api/schema.d.ts"
+  },
+  "dependencies": {
+    "@fontsource-variable/dm-sans": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "lucide-react": "^1.52.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router": "^8.4.0",
+    "swr": "^2.5.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@stoplight/prism-cli": "^5.16.0",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^30.1.2",
+    "openapi-typescript": "^7.13.0",
+    "prettier": "^3.9.9",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.3",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.0.3",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
+    "yaml": "^2.9.1"
+  }
+}

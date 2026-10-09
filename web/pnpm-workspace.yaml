@@ -1,0 +1,4 @@
+# Nothing needs a build script (@scarf/scarf only sends install telemetry), so say so explicitly:
+# pnpm 12 fails the install on unreviewed build scripts.
+allowBuilds:
+  '@scarf/scarf': false

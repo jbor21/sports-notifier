@@ -48,7 +48,7 @@ cluster:
 # Helm's --wait covers our pods; Strimzi reports the broker ready in the Kafka resource's status.
 up:
 	@k3d cluster get $(CLUSTER) >/dev/null 2>&1 || { echo "Cluster $(CLUSTER) not found. Run: make cluster"; exit 1; }
-	docker build -t sports-notifier:$(TAG) .
+	docker build --build-arg BUILD_ID=$(TAG) -t sports-notifier:$(TAG) .
 	@# k3d can report "Successfully imported" when its helper lost the tarball first ("no such file
 	@# or directory", seen in CI on PR #32); the pods then wait for an image that isn't there. So check
 	@# the node really has it, and retry.

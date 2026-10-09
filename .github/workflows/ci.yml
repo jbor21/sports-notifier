@@ -70,6 +70,31 @@ jobs:
           path: target/kafka-diagnostics/
           if-no-files-found: ignore
 
+  # The web app: format, types (generated from docs/api/openapi.yaml), unit tests, production build.
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      # Reads the pnpm version from web/package.json ("packageManager").
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm types:check
+      - run: pnpm test
+      - run: pnpm build
+
   # Deploy to a throwaway k3d cluster with the same make targets used on the laptop.
   deploy-check:
     needs: test
