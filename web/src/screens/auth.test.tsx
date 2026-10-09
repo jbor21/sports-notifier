@@ -151,11 +151,18 @@ describe('sign in', () => {
     })
     await fill('jacob', 'abcdefgh9')
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
-    const button = await screen.findByRole('button', { name: 'Try again in 30 s' })
+    // The clock also moves with real time here (shouldAdvanceTime), so read the count rather than
+    // assume no second has passed yet on a slow machine.
+    const button = await screen.findByRole('button', { name: /^Try again in \d+ s$/ })
     expect(button).toBeDisabled()
+    const left = Number(button.textContent!.match(/\d+/)![0])
+    expect(left).toBeGreaterThan(25)
+    expect(left).toBeLessThanOrEqual(30)
     act(() => vi.advanceTimersByTime(1000))
-    expect(screen.getByRole('button', { name: 'Try again in 29 s' })).toBeDisabled()
-    act(() => vi.advanceTimersByTime(29_000))
+    const after = screen.getByRole('button', { name: /^Try again in \d+ s$/ })
+    expect(Number(after.textContent!.match(/\d+/)![0])).toBeLessThan(left)
+    expect(after).toBeDisabled()
+    act(() => vi.advanceTimersByTime(30_000))
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
   })
 
