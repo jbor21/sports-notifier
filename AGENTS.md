@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-10-09.
+asks. Last updated 2026-10-09 (Phase 4.1).
 
 ---
 
@@ -85,13 +85,14 @@ Browser ◄── /api/v1/ws ◄── Gateway (8080) ◄── SUBSCRIBE gw:<it
 | Notification | 8087 | `service.impl.NotificationServiceMain` | History reads, seen, clear (resets the badge), 30-day cleanup (Postgres) |
 | History | 8088 | `service.impl.HistoryWriterMain` | notifications → Postgres history, batched |
 | Simulator / ESPN Poller | — | `simulator.*` | Event sources; the ESPN poller also caches the schedule |
+| Replay / Checker | — | `simulator.ReplayMain`, `tools.Checker` | Recorded games through the real poller; the correctness checker (one Job per run) |
 
 **Stack:** Java 17 · Maven · Javalin 6.1.6 · Jedis 4.4.7 · Gson · jbcrypt ·
 kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · PostgreSQL 17 · HikariCP ·
 Flyway · Testcontainers 2.0.5 · web: Vite 8 · React 19 · TypeScript 5 · React Router ·
 SWR · vite-plugin-pwa (Workbox) · Vitest · Playwright · pnpm 12 · Node 24
-**Size:** ~9,500 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
-design) · 553 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
+**Size:** ~11,800 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
+design) · 663 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -166,6 +167,10 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
 - **Run locally (k3d):** `make cluster` once, then `make up` (build image,
   import into k3d, Helm install). Open `http://localhost:8080`. Also
   `make simulate`, `make smoke` (end-to-end check), `make logs`, `make down`.
+  `make replay SET=evening SPEED=10` plays recorded games; `make check SET=ci SPEED=60`
+  runs the correctness checker (`KEEP=1` keeps its users, `FAULT=srem|dup|follow`
+  injects one fault), `make check-selftest` proves each fault is caught, and
+  `make check-clean` removes leftover synthetic users.
   `make down` deletes the cluster but not accounts: Postgres keeps its data in
   `~/.sportsnotifier/postgres` on the Mac, mounted into k3d by `make cluster`
   (laptop password fixed in `values-local.yaml`). `scripts/persistence-check.sh`
@@ -176,9 +181,9 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   `pnpm format:check`, `pnpm types:check` (types generated from `docs/api/openapi.yaml`;
   never edit `src/api/schema.d.ts` by hand), `pnpm test:pwa`.
 - **CI:** GitHub Actions runs the Java tests and, in parallel, the `web` job (format,
-  types, unit tests, build, PWA update test); then `make cluster up smoke e2e` on a
-  throwaway k3d cluster, on every push and pull request. A failed browser run uploads
-  Playwright traces.
+  types, unit tests, build, PWA update test); then `make cluster up smoke check e2e`
+  (the checker on the `ci` set at 60×) on a throwaway k3d cluster, on every push and
+  pull request. A failed browser run uploads Playwright traces.
 - **Phase 2 (Correctness and security) is merged** (PR #2, 2026-10-02). Fixes
   from 60 hours of recorded ESPN data are in PR #4. Issue #3 (live-game
   check) closed 2026-10-07 as covered by the recordings and the smoke test's
@@ -202,15 +207,39 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   `docs/superpowers/specs/2026-10-08-phase-3b-ui-design.md`, plan
   `docs/superpowers/plans/2026-10-08-phase-3b-ui.md`. The live-game check (from #3)
   was waived for the merge and is issue #36.
-- **Next step: Phase 4 (proof tools).** #29 and #15 are fixed (PR #33, #34). Must-fix
-  before Phase 5: #16 and #36 (the live check). Other deferred minors are issues
-  #17–#27, #31, #35, #37–#45.
+- **Phase 4 is split into 4.1–4.3** (`DESIGN.md` build order). **4.1 (replay and
+  checker)**: spec `docs/superpowers/specs/2026-10-09-phase-4-1-replay-checker-design.md`,
+  plan `docs/superpowers/plans/2026-10-09-phase-4-1-replay-checker.md`; closes #16 and #18.
+  Alert waves 2 and 3 moved to Phase 7.
+- **Next step: Phase 4.2 (chaos suite on k3d)**: kill Stage 1, Stage 2, a gateway, the
+  broker, and cut a worker off from Kafka during a checked replay, two copies of each;
+  pulls in #9, #10, #17, #31, #44 and closes #12. Then 4.3 (traces and metrics). Must-fix
+  before Phase 5: #36 (the live check). Other deferred minors are issues #19–#27, #35,
+  #37–#43, #45.
 - **Fixed after 3.4:** #29: `Db.create` passed `socketTimeout` as a number, which the
   Postgres driver silently ignores, so no connection had a read timeout; now a string
   (`DbTest`), and `HistoryStore` aborts a statement past `HISTORY_INSERT_DEADLINE_MS`
   (10 s). #15: Stage 1 sends a play that fails 3 times for a non-I/O reason to
   `game-events-dlq` and moves on; Redis and Kafka outages are retried, never
   dead-lettered; `/health` shows `deadLettered`.
+- **New in Phase 4.1:** replay sets are per-game recorded timelines in
+  `src/main/resources/replay/<set>.jsonl.gz` (`ci`: 2 golden games; `evening`: 10 games, all
+  four leagues), packed by `scripts/pack-replay.py` (gaps over 60 s cut to 60 s, per-game
+  start offsets); `feed/RecordedScoreFeed` plays them through the real `Poller`
+  (`simulator/Replay`): it primes each game's pre-game play first, then runs at `SPEED`.
+  Replayed game ids are `<league>-rp<runId>-<espnId>` (run id = start time in base 36).
+  The checker (`checker/`, `tools.Checker`) signs up `ck_<runId>_<n>` users through
+  `/api/v1` from a seeded mix (`FollowMix`), freezes their follows (`follows.updated_at`,
+  migration V2), holds a socket per user, waits for feed done + every game final + 10 s
+  of zero lag in all three groups, then recomputes the expected pushes from
+  `game-events` and the frozen Postgres follows (`Oracle`: same detectors and combining
+  step as Stage 1, `service/impl/MomentPushes`; audience computed in Java, `Audience`, not
+  read from Redis) and compares with history and every socket (`Verifier`; a push missing
+  on a socket is allowed only inside a recorded disconnect and if history has it; null
+  and absent fields are equal). Every check is scoped to the run's game ids; users are
+  deleted afterwards (`Cleanup`). `sub:built` is a hash `{version, runId}`:
+  `FollowSets.SHAPE_VERSION` (bump on any set-shape change) and Redis's `run_id`
+  (#16, #18). Kafka's network policy admits `checker` (`networkPolicyPeers`).
 - **New in Phase 3b:** the Sideline UI in `web/` (Vite + React), rebuilt from the
   user's v0 design (`~/projects/sports-notification-app-frontend-v0`, a
   read-only reference; its demo mode was dropped). A Dockerfile stage builds it; the
