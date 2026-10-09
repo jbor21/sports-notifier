@@ -61,10 +61,27 @@ public final class ReplayDetectors {
         return game.lines;
     }
 
+    /**
+     * One game's accepted plays, versioned as the accept script would number them: what Stage 1 would
+     * read from game-events for this game. The checker's oracle tests use the golden games through it.
+     */
+    public static List<GameEvent> plays(String league, List<String> boardsJson, String gameId) {
+        GameReplay game = new GameReplay();
+        long now = 0;
+        for (String board : boardsJson) {
+            now += BOARD_SPACING_MILLIS;
+            for (GameSnapshot snap : EspnScoreFeed.parse(board, league)) {
+                if (snap.gameId().equals(gameId)) game.offer(snap, now);
+            }
+        }
+        return game.plays;
+    }
+
     /** One game's state: the emulated {@code game:<id>} record, the version counter, the detectors' memory. */
     private static final class GameReplay {
         final Map<String, String> record = new HashMap<>();
         final List<String> lines = new ArrayList<>();
+        final List<GameEvent> plays = new ArrayList<>();
         long version;
         GameMemory memory;
 
@@ -81,7 +98,9 @@ public final class ReplayDetectors {
             record.put("awayScore", String.valueOf(snap.awayScore()));
             record.put("lastSeq", String.valueOf(Seq.of(snap)));
 
-            Play play = Play.of(event.withVersion(version));
+            GameEvent accepted = event.withVersion(version);
+            plays.add(accepted);
+            Play play = Play.of(accepted);
             Detectors.Result result = DETECTORS.run(memory, play);
             memory = result.after();
             for (Alert a : result.moment()) lines.add(line(play, a));
