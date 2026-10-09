@@ -50,7 +50,7 @@ public final class Verifier {
             ExpectedPush e = want.get(key(h.userId(), h.messageId()));
             if (e == null) {
                 findings.add(new Finding("history_unexpected", h.userId(), h.gameId(), h.messageId(), "in history, not expected"));
-            } else if (!withoutCreatedAt(h.body()).equals(withoutCreatedAt(e.body()))) {
+            } else if (!comparable(h.body()).equals(comparable(e.body()))) {
                 findings.add(new Finding("history_wrong_body", h.userId(), h.gameId(), h.messageId(),
                         "history " + h.body() + " expected " + e.body()));
             }
@@ -142,9 +142,27 @@ public final class Verifier {
         return false;
     }
 
-    private static JsonObject withoutCreatedAt(JsonObject body) {
+    /**
+     * The body as the API means it: without {@code createdAt} (added when history is read) and without
+     * null members. The API allows a nullable field to be left out ({@code "clock": null} between
+     * periods), and Stage 1's Gson leaves nulls out, so null and absent are the same push.
+     */
+    private static JsonObject comparable(JsonObject body) {
         JsonObject copy = body.deepCopy();
         copy.remove("createdAt");
+        dropNulls(copy);
         return copy;
+    }
+
+    private static void dropNulls(com.google.gson.JsonElement e) {
+        if (e.isJsonObject()) {
+            JsonObject o = e.getAsJsonObject();
+            for (String k : List.copyOf(o.keySet())) {
+                if (o.get(k).isJsonNull()) o.remove(k);
+                else dropNulls(o.get(k));
+            }
+        } else if (e.isJsonArray()) {
+            e.getAsJsonArray().forEach(Verifier::dropNulls);
+        }
     }
 }

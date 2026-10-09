@@ -192,4 +192,24 @@ class VerifierTest {
         assertEquals(List.of(), r.findings());
         assertEquals(2, r.outsideRun());
     }
+
+    @Test
+    void nullAndAbsentFieldsAreEqual() {
+        // Stage 1 serializes with Gson's defaults, which leave out null members; the API allows both
+        // ("clock": null between periods, or no clock at all). Found by the first cluster run.
+        ExpectedPush a = exp("u1", G1, G1 + ":END_OF_PERIOD:1");
+        a.body().getAsJsonObject("game").add("clock", com.google.gson.JsonNull.INSTANCE);
+        HistoryRow h = hist(a, T);
+        h.body().getAsJsonObject("game").remove("clock");
+        assertEquals(List.of(), kinds(Verifier.verify(RUN, List.of(a), List.of(h), List.of())));
+    }
+
+    @Test
+    void aRealValueStillDiffers() {
+        ExpectedPush a = exp("u1", G1, G1 + ":A");
+        a.body().getAsJsonObject("game").addProperty("clock", "4:12");
+        HistoryRow h = hist(a, T);
+        h.body().getAsJsonObject("game").remove("clock");
+        assertEquals(List.of("history_wrong_body"), kinds(Verifier.verify(RUN, List.of(a), List.of(h), List.of())));
+    }
 }
