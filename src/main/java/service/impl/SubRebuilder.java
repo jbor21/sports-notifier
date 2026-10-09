@@ -93,7 +93,10 @@ public final class SubRebuilder {
         String live = runId.apply(jedis);
         String built = jedis.hget(RedisKeys.SUB_BUILT, "runId");
         if (live != null && !live.equals(built)) {
+            // Delete it, not just rebuild over it: Stage 1 holds plays while the marker is missing, so
+            // nothing is fanned out from sets that may have lost writes until the rebuild is done.
             System.out.println("[SubRebuilder] Redis restarted since the last build (run_id changed); rebuilding");
+            jedis.del(RedisKeys.SUB_BUILT);
             return false;
         }
         return true;

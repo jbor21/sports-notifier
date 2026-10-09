@@ -136,10 +136,31 @@ public final class Checker {
             openSockets(plans, userIds);
         } catch (SetupException | IllegalStateException e) {
             System.out.println("SETUP FAILED: " + e.getMessage());
+            clients.forEach(SocketClient::close);
             cleanUp(runId);
             return 2;
         }
 
+        try {
+            return runChecked(runId, runStart, feed, replay, plans, userIds);
+        } catch (SetupException e) {
+            System.out.println("SETUP FAILED: " + e.getMessage());
+            return 2;
+        } finally {
+            replay.stop();
+            clients.forEach(SocketClient::close);
+            if (keep) {
+                System.out.println("[Checker] KEEP=1: sign in as " + RunId.username(runId, 0) + " / " + password
+                        + "; make check-clean removes the run's users");
+            } else {
+                cleanUp(runId);
+            }
+        }
+    }
+
+    /** From T0 to the verdict; the caller stops the replay, closes the sockets, and cleans up whatever happens. */
+    private int runChecked(String runId, long runStart, RecordedScoreFeed feed, Replay replay,
+                           List<FollowMix.UserPlan> plans, List<String> userIds) throws Exception {
         Thread.sleep(1000);                                          // every follow write is strictly before T0
         Instant t0 = Snapshots.dbNow(db);
         List<FollowSnapshot> start = Snapshots.follows(db, userIds);
@@ -168,12 +189,6 @@ public final class Checker {
         System.out.print(Report.render(new Report.Header(runId, set, speed, users, twoTabs, feed.gameIds().size(),
                 playCount, expected.size()), result, other));
 
-        if (keep) {
-            System.out.println("[Checker] KEEP=1: sign in as " + RunId.username(runId, 0) + " / " + password
-                    + "; make check-clean removes the run's users");
-        } else {
-            cleanUp(runId);
-        }
         List<Finding> all = new ArrayList<>(result.findings());
         all.addAll(other);
         if (fault != null) {
@@ -211,16 +226,21 @@ public final class Checker {
                     return s;
                 }));
             }
+            // Every user that got through is kept, even after one failed, so cleanup can unfollow them.
+            RuntimeException first = null;
             for (Future<Session> f : done) {
                 try {
                     Session s = f.get();
                     sessions.add(s);
                     userIds.add(s.userId());
                 } catch (java.util.concurrent.ExecutionException e) {
-                    if (e.getCause() instanceof SetupException se) throw se;
-                    throw new SetupException("setting up a user failed", e.getCause());
+                    if (first == null) {
+                        first = e.getCause() instanceof SetupException se ? se
+                                : new SetupException("setting up a user failed", e.getCause());
+                    }
                 }
             }
+            if (first != null) throw first;
         } finally {
             pool16.shutdownNow();
         }

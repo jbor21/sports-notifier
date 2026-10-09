@@ -289,3 +289,5 @@ Replayed games' Redis state expires on its own (a day after the final); their Ka
 - **Recordings are 30 s apart**, so plays between polls merge into one snapshot, as they would have live at that cadence.
 - **One broker, one copy of each service** in 4.1. Two copies and the kills are 4.2.
 - **Latency is a preview**: `detectedAt` and socket arrival are on one machine here; 4.3 measures with traces.
+- **Replayed games reach real accounts too** (found in the final review, issue #47): replayed games keep real team ids and leagues, so a real account following one of them gets the run's pushes in its history and badge. Scoping keeps them out of the checker's verdict, not out of those accounts. To decide before the checker runs on EKS (Phase 6).
+- **The socket "missing" window, for 4.2** (final review): with no later push, the window runs to the end of the run, so any later disconnect excuses a lost last push; and with two Stage 1 producers in 4.2, `notifications` timestamps can disagree with delivery order. The 4.2 spec revisits both.

@@ -18,7 +18,8 @@ import java.util.function.LongSupplier;
  * One synthetic tab on {@code /api/v1/ws} (Phase 4.1 spec, 4), behaving as {@code docs/api/websocket.md}
  * asks of a client: pings every 25 s (the server closes a silent socket after 60 s) and reconnects after
  * any close with backoff and full jitter. Every {@code notification} goes into the {@link SocketLog}
- * with its arrival time; every time the socket is down is a gap there. Other message types are ignored,
+ * with its arrival time; every time the socket is down is a gap there, from the close until the next
+ * {@code hello}. Other message types are ignored,
  * and so is when {@code hello} arrives (issue #24).
  */
 public final class SocketClient implements WebSocket.Listener {
@@ -100,7 +101,6 @@ public final class SocketClient implements WebSocket.Listener {
     public synchronized void onOpen(WebSocket webSocket) {
         ws = webSocket;
         failures = 0;
-        log.connected(clock.getAsLong());
         webSocket.request(1);
     }
 
@@ -126,6 +126,9 @@ public final class SocketClient implements WebSocket.Listener {
         }
         String type = m.has("type") ? m.get("type").getAsString() : "";
         if ("hello".equals(type)) {
+            // The gateway registers this socket for delivery (conn:<userId>) before it sends hello, not
+            // before the handshake completes: until hello, a push can still miss this tab.
+            log.connected(at);
             helloSeen = true;
         } else if ("notification".equals(type) && m.has("notification")) {
             JsonObject n = m.getAsJsonObject("notification");

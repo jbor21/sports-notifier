@@ -120,4 +120,31 @@ class SocketClientTest {
         await(client::helloSeen, 5000);
         assertEquals(List.of("s3cr3t"), cookies);
     }
+
+    @Test
+    void gapEndsAtHelloNotAtOpen() throws Exception {
+        // The gateway registers a socket for delivery (conn:<userId>) after the handshake and before
+        // hello, so a push published between the two reaches nobody: still part of the gap.
+        java.util.concurrent.atomic.AtomicLong helloSentAt = new java.util.concurrent.atomic.AtomicLong();
+        URI uri = serve((ctx, n) -> {
+            if (n == 1) {
+                ctx.send("{\"type\":\"hello\"}");
+                new Thread(() -> {
+                    try { Thread.sleep(100); } catch (InterruptedException ignored) { }
+                    ctx.closeSession(4000, "shutting down");
+                }).start();
+            } else {
+                new Thread(() -> {
+                    try { Thread.sleep(400); } catch (InterruptedException ignored) { }
+                    helloSentAt.set(System.currentTimeMillis());
+                    ctx.send("{\"type\":\"hello\"}");
+                }).start();
+            }
+        });
+        SocketLog log = new SocketLog("u1", 0);
+        client = new SocketClient(uri, "abc", log, System::currentTimeMillis, Duration.ofSeconds(25));
+        client.start();
+        await(() -> helloSentAt.get() > 0 && log.gaps().size() == 1 && log.gaps().get(0).toMillis() != Long.MAX_VALUE, 5000);
+        assertTrue(log.gaps().get(0).toMillis() >= helloSentAt.get(), "the gap closes when hello arrives");
+    }
 }

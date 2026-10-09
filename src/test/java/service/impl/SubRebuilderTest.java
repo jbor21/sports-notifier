@@ -268,4 +268,20 @@ class SubRebuilderTest {
         assertNotNull(id);
         assertEquals(40, id.length());
     }
+
+    @Test
+    void stage1WaitsWhileRebuildingAfterARedisRestart() {
+        // The marker survived an AOF restart that may have lost the last second of writes: Stage 1
+        // must hold plays while the sets are rebuilt, not read them (#18).
+        follows.create(bob, "team", "mlb-chw");
+        FollowSets.markBuilt(jedis, "old");
+        AtomicBoolean builtDuringRebuild = new AtomicBoolean(true);
+        SubRebuilder r = new SubRebuilder(PostgresTestSupport.dataSource(), pool, follows::rebuildOwed,
+            follows::clearRebuildOwed, () -> {
+                try (Jedis j = pool.getResource()) { builtDuringRebuild.set(FollowSets.isBuilt(j)); }
+            }, j -> "new");
+        assertTrue(r.checkOnce());
+        assertFalse(builtDuringRebuild.get(), "Stage 1 sees the sets as not built until the rebuild is done");
+        assertTrue(FollowSets.isBuilt(jedis));
+    }
 }

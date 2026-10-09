@@ -28,8 +28,9 @@ public final class Cleanup {
 
     /**
      * Unfollows through the API (which takes the users out of the sub:* sets), signs out, then deletes
-     * the rest. If an unfollow failed, the sets may still hold that user: the marker is deleted so
-     * user-pref rebuilds them from Postgres.
+     * the rest. If an unfollow failed, or users were deleted whose sessions the checker never got back
+     * (a setup that failed part way), the sets may still hold them, and Stage 1 would keep sending to
+     * users that no longer exist: the marker is deleted so user-pref rebuilds the sets from Postgres.
      */
     public static int run(Api api, List<Session> sessions, Map<String, List<String>> followIdsByUser,
                           DataSource db, JedisPool pool, String runId) {
@@ -49,7 +50,7 @@ public final class Cleanup {
             }
         }
         int n = deleteRun(db, pool, runId);
-        if (unfollowFailed) {
+        if (unfollowFailed || n > sessions.size()) {
             try (Jedis jedis = pool.getResource()) {
                 jedis.del(RedisKeys.SUB_BUILT);
             }

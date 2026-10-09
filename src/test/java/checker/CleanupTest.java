@@ -106,4 +106,24 @@ class CleanupTest {
         assertEquals(List.of("bob", "ck_bob"), usernames());
         assertFalse(jedis.exists(RedisKeys.SUB_BUILT), "the sets are rebuilt from Postgres without them");
     }
+
+    @Test
+    void usersRemovedWithoutUnfollowForceARebuild() throws Exception {
+        // A setup that failed part way: users exist whose sessions the checker never got back, so their
+        // follows were never removed through the API and they are still in the sub:* sets.
+        user("ck_abc123_0");
+        user("ck_abc123_1");
+        FollowSets.markBuilt(jedis, "r");
+        Api unreachable = new Api(java.net.URI.create("http://localhost:1"), 1, java.time.Duration.ZERO);
+        assertEquals(2, Cleanup.run(unreachable, List.of(), java.util.Map.of(), PostgresTestSupport.dataSource(), pool, "abc123"));
+        assertFalse(jedis.exists(RedisKeys.SUB_BUILT), "the sets are rebuilt from Postgres without them");
+    }
+
+    @Test
+    void cleanRunKeepsTheMarker() throws Exception {
+        FollowSets.markBuilt(jedis, "r");
+        Api unreachable = new Api(java.net.URI.create("http://localhost:1"), 1, java.time.Duration.ZERO);
+        assertEquals(0, Cleanup.run(unreachable, List.of(), java.util.Map.of(), PostgresTestSupport.dataSource(), pool, "abc123"));
+        assertTrue(jedis.exists(RedisKeys.SUB_BUILT));
+    }
 }
