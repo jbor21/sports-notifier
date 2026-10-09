@@ -43,7 +43,7 @@ spec:
       "user-pref"        (list "gateway")
       "game-state"       (list "gateway")
       "notification"     (list "gateway")
-      "event-processing" (list "espn-poller" "simulator") }}
+      "event-processing" (list "espn-poller" "simulator" "replay" "checker") }}
 {{- range $name, $from := $callers }}
 ---
 apiVersion: networking.k8s.io/v1

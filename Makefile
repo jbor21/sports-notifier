@@ -15,7 +15,7 @@ export KUBE_CONTEXT
 # A new tag per build so Kubernetes always rolls pods onto new code. Uncommitted changes get a unique suffix.
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
-.PHONY: test cluster up simulate smoke e2e logs down replay-detectors
+.PHONY: test cluster up simulate replay smoke e2e logs down replay-detectors
 
 # Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
 # until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
@@ -63,6 +63,12 @@ up:
 
 simulate:
 	@scripts/simulate.sh
+
+# Recorded ESPN games through the real poller and pipeline, e.g. make replay SET=ci SPEED=60.
+SET   ?= evening
+SPEED ?= 10
+replay:
+	@scripts/run-job.sh replay REPLAY_SET=$(SET) REPLAY_SPEED=$(SPEED)
 
 smoke:
 	@scripts/smoke-test.sh

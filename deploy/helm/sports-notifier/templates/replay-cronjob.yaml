@@ -1,0 +1,41 @@
+# Never fires on its own (suspend: true). It holds the replay's image and settings in one place;
+# `make replay` (scripts/run-job.sh) stamps a one-off Job from it. Recorded games through the real
+# poller, for demos and for watching a run in the UI (Phase 4.1 spec, 2.4).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: replay
+  labels:
+    {{- include "sports-notifier.labels" "replay" | nindent 4 }}
+spec:
+  suspend: true
+  schedule: "0 0 1 1 *"
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "sports-notifier.labels" "replay" | nindent 8 }}
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            {{- include "sports-notifier.labels" "replay" | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: replay
+              image: {{ include "sports-notifier.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              env:
+                - name: SERVICE
+                  value: replay
+                {{- include "sports-notifier.baseEnv" . | nindent 16 }}
+                - name: EPS_URL
+                  value: http://event-processing:8083
+                - name: REPLAY_SET
+                  value: {{ .Values.replay.set | quote }}
+                - name: REPLAY_SPEED
+                  value: {{ .Values.replay.speed | quote }}
+              resources:
+                {{- toYaml .Values.javaResources | nindent 16 }}

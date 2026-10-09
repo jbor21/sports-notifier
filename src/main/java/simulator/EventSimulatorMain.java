@@ -2,10 +2,8 @@ package simulator;
 
 import feed.HttpEventSink;
 import feed.Poller;
-import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import util.JedisPoolHolder;
-import util.RedisKeys;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -137,7 +135,7 @@ public final class EventSimulatorMain {
                 }
             }
             if (feed.done()) {
-                List<String> open = notFinal(pool, feed.gameIds());
+                List<String> open = Replay.notFinal(pool, feed.gameIds());
                 if (open.isEmpty()) return true;
                 long now = System.currentTimeMillis();
                 if (giveUpAt == Long.MAX_VALUE) {
@@ -149,18 +147,5 @@ public final class EventSimulatorMain {
             }
             Thread.sleep(pollMillis);
         }
-    }
-
-    private static List<String> notFinal(JedisPool pool, List<String> gameIds) {
-        List<String> open = new ArrayList<>();
-        try (Jedis jedis = pool.getResource()) {
-            for (String id : gameIds) {
-                if (!"FINAL".equals(jedis.hget(RedisKeys.GAME_PREFIX + id, "status"))) open.add(id);
-            }
-        } catch (Exception e) {
-            System.err.println("[Simulator] reading game records failed: " + e);
-            return gameIds;
-        }
-        return open;
     }
 }

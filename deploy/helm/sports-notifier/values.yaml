@@ -99,3 +99,8 @@ espnPoller:
 simulator:
   intervalMs: 2000
   waves: 3
+
+# Recorded ESPN games (src/main/resources/replay/<set>.jsonl.gz) through the real poller: make replay.
+replay:
+  set: evening
+  speed: 10
