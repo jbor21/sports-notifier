@@ -1,0 +1,77 @@
+.detail-score {
+  text-align: center;
+}
+.matchup {
+  display: flex;
+  justify-content: center;
+  gap: 100px;
+  margin-top: 30px;
+}
+.matchup > div {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 15px;
+}
+.matchup h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.detail-number {
+  font-size: 66px;
+  font-family: 'Manrope Variable', sans-serif;
+  font-weight: 800;
+  letter-spacing: -3px;
+  animation: score-in 0.6s;
+}
+.detail-score p {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 25px 0 0;
+}
+.table-scroll {
+  overflow: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: center;
+}
+th,
+td {
+  padding: 15px 12px;
+  border-bottom: 1px solid var(--border);
+}
+th:first-child {
+  text-align: left;
+  white-space: nowrap;
+}
+thead {
+  color: var(--muted);
+  font-size: 10px;
+}
+tbody th {
+  font-weight: 500;
+}
+.line-score > small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 15px;
+}
+@media (max-width: 720px) {
+  .matchup {
+    gap: 40px;
+  }
+  .matchup h2 {
+    font-size: 13px;
+    max-width: 130px;
+  }
+  .detail-number {
+    font-size: 53px;
+  }
+  .detail-score > p {
+    font-size: 10px;
+  }
+}

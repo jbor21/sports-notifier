@@ -1,0 +1,1152 @@
+.dashboard-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 282px;
+  gap: 26px;
+}
+.highlight-banner {
+  background: #eaf1ea;
+  border: 1px solid #e0e9df;
+  border-radius: 10px;
+  min-height: 203px;
+  padding: 26px 27px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  position: relative;
+  overflow: hidden;
+  color: #233c2c;
+}
+.highlight-copy {
+  position: relative;
+  z-index: 2;
+}
+.highlight-kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  color: #51765a;
+  margin-bottom: 13px;
+}
+.highlight-copy h2 {
+  font-size: 27px;
+  line-height: 1.25;
+  letter-spacing: -0.9px;
+  margin-bottom: 10px;
+  font-weight: 800;
+}
+.highlight-copy p {
+  font-size: 10px;
+  color: #758778;
+  margin-bottom: 17px;
+}
+.highlight-copy button {
+  font-size: 10px;
+  font-weight: 650;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  color: #2b663c;
+}
+.banner-score {
+  position: relative;
+  z-index: 2;
+  background: #ffffffd9;
+  border: 1px solid white;
+  padding: 16px 18px 11px;
+  border-radius: 10px;
+  box-shadow: 0 9px 22px #5273510e;
+  transform: rotate(-4deg);
+  flex-shrink: 0;
+  width: 224px;
+}
+.mini-score-top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #52866b;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+}
+.mini-score-top > span {
+  color: #8d9690;
+  margin-left: auto;
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.banner-score > div:nth-child(2) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 18px 0;
+}
+.banner-score b {
+  font-family: 'Manrope Variable', sans-serif;
+  font-size: 33px;
+  letter-spacing: -2px;
+}
+.mini-team {
+  font-weight: 800;
+  font-size: 10px;
+  background: #333c3d;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 32px;
+  border-radius: 5px 5px 12px 12px;
+  transform: rotate(4deg);
+}
+.mini-team.bears {
+  color: #b5582c;
+  background: #f4e5da;
+}
+.mini-versus {
+  color: #abb4aa;
+}
+.mini-score-bottom {
+  border-top: 1px solid #e8ede8;
+  padding-top: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  color: #8a978b;
+  gap: 5px;
+}
+.field-lines {
+  position: absolute;
+  width: 420px;
+  height: 380px;
+  border: 1px solid #b5ccb533;
+  transform: rotate(-26deg);
+  border-radius: 80px;
+  right: -90px;
+  top: -115px;
+  box-shadow:
+    0 0 0 30px #b5ccb519,
+    0 0 0 62px #b5ccb512,
+    0 0 0 92px #b5ccb50c;
+}
+.league-tabs {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  margin-top: 21px;
+  gap: 24px;
+  overflow: auto;
+}
+.league-tabs > button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 550;
+  white-space: nowrap;
+  padding: 15px 0 14px;
+  border-bottom: 2px solid transparent;
+}
+.league-tabs > button.active {
+  border-color: var(--green);
+  color: var(--green);
+}
+.sport-glyph {
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 10px;
+  opacity: 0.8;
+}
+.count {
+  font-size: 9px;
+  background: var(--soft);
+  padding: 2px 5px;
+  border-radius: 4px;
+  margin-left: 1px;
+}
+.game-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 25px;
+}
+.date-switch {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  height: 34px;
+}
+.date-switch button {
+  width: 27px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.date-switch label {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 550;
+  padding: 0 10px;
+  align-items: center;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  height: 20px;
+}
+.date-switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  cursor: pointer;
+  padding: 0;
+}
+.date-switch input::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 17px;
+}
+.following-toggle {
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  gap: 6px;
+  color: #7e8581;
+  cursor: pointer;
+}
+.following-toggle .toggle {
+  margin-left: 4px;
+}
+.filter-button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  height: 33px;
+  width: 33px;
+}
+.filter-button.active {
+  background: var(--soft);
+  color: var(--green);
+}
+.league-section {
+  margin-bottom: 25px;
+}
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 0 12px;
+}
+.section-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-heading h2 {
+  font-family: 'DM Sans Variable', sans-serif;
+  font-weight: 650;
+  font-size: 12px;
+  margin: 0;
+}
+.league-fullname {
+  font-size: 9px;
+  color: var(--muted);
+  border-left: 1px solid var(--border);
+  padding-left: 8px;
+}
+.section-heading > span {
+  font-size: 9px;
+  color: var(--muted);
+}
+.league-icon {
+  display: grid;
+  place-items: center;
+  font-family: 'Manrope Variable', sans-serif;
+  font-size: 8px;
+  letter-spacing: -0.5px;
+  font-weight: 800;
+  background: #eff1f5;
+  color: #55657b;
+  width: 24px;
+  height: 27px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+.league-icon.nfl {
+  color: #6b7390;
+  background: #eaedf5;
+}
+.league-icon.nba {
+  color: #59628d;
+  background: #edeef7;
+}
+.league-icon.mlb {
+  color: #636f83;
+  background: #edf0f6;
+}
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.game-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  transition:
+    box-shadow 0.2s,
+    border-color 0.2s;
+}
+.game-card:hover {
+  border-color: #b8cfc2;
+  box-shadow: 0 4px 18px #18342107;
+}
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px 5px;
+  height: 36px;
+}
+.live-label {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  color: var(--green);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.live-dot {
+  height: 5px;
+  width: 5px;
+  background: #2b9a65;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px #2b9a6509;
+}
+.live-dot.offline {
+  background: #a1a5a1;
+}
+.clock {
+  color: #7d8780;
+  font-weight: 450;
+  letter-spacing: 0;
+  font-size: 9px;
+  margin-left: 6px;
+}
+.game-state {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.6px;
+  font-weight: 550;
+}
+.follow-button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #919a95;
+  padding: 5px;
+  border-radius: 5px;
+}
+.follow-button:hover {
+  background: var(--soft);
+  color: var(--green);
+}
+.is-following {
+  color: var(--green);
+}
+.score-link {
+  display: block;
+  width: 100%;
+  padding: 9px 17px 12px;
+  text-align: left;
+}
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 0;
+}
+.team-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 33px;
+  width: 33px;
+  flex-shrink: 0;
+  color: var(--team);
+  background: color-mix(in srgb, var(--team) 9%, var(--surface));
+  border-radius: 50%;
+  font-family: 'Manrope Variable', sans-serif;
+  font-weight: 800;
+  font-size: 10px;
+  letter-spacing: -0.7px;
+}
+.team-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.team-mark.large {
+  width: 65px;
+  height: 65px;
+  font-size: 21px;
+}
+.team-info {
+  min-width: 0;
+  flex: 1;
+}
+.team-info strong {
+  font-size: 11px;
+  font-weight: 550;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.team-info small {
+  font-size: 9px;
+  color: #939b97;
+  display: block;
+  margin-top: 4px;
+}
+.score {
+  font-family: 'Manrope Variable', sans-serif;
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+}
+.score-animate {
+  animation: score-in 0.55s ease-out;
+}
+.card-bottom {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  align-items: center;
+  padding: 10px 15px;
+  border-top: 1px solid var(--border);
+  font-size: 8px;
+  color: #939b96;
+}
+.card-bottom button {
+  font-size: 8px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  color: #7c8780;
+}
+.footnote {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 8px;
+  margin: 30px 0 0;
+}
+.footnote > span:last-child {
+  margin-left: auto;
+}
+.dashboard-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.aside-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+  padding: 19px 17px 0;
+  box-shadow: var(--shadow);
+}
+.aside-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.aside-title h2 {
+  font-family: 'DM Sans Variable', sans-serif;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-weight: 600;
+}
+.aside-title h2 svg {
+  color: #68786c;
+}
+.aside-title > span:not(.live-label) {
+  font-size: 9px;
+  border-radius: 4px;
+  background: var(--hover);
+  padding: 2px 6px;
+  color: var(--muted);
+}
+.aside-subtitle {
+  color: var(--muted);
+  font-size: 10px;
+  margin: 9px 0 18px;
+}
+.follow-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 0;
+  text-align: left;
+}
+.follow-row .team-mark {
+  height: 29px;
+  width: 29px;
+  font-size: 9px;
+}
+.follow-row > span:nth-child(2) {
+  flex: 1;
+}
+.follow-row strong {
+  font-size: 10px;
+  font-weight: 550;
+  display: block;
+}
+.follow-row small {
+  display: block;
+  font-size: 8px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.follow-row > svg {
+  color: #abb0ac;
+}
+.aside-add {
+  border-top: 1px solid var(--border);
+  width: calc(100% + 34px);
+  margin: 14px -17px 0;
+  padding: 14px 5px;
+  font-size: 9px;
+  font-weight: 550;
+  color: var(--green);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+}
+.alerts-card .aside-title {
+  margin-bottom: 18px;
+}
+.alerts-card .aside-add {
+  margin-top: 2px;
+}
+.quiet-card {
+  padding: 21px 20px 20px;
+  border: 1px solid #e4e9e2;
+  border-radius: 9px;
+  background: #f0f3ed;
+}
+.quiet-icon {
+  display: grid;
+  place-items: center;
+  width: 35px;
+  height: 35px;
+  border: 1px solid #dee6d9;
+  border-radius: 9px;
+  background: #e7eddf;
+  color: #73905d;
+  transform: rotate(-8deg);
+  margin-bottom: 17px;
+}
+.quiet-card h3 {
+  font-size: 18px;
+  color: #3b4836;
+  letter-spacing: -0.5px;
+  line-height: 1.4;
+  margin-bottom: 9px;
+}
+.quiet-card p {
+  font-size: 10px;
+  color: #86917e;
+  line-height: 1.8;
+  margin-bottom: 15px;
+}
+.quiet-card button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  color: #5b7650;
+  font-size: 9px;
+  font-weight: 550;
+}
+.aside-footer {
+  text-align: center;
+  font-size: 7px;
+  letter-spacing: 1.2px;
+  color: #9ea59e;
+  line-height: 2.5;
+}
+.aside-footer span {
+  font-size: 8px;
+  letter-spacing: 0;
+  color: #aab0ab;
+}
+[data-theme='dark'] .highlight-banner {
+  background: #203b2e;
+  border-color: #2c4937;
+  color: #dfede0;
+}
+[data-theme='dark'] .highlight-kicker {
+  color: #9ebda3;
+}
+[data-theme='dark'] .highlight-copy p {
+  color: #9bb09d;
+}
+[data-theme='dark'] .highlight-copy button {
+  color: #abd6b2;
+}
+[data-theme='dark'] .banner-score {
+  background: #284232;
+  border-color: #3c5542;
+  color: #e1ebe3;
+}
+[data-theme='dark'] .quiet-card {
+  background: #24322b;
+  border-color: #314237;
+}
+[data-theme='dark'] .quiet-card h3 {
+  color: #cadbcb;
+}
+[data-theme='dark'] .quiet-card button {
+  color: #a2b99e;
+}
+[data-theme='dark'] .quiet-icon {
+  background: #30432e;
+  border-color: #3e553b;
+  color: #a5bd95;
+}
+[data-theme='dark'] .league-icon {
+  background: #2b3546;
+  color: #aebcd4;
+}
+/* A score change (the companion's option B): the card's border glows and a "+N" chip shows. */
+.game-card.changed {
+  border-color: var(--live);
+  box-shadow: 0 0 0 3px #2b9a6522;
+}
+.delta {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green);
+  background: var(--soft);
+  border-radius: 4px;
+  padding: 2px 5px;
+  vertical-align: middle;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .delta {
+    animation: delta-in 0.25s ease-out;
+  }
+}
+@keyframes delta-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (min-width: 1450px) {
+  .dashboard-columns {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 30px;
+  }
+  .highlight-banner {
+    min-height: 222px;
+    padding: 30px 35px;
+  }
+  .highlight-copy h2 {
+    font-size: 30px;
+  }
+  .team-info strong {
+    font-size: 12px;
+  }
+  .card-top {
+    padding-top: 17px;
+  }
+  .score-link {
+    padding-top: 15px;
+    padding-bottom: 18px;
+  }
+  .score {
+    font-size: 28px;
+  }
+  .team-mark {
+    height: 37px;
+    width: 37px;
+  }
+  .banner-score {
+    width: 250px;
+    padding: 20px;
+  }
+  .banner-score b {
+    font-size: 39px;
+  }
+}
+@media (max-width: 1190px) {
+  .dashboard-columns {
+    grid-template-columns: minmax(0, 1fr) 244px;
+    gap: 20px;
+  }
+  .banner-score {
+    width: 182px;
+    padding: 13px;
+  }
+  .banner-score b {
+    font-size: 28px;
+  }
+  .mini-team {
+    width: 23px;
+    height: 28px;
+    font-size: 8px;
+  }
+  .highlight-banner {
+    padding: 24px 20px;
+    min-height: 200px;
+  }
+  .highlight-copy h2 {
+    font-size: 23px;
+  }
+  .highlight-copy p {
+    max-width: 180px;
+    line-height: 1.6;
+  }
+  .league-tabs {
+    gap: 20px;
+  }
+  .team-info strong {
+    font-size: 10px;
+  }
+  .team-row {
+    gap: 7px;
+  }
+  .team-mark {
+    width: 29px;
+    height: 29px;
+    font-size: 9px;
+  }
+  .score-link {
+    padding: 8px 12px 12px;
+  }
+  .card-top {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .league-fullname {
+    font-size: 8px;
+  }
+  .aside-card {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .aside-add {
+    margin-left: -14px;
+    width: calc(100% + 28px);
+  }
+}
+@media (max-width: 1020px) {
+  .dashboard-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dashboard-aside {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  .quiet-card,
+  .aside-footer {
+    display: none;
+  }
+  .banner-score {
+    width: 225px;
+  }
+  .highlight-copy h2 {
+    font-size: 29px;
+  }
+  .highlight-copy p {
+    max-width: none;
+  }
+  .highlight-banner {
+    padding: 27px;
+    min-height: 210px;
+  }
+  .team-info strong {
+    font-size: 12px;
+  }
+  .team-mark {
+    height: 34px;
+    width: 34px;
+  }
+  .score-link {
+    padding: 11px 17px;
+  }
+  .card-top {
+    padding-left: 17px;
+    padding-right: 17px;
+  }
+  .footnote {
+    margin-bottom: 22px;
+  }
+  .game-toolbar {
+    margin-top: 19px;
+  }
+}
+@media (max-width: 720px) {
+  .highlight-banner {
+    min-height: 189px;
+    padding: 22px 19px;
+    gap: 10px;
+  }
+  .highlight-copy h2 {
+    font-size: 23px;
+  }
+  .highlight-kicker {
+    font-size: 6px;
+    letter-spacing: 1px;
+  }
+  .highlight-copy p {
+    font-size: 9px;
+    max-width: 155px;
+    line-height: 1.65;
+  }
+  .highlight-copy button {
+    font-size: 9px;
+    gap: 6px;
+  }
+  .banner-score {
+    width: 151px;
+    padding: 12px 10px;
+  }
+  .mini-score-top {
+    font-size: 6px;
+    gap: 3px;
+    letter-spacing: 0;
+  }
+  .mini-score-top > span {
+    font-size: 6px;
+  }
+  .mini-score-top svg {
+    width: 10px;
+  }
+  .banner-score > div:nth-child(2) {
+    gap: 5px;
+    margin: 16px 0;
+  }
+  .banner-score b {
+    font-size: 26px;
+  }
+  .mini-team {
+    width: 21px;
+    height: 24px;
+    font-size: 7px;
+  }
+  .mini-score-bottom {
+    font-size: 6px;
+    gap: 3px;
+  }
+  .mini-score-bottom svg {
+    width: 10px;
+  }
+  .league-tabs {
+    gap: 23px;
+    margin-top: 15px;
+  }
+  .league-tabs > button {
+    font-size: 10px;
+    gap: 5px;
+  }
+  .sport-glyph {
+    font-size: 16px;
+  }
+  .count {
+    font-size: 8px;
+  }
+  .game-toolbar {
+    margin: 17px 0 22px;
+  }
+  .date-switch label {
+    font-size: 9px;
+    padding: 0 7px;
+    gap: 5px;
+  }
+  .date-switch button {
+    width: 23px;
+  }
+  .following-toggle {
+    font-size: 9px;
+    gap: 4px;
+  }
+  .following-toggle > svg {
+    display: none;
+  }
+  .toolbar-right {
+    gap: 10px;
+  }
+  .following-toggle .toggle {
+    width: 27px;
+    height: 16px;
+  }
+  .following-toggle .toggle > span {
+    width: 10px;
+    height: 10px;
+  }
+  .following-toggle .toggle.on > span {
+    transform: translateX(11px);
+  }
+  .game-grid {
+    gap: 11px;
+  }
+  .team-info strong {
+    font-size: 10px;
+  }
+  .team-info small {
+    font-size: 8px;
+  }
+  .team-mark {
+    width: 27px;
+    height: 27px;
+    font-size: 8px;
+  }
+  .team-row {
+    gap: 7px;
+  }
+  .score {
+    font-size: 23px;
+  }
+  .card-top {
+    padding: 11px 11px 3px;
+    height: 31px;
+  }
+  .score-link {
+    padding: 7px 11px 10px;
+  }
+  .live-label {
+    font-size: 7px;
+    gap: 4px;
+  }
+  .clock {
+    font-size: 8px;
+    margin-left: 3px;
+  }
+  .card-bottom {
+    padding: 9px 11px;
+    font-size: 7px;
+  }
+  .card-bottom button {
+    font-size: 7px;
+  }
+  .card-bottom svg {
+    width: 10px;
+  }
+  .league-fullname {
+    font-size: 8px;
+  }
+  .section-heading h2 {
+    font-size: 11px;
+  }
+  .league-section {
+    margin-bottom: 22px;
+  }
+  .dashboard-aside {
+    gap: 15px;
+  }
+  .aside-card {
+    padding-top: 16px;
+  }
+  .aside-title h2 {
+    font-size: 11px;
+  }
+  .aside-subtitle {
+    font-size: 9px;
+  }
+  .follow-row strong {
+    font-size: 9px;
+  }
+  .follow-row small {
+    font-size: 7px;
+  }
+  .follow-row {
+    gap: 7px;
+  }
+  .footnote {
+    font-size: 7px;
+    line-height: 1.8;
+    flex-wrap: wrap;
+    margin-top: 23px;
+  }
+  .footnote > span:last-child {
+    margin-left: auto;
+  }
+}
+@media (max-width: 440px) {
+  .game-grid {
+    grid-template-columns: 1fr;
+  }
+  .score-link {
+    padding: 9px 17px 13px;
+  }
+  .team-row {
+    padding: 7px 0;
+    gap: 11px;
+  }
+  .team-info strong {
+    font-size: 12px;
+  }
+  .team-info small {
+    font-size: 9px;
+  }
+  .team-mark {
+    width: 33px;
+    height: 33px;
+    font-size: 10px;
+  }
+  .score {
+    font-size: 27px;
+  }
+  .card-top {
+    padding: 14px 17px 5px;
+    height: 35px;
+  }
+  .card-bottom {
+    padding: 10px 17px;
+    font-size: 8px;
+  }
+  .card-bottom button {
+    font-size: 8px;
+  }
+  .live-label {
+    font-size: 8px;
+  }
+  .clock {
+    font-size: 9px;
+    margin-left: 5px;
+  }
+  .dashboard-aside {
+    grid-template-columns: 1fr;
+  }
+  .aside-title h2 {
+    font-size: 13px;
+  }
+  .follow-row strong {
+    font-size: 12px;
+  }
+  .follow-row small {
+    font-size: 9px;
+  }
+  .follow-row {
+    padding: 12px 0;
+  }
+  .aside-subtitle {
+    font-size: 11px;
+  }
+  .aside-add {
+    font-size: 10px;
+  }
+  .banner-score {
+    width: 138px;
+    padding: 11px 8px;
+  }
+  .banner-score b {
+    font-size: 24px;
+  }
+  .highlight-banner {
+    padding: 20px 16px;
+    gap: 7px;
+  }
+  .highlight-copy h2 {
+    font-size: 22px;
+  }
+  .highlight-copy p {
+    font-size: 8px;
+    max-width: 147px;
+  }
+  .highlight-copy button {
+    font-size: 8px;
+  }
+  .mini-score-bottom {
+    font-size: 5.5px;
+  }
+  .mini-score-top {
+    font-size: 5.5px;
+  }
+  .mini-score-top > span {
+    font-size: 5.5px;
+  }
+  .mini-team {
+    width: 20px;
+    height: 23px;
+  }
+  .league-tabs {
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .league-tabs > button {
+    gap: 4px;
+    font-size: 10px;
+  }
+  .game-toolbar {
+    gap: 5px;
+  }
+  .toolbar-right {
+    gap: 7px;
+  }
+  .filter-button {
+    width: 29px;
+    height: 32px;
+  }
+  .following-toggle {
+    font-size: 9px;
+  }
+  .footnote > span:last-child {
+    width: 100%;
+    margin-left: 11px;
+  }
+  .section-heading h2 {
+    font-size: 12px;
+  }
+  .league-fullname {
+    font-size: 9px;
+  }
+  .section-heading > span {
+    font-size: 9px;
+  }
+}

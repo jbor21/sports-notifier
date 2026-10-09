@@ -1,0 +1,36 @@
+:root {
+  font-family: 'DM Sans Variable', sans-serif;
+  color: #27302f;
+  background: #f7f8fa;
+  font-synthesis: none;
+  --bg: #f7f8fa;
+  --surface: #fff;
+  --text: #27302f;
+  --muted: #818787;
+  --border: #e9ecec;
+  --green: #16794c;
+  --soft: #edf5ef;
+  --hover: #f6f8f7;
+  --shadow: 0 2px 3px #14271d03;
+  --live: #2b9a65;
+  --stale: #9aa39e;
+  --warn-bg: #fff8e8;
+  --warn-border: #f0dfb5;
+  --warn-text: #7a5a12;
+}
+[data-theme='dark'] {
+  --bg: #141c20;
+  --surface: #1b252a;
+  --text: #e1e8e5;
+  --muted: #8d9b96;
+  --border: #2c373b;
+  --green: #73bb95;
+  --soft: #243d33;
+  --hover: #253036;
+  --stale: #6f7b77;
+  --warn-bg: #3a3322;
+  --warn-border: #5a4b28;
+  --warn-text: #e6cd8c;
+  background: var(--bg);
+  color: var(--text);
+}
