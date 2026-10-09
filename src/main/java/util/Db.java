@@ -30,7 +30,9 @@ public final class Db {
         cfg.setPassword(password);
         cfg.setMaximumPoolSize(poolSize);
         cfg.setConnectionTimeout(5000);
-        cfg.addDataSourceProperty("socketTimeout", socketTimeoutSeconds);
+        // A string: the driver reads its settings with Properties.getProperty, which ignores any
+        // other type, so a number here was silently dropped and connections had no timeout (#29).
+        cfg.addDataSourceProperty("socketTimeout", String.valueOf(socketTimeoutSeconds));
         return new HikariDataSource(cfg);
     }
 

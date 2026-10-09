@@ -10,6 +10,7 @@ import util.LoopHealth;
 import util.Topics;
 
 import java.util.Collections;
+import java.time.Duration;
 import java.util.List;
 
 /** The history writers (Phase 3.2 spec, 7.2): consumer group {@code history} on notifications, into Postgres. */
@@ -26,7 +27,10 @@ public final class HistoryWriterMain {
 
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(KafkaSettings.consumer(KafkaSettings.bootstrap(), Topics.HISTORY_GROUP));
         consumer.subscribe(List.of(Topics.NOTIFICATIONS));
-        HistoryWriter worker = new HistoryWriter(consumer, new HistoryStore(db));
+        // Well under the loop's 60 s silence limit and Kafka's 5 min poll interval: a frozen Postgres
+        // fails the batch (retried a second later) instead of stalling the loop (issue #29).
+        Duration insertDeadline = Duration.ofMillis(Long.parseLong(System.getenv().getOrDefault("HISTORY_INSERT_DEADLINE_MS", "10000")));
+        HistoryWriter worker = new HistoryWriter(consumer, new HistoryStore(db, insertDeadline));
 
         // The consumer is not thread-safe, so the loop owns it: shutdown asks the loop to stop, and the
         // loop's own thread closes the consumer (leaving the group, so its lanes move at once).

@@ -5,9 +5,15 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Inserts into {@code notifications}, many rows per statement. */
 public final class HistoryStore {
@@ -18,10 +24,24 @@ public final class HistoryStore {
 
     private static final int COLUMNS = 8;
 
+    /** Aborts inserts that pass their deadline; one daemon thread for every store. */
+    private static final ScheduledExecutorService DEADLINES = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "history-insert-deadline");
+        t.setDaemon(true);
+        return t;
+    });
+
     private final DataSource db;
+    private final Duration deadline;
 
     public HistoryStore(DataSource db) {
+        this(db, Duration.ofSeconds(10));
+    }
+
+    /** {@code deadline}: an insert still running after this is aborted and the batch fails (issue #29). */
+    public HistoryStore(DataSource db, Duration deadline) {
         this.db = db;
+        this.deadline = deadline;
     }
 
     /**
@@ -49,7 +69,26 @@ public final class HistoryStore {
                 ps.setString(++i, r.bodyJson());
             }
             assert i == rows.size() * COLUMNS;
-            return ps.executeUpdate();
+            // The socket timeout bounds each read, but not a write blocked on a frozen server or replies
+            // that trickle in. Past the deadline, abort closes the socket, so the blocked call throws,
+            // the writer rewinds the batch, and the pool drops the connection.
+            AtomicBoolean aborted = new AtomicBoolean();
+            ScheduledFuture<?> watchdog = DEADLINES.schedule(() -> {
+                aborted.set(true);
+                try {
+                    c.abort(Runnable::run);
+                } catch (SQLException e) {
+                    System.err.println("[History] could not abort a late insert: " + e.getMessage());
+                }
+            }, deadline.toMillis(), TimeUnit.MILLISECONDS);
+            try {
+                return ps.executeUpdate();
+            } catch (SQLException e) {
+                if (aborted.get()) throw new SQLException("history insert passed its " + deadline.toMillis() + " ms deadline", e);
+                throw e;
+            } finally {
+                watchdog.cancel(false);
+            }
         }
     }
 }
