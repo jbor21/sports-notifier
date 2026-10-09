@@ -212,7 +212,7 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   `game-events-dlq` and moves on; Redis and Kafka outages are retried, never
   dead-lettered; `/health` shows `deadLettered`.
 - **New in Phase 3b:** the Sideline UI in `web/` (Vite + React), rebuilt from the
-  user's v0 design (`~/Desktop/projects/sports-notification-app-frontend-v0`, a
+  user's v0 design (`~/projects/sports-notification-app-frontend-v0`, a
   read-only reference; its demo mode was dropped). A Dockerfile stage builds it; the
   gateway's `WebFiles` serves `WEB_DIR` from its 404 handler (app routes fall back to
   `index.html`, never under `/api/`; `/assets/*` immutable, the rest `no-cache`; a CSP
