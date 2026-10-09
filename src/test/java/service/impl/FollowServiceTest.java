@@ -199,7 +199,7 @@ class FollowServiceTest {
 
     @Test
     void commitFailureDeletesMarker() {
-        jedis.set(util.RedisKeys.SUB_BUILT, "x");
+        FollowSets.markBuilt(jedis, "test");
         FollowService failing = new FollowService(failingCommits(PostgresTestSupport.dataSource()), pool,
             AlertCatalog.load(), Teams.load(), gid -> Optional.empty());
         assertThrows(RuntimeException.class, () -> failing.create(bob, "team", "mlb-chw"));

@@ -12,7 +12,6 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -26,9 +25,10 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
 /**
- * Rebuilds the sub:* sets from Postgres whenever the {@code sub:built} marker is missing, and once a
- * day regardless (spec 5.4). The marker goes missing when Redis restarts empty or a save's Redis
- * update fails; both end here.
+ * Rebuilds the sub:* sets from Postgres whenever the {@code sub:built} marker does not vouch for
+ * them, and once a day regardless (spec 5.4). The marker is missing when Redis restarts empty or a
+ * save's Redis update fails; it is wrong when it was written for another set shape (a helm upgrade,
+ * #16) or by another Redis run (an AOF restart that lost recent writes, #18). All of these end here.
  */
 public final class SubRebuilder {
 
@@ -43,8 +43,6 @@ public final class SubRebuilder {
 
     /** Reads Redis's run_id, which changes whenever Redis restarts. Tests substitute their own. */
     private final Function<Jedis, String> runId;
-    /** The run_id seen at the last check; null until the first. */
-    private String lastRunId;
 
     public SubRebuilder(DataSource db, JedisPool pool, BooleanSupplier rebuildOwed, Runnable clearOwed) {
         this(db, pool, rebuildOwed, clearOwed, () -> {});
@@ -72,24 +70,33 @@ public final class SubRebuilder {
         return null;
     }
 
-    /** Retries a marker delete a save couldn't do, then rebuilds if the marker is missing. True if it rebuilt. */
+    /** Retries a marker delete a save couldn't do, then rebuilds unless the marker vouches for the sets. True if it rebuilt. */
     public boolean checkOnce() {
         try (Jedis jedis = pool.getResource()) {
             if (rebuildOwed.getAsBoolean()) {
                 jedis.del(RedisKeys.SUB_BUILT);
                 clearOwed.run();
             }
-            // A Redis that restarted from its AOF can keep sub:built but lose the last second of SADD/SREM
-            // (fsync every second). Its run_id changes on every start, so a new one means: rebuild.
-            String id = runId.apply(jedis);
-            if (lastRunId != null && id != null && !id.equals(lastRunId)) {
-                System.out.println("[SubRebuilder] Redis restarted (run_id changed); rebuilding");
-                jedis.del(RedisKeys.SUB_BUILT);
-            }
-            if (id != null) lastRunId = id;
-            if (jedis.exists(RedisKeys.SUB_BUILT)) return false;
+            if (vouched(jedis)) return false;
         }
         return rebuildNow(false);
+    }
+
+    /**
+     * The marker is today's shape and was written by the Redis now running. A Redis that restarted
+     * from its AOF can keep sub:built but lose the last second of SADD/SREM (fsync every second); its
+     * run_id changes on every start. The run_id is kept in the marker, not in this process, so a
+     * user-pref that restarted together with Redis still sees the difference.
+     */
+    private boolean vouched(Jedis jedis) {
+        if (!FollowSets.isBuilt(jedis)) return false;
+        String live = runId.apply(jedis);
+        String built = jedis.hget(RedisKeys.SUB_BUILT, "runId");
+        if (live != null && !live.equals(built)) {
+            System.out.println("[SubRebuilder] Redis restarted since the last build (run_id changed); rebuilding");
+            return false;
+        }
+        return true;
     }
 
     /** {@code force}: rebuild even if the marker is there (the daily rebuild). True if it rebuilt. */
@@ -98,12 +105,12 @@ public final class SubRebuilder {
             return SubLocks.withRebuildLock(c, conn -> {
                 try (Jedis jedis = pool.getResource()) {
                     // Checked again under the lock: another user-pref replica may have just rebuilt.
-                    if (!force && jedis.exists(RedisKeys.SUB_BUILT)) return false;
+                    if (!force && vouched(jedis)) return false;
                     long started = System.currentTimeMillis();
                     String buildId = UUID.randomUUID().toString();
                     Set<String> produced = buildAll(conn, jedis, buildId);
                     int removed = cleanup(jedis, produced);
-                    jedis.set(RedisKeys.SUB_BUILT, Instant.now().toString());
+                    FollowSets.markBuilt(jedis, runId.apply(jedis));
                     System.out.println("[SubRebuilder] rebuilt " + produced.size() + " sets, removed " + removed
                             + ", in " + (System.currentTimeMillis() - started) + " ms");
                     return true;

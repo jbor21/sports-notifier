@@ -12,7 +12,6 @@ import util.GsonJsonMapper;
 import util.JedisPoolHolder;
 import util.KafkaSettings;
 import util.LoopHealth;
-import util.RedisKeys;
 import util.Topics;
 
 import java.util.List;
@@ -36,7 +35,7 @@ public final class Stage1WorkerMain {
         Stage1Worker worker = new Stage1Worker(new DetectorMemory(pool), Detectors.standard(labels),
                 new MomentFanout(pool, new AlertAudience(), labels), consumer, producer, Topics.NOTIFICATIONS, Topics.GAME_EVENTS_DLQ, () -> {
             try (Jedis jedis = pool.getResource()) {
-                return jedis.exists(RedisKeys.SUB_BUILT);
+                return FollowSets.isBuilt(jedis);
             }
         });
 

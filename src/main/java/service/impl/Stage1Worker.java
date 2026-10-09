@@ -80,7 +80,7 @@ public final class Stage1Worker implements AutoCloseable {
     private final AtomicLong deadLettered = new AtomicLong();
     private long lastWaitWarning;
 
-    /** {@code setsReady}: whether the sub:* sets can be trusted ({@code sub:built} exists). */
+    /** {@code setsReady}: whether the sub:* sets can be trusted ({@link FollowSets#isBuilt}). */
     public Stage1Worker(DetectorMemory memory, Detectors detectors, MomentFanout fanout, Consumer<String, String> consumer,
                         Producer<String, String> producer, String notificationsTopic, String deadLetterTopic,
                         BooleanSupplier setsReady) {
@@ -280,7 +280,7 @@ public final class Stage1Worker implements AutoCloseable {
     private void warnWaiting() {
         long now = System.currentTimeMillis();
         if (now - lastWaitWarning >= WAIT_WARN_EVERY_MILLIS) {
-            System.err.println("[Stage1] waiting: sub:built is missing, so the sub sets are being rebuilt; plays are held, not dropped");
+            System.err.println("[Stage1] waiting: sub:built is missing or from another set shape, so the sub sets are being rebuilt; plays are held, not dropped");
             lastWaitWarning = now;
         }
     }

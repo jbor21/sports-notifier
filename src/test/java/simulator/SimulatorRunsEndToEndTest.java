@@ -92,7 +92,7 @@ class SimulatorRunsEndToEndTest {
         Map<String, AlertSetting> alerts = new LinkedHashMap<>();
         for (String type : List.of("GAME_START", "RUN_SCORED", "FINAL")) alerts.put(type, new AlertSetting(true, Map.of()));
         new FollowSets(pool).writeState(new Follow("f1", USER, FollowKind.TEAM, "mlb-hou", "MLB", alerts, null, Instant.now()));
-        jedis.set(RedisKeys.SUB_BUILT, "1");
+        service.impl.FollowSets.markBuilt(jedis, "test");
 
         stage1 = stage1Worker();
         KafkaConsumer<String, String> s2 = new KafkaConsumer<>(
@@ -127,7 +127,7 @@ class SimulatorRunsEndToEndTest {
         return new Stage1Worker(new DetectorMemory(pool), Detectors.standard(labels),
             new MomentFanout(pool, new AlertAudience(), labels), consumer, producer, notifications, notifications + "-dlq", () -> {
             try (Jedis j = pool.getResource()) {
-                return j.exists(RedisKeys.SUB_BUILT);
+                return service.impl.FollowSets.isBuilt(j);
             }
         });
     }

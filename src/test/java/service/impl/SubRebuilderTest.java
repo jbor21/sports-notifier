@@ -78,7 +78,7 @@ class SubRebuilderTest {
 
     @Test
     void markerPresentNoRebuild() {
-        jedis.set(RedisKeys.SUB_BUILT, "x");
+        FollowSets.markBuilt(jedis, SubRebuilder.redisRunId(jedis));
         follows.create(bob, "team", "mlb-chw");
         jedis.del(FollowSets.key(catalog.FollowKind.TEAM, "mlb-chw", "GAME_START"));
         assertFalse(rebuilder().checkOnce());
@@ -215,28 +215,51 @@ class SubRebuilderTest {
         assertTrue(jedis.sismember("sub:team:mlb-chw:END_OF_INNING:4", bob));
     }
 
-    @Test
-    void runIdChangeDeletesMarker() {
-        java.util.concurrent.atomic.AtomicReference<String> runId = new java.util.concurrent.atomic.AtomicReference<>("a");
-        SubRebuilder r = new SubRebuilder(PostgresTestSupport.dataSource(), pool, follows::rebuildOwed,
-            follows::clearRebuildOwed, () -> {}, j -> runId.get());
-        follows.create(bob, "team", "mlb-chw");
-        jedis.set(RedisKeys.SUB_BUILT, "x");
-        assertFalse(r.checkOnce(), "first read only remembers the run id");
-        assertFalse(r.checkOnce(), "same Redis, nothing to do");
-        runId.set("b");                                        // Redis restarted, maybe from an AOF missing a second
-        assertTrue(r.checkOnce(), "a new run id means the sets may be stale: rebuild");
-        assertTrue(jedis.exists(RedisKeys.SUB_BUILT));
-        assertFalse(r.checkOnce());
+    private SubRebuilder rebuilderSeeing(String liveRunId) {
+        return new SubRebuilder(PostgresTestSupport.dataSource(), pool, follows::rebuildOwed,
+            follows::clearRebuildOwed, () -> {}, j -> liveRunId);
     }
 
     @Test
-    void firstRunIdReadDoesNot() {
-        jedis.set(RedisKeys.SUB_BUILT, "x");
-        SubRebuilder r = new SubRebuilder(PostgresTestSupport.dataSource(), pool, follows::rebuildOwed,
-            follows::clearRebuildOwed, () -> {}, j -> "fresh-pod");
-        assertFalse(r.checkOnce());
-        assertEquals("x", jedis.get(RedisKeys.SUB_BUILT));
+    void markerOldVersionRebuilds() {
+        follows.create(bob, "team", "mlb-chw");
+        jedis.hset(RedisKeys.SUB_BUILT, java.util.Map.of("version", "1", "runId", "R"));
+        assertTrue(rebuilderSeeing("R").checkOnce(), "sets built in an older shape: rebuild");
+        assertEquals(String.valueOf(FollowSets.SHAPE_VERSION), jedis.hget(RedisKeys.SUB_BUILT, "version"));
+        assertEquals("R", jedis.hget(RedisKeys.SUB_BUILT, "runId"));
+    }
+
+    @Test
+    void markerOtherRunIdRebuilds() {
+        follows.create(bob, "team", "mlb-chw");
+        FollowSets.markBuilt(jedis, "old");
+        assertTrue(rebuilderSeeing("new").checkOnce(), "Redis restarted since the build: rebuild");
+        assertEquals("new", jedis.hget(RedisKeys.SUB_BUILT, "runId"));
+        assertFalse(rebuilderSeeing("new").checkOnce());
+    }
+
+    @Test
+    void restartedTogetherStillRebuilds() {
+        // Redis and user-pref restarted together: this rebuilder has never seen a run id before.
+        follows.create(bob, "team", "mlb-chw");
+        FollowSets.markBuilt(jedis, "old");
+        SubRebuilder fresh = rebuilderSeeing("new");
+        assertTrue(fresh.checkOnce());
+    }
+
+    @Test
+    void currentMarkerNoRebuild() {
+        FollowSets.markBuilt(jedis, "R");
+        assertFalse(rebuilderSeeing("R").checkOnce());
+    }
+
+    @Test
+    void legacyStringMarkerRebuilds() {
+        follows.create(bob, "team", "mlb-chw");
+        jedis.set(RedisKeys.SUB_BUILT, "2026-10-08T12:00:00Z");     // the 3.x marker, kept by a helm upgrade
+        assertTrue(rebuilderSeeing("R").checkOnce());
+        assertEquals("hash", jedis.type(RedisKeys.SUB_BUILT));
+        assertTrue(FollowSets.isBuilt(jedis));
     }
 
     @Test

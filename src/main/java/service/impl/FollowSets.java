@@ -16,6 +16,13 @@ import java.util.TreeSet;
  */
 public class FollowSets {
 
+    /**
+     * The shape of the sets: which names exist and what they hold. Bump it whenever that changes
+     * (3.3 added {@code ANY} and the innings sets), so a Redis kept across an upgrade is rebuilt
+     * instead of trusted (issue #16).
+     */
+    public static final int SHAPE_VERSION = 2;
+
     private final JedisPool pool;
 
     public FollowSets(JedisPool pool) {
@@ -93,6 +100,24 @@ public class FollowSets {
             allNames(f).forEach(name -> p.srem(key(f.kind(), f.targetId(), name), f.userId()));
             RedisPipelines.syncChecked(p);
         }
+    }
+
+    /**
+     * Whether {@code sub:built} says the sets were built in today's shape. A marker from before
+     * versioning is a plain string, so the type is checked first rather than reading it as a hash.
+     */
+    public static boolean isBuilt(Jedis jedis) {
+        if (!"hash".equals(jedis.type(RedisKeys.SUB_BUILT))) return false;
+        return String.valueOf(SHAPE_VERSION).equals(jedis.hget(RedisKeys.SUB_BUILT, "version"));
+    }
+
+    /** Records a finished build: today's shape, by the Redis whose {@code run_id} is {@code runId}. */
+    public static void markBuilt(Jedis jedis, String runId) {
+        Pipeline p = jedis.pipelined();
+        p.del(RedisKeys.SUB_BUILT);
+        p.hset(RedisKeys.SUB_BUILT, java.util.Map.of("version", String.valueOf(SHAPE_VERSION),
+                "runId", runId == null ? "" : runId));
+        RedisPipelines.syncChecked(p);
     }
 
     /** Says the sets can no longer be trusted: user-pref rebuilds them, Stage 1 waits until it has. */

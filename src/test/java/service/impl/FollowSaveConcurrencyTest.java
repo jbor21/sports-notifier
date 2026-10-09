@@ -78,7 +78,7 @@ class FollowSaveConcurrencyTest {
 
     @Test
     void redisFailureAfterCommitDeletesMarker() {
-        jedis.set(RedisKeys.SUB_BUILT, "1");
+        FollowSets.markBuilt(jedis, "test");
         FollowService follows = service(new FailingSets(pool, 1, 0));
         ApiResult<Follow> r = follows.create(bob, "team", "mlb-chw");
         assertEquals(201, r.status(), "the follow is saved; Redis catches up at the rebuild");
@@ -89,7 +89,7 @@ class FollowSaveConcurrencyTest {
 
     @Test
     void redisUnreachableSetsRebuildOwed() {
-        jedis.set(RedisKeys.SUB_BUILT, "1");
+        FollowSets.markBuilt(jedis, "test");
         FollowService follows = service(new FailingSets(pool, 1, 1));
         assertEquals(201, follows.create(bob, "team", "mlb-chw").status());
         assertTrue(follows.rebuildOwed());

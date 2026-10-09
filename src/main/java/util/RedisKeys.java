@@ -74,8 +74,10 @@ public final class RedisKeys {
     public static final String SUB_NOTIF_PREFIX = "sub:notif:";
 
     /**
-     * Set when the sub:* sets were last rebuilt from Postgres. Missing means they may be empty or
-     * stale: user-pref rebuilds them, and Stage 1 waits until it is back (Phase 3.2 spec, 5.4 and 6).
+     * Hash {@code {version, runId}} written when the sub:* sets were last rebuilt from Postgres: the
+     * set shape ({@code FollowSets.SHAPE_VERSION}) and the Redis {@code run_id} that holds them.
+     * Missing or different means they may be empty or stale: user-pref rebuilds them, and Stage 1
+     * waits until it is back (Phase 3.2 spec, 5.4 and 6; Phase 4.1 spec, 8).
      */
     public static final String SUB_BUILT = "sub:built";
 
