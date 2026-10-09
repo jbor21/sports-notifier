@@ -2,7 +2,7 @@
 
 This is the map of the project: what it does today, what we are changing it into, and every decision we made on the way. It is written so you can explain the system without reading the code line by line.
 
-Last updated 2026-10-08. Phases 1, 2, 3.1, 3.2, and 3.3 are merged (see "Build order"). "What exists today" describes the course version as it was before the redesign.
+Last updated 2026-10-09. Phases 1, 2, 3.1–3.4, and 3b are merged (see "Build order"). "What exists today" describes the course version as it was before the redesign.
 
 Revised 2026-09-28: hosting moved from one always-on Hetzner VM to Kubernetes, run on your laptop (k3d) and on AWS (EKS) only when you want it up. Kafka gets three brokers in the cloud. The evidence step became a correctness checker plus a chaos suite. Decisions 2, 6, 7, and 9 changed; 12 through 14 are new.
 
@@ -16,6 +16,9 @@ Revised 2026-10-07: Phase 3 is split into 3.1–3.4 (build order). 3.1, the Kafk
 
 
 Revised 2026-10-07 (Phase 3.3 spec): decision 15's detectors run in Stage 1 with their memory in `det:<gameId>`; the poller sends every change of game position; a score's alert id counts scoring alerts fired, which never goes down; a push's id is its headline alert's id and the final is sent after the moment's push; "most specific follow wins" uses `sub:<kind>:<target>:ANY` sets.
+
+Revised 2026-10-09 (Phase 4.1 spec): Phase 4 is split into 4.1–4.3; the chaos suite is built and first run on k3d (4.2) and run again on EKS in Phase 6; alert waves 2 and 3 move to Phase 7. Decision 14 says how the checker computes what was expected; decision 8's marker records the set-shape version and Redis's run id.
+
 ---
 
 ## The full picture
@@ -272,7 +275,7 @@ A dead worker is the failure this design absorbs by itself. Kill Stage 1 mid-gam
 
 **Gave up.** One store. We now run Postgres, and a preference write can land in Postgres before Redis has the new set membership. That window is short and rebuildable.
 
-**How a save stays in step (Phase 3.2).** A follow save commits to Postgres first, then updates the Redis sets. If the Redis update fails, the user service deletes the `sub:*` "built" marker, and its 30-second check rebuilds every set from Postgres. Undoing the Postgres write instead would not cover a Redis update that succeeds followed by a commit that fails. A rebuild holds a Postgres lock that saves wait on, so it cannot re-add someone who unfollowed while it ran. A full rebuild also runs daily, which bounds how long a missed update can last.
+**How a save stays in step (Phase 3.2).** A follow save commits to Postgres first, then updates the Redis sets. If the Redis update fails, the user service deletes the `sub:*` "built" marker, and its 30-second check rebuilds every set from Postgres. Undoing the Postgres write instead would not cover a Redis update that succeeds followed by a commit that fails. A rebuild holds a Postgres lock that saves wait on, so it cannot re-add someone who unfollowed while it ran. A full rebuild also runs daily, which bounds how long a missed update can last. The marker says what was built (Phase 4.1, issues #16 and #18): it holds the set-shape version and Redis's `run_id`, so a `helm upgrade` that changes set shapes, or a Redis restart that kept the marker but lost recent writes, also triggers a rebuild.
 
 **Why this direction.** Redis can be rebuilt from Postgres. Postgres cannot be rebuilt from Redis. A cache is not the only copy of a person's account.
 
@@ -350,6 +353,8 @@ The app cannot move to Cloudflare Workers, Lambda, or Cloud Run. Those run short
 - **Recorded-game replay.** Record a real game's ESPN responses once and replay them at 1× or 10×. Demos and tests no longer need a live game, and a run is repeatable.
 - **The correctness checker.** Synthetic users follow teams. After a replay, the checker compares what each user received with what the accepted plays say they should have received. The rule: every subscribed user got every accepted play they asked for, exactly once, in game order.
 - **The chaos suite.** Scripts that kill a Stage 1 worker, a Stage 2 worker, a Kafka broker, and a gateway during a replay, and cut the network between a worker and Kafka. The checker runs after each one.
+
+**How the checker knows what was expected (Phase 4.1).** It does not trust Stage 1's output. It reads the run's accepted plays from `game-events` and the synthetic users' follows from Postgres, runs the detectors, and computes each alert's audience itself in plain Java, so a lost or repeated moment in Stage 1, or a Redis set that disagrees with Postgres, shows up. The follows are created before the replay starts and frozen; a follow that changes during the run fails the check. Every replayed game id carries the run's id (`<league>-rp<runId>-<espnId>`), and every check is scoped to those ids, so live games and other runs cannot pass or fail it. The run ends only when the replay is done, every game is final, and the consumer groups have stayed at zero lag for 10 seconds. A self-test injects a lost Redis write, a duplicate push, and a follow change, and the checker must catch each.
 
 Tracing runs alongside it. OpenTelemetry carries a trace id in each Kafka message's headers, so one touchdown is one timeline in Grafana from poller to gateway. The p50 and p99 in the README come from those traces.
 
@@ -545,6 +550,8 @@ The result is already filtered, and a user reached through several follows appea
 **Build in waves.** The detector framework is built once. Each alert after that is one small class and its tests.
 
 - **Wave 1:** game start, final (win, loss, tie), scores (with the NFL try follow-up), end of period and halftime, lead change, close game late, overtime and shootout, delayed or postponed. Also the combining rules and deterministic ids.
+Waves 2 and 3 are built in Phase 7, after the proof tools and the cloud (moved 2026-10-09): the checker verifies any detector set, so adding detectors later costs nothing.
+
 - **Wave 2:** the scheduler with starting soon and the daily league summary. Until it lands, league follows use the per-game final. Also comeback, tie game late, big run, big lead, big inning, walk-off, no-hitter watch, shutout watch, and two-minute warning.
 - **Wave 3:** the alerts that need a field confirmed first (red zone, chance to tie or win, bases loaded).
 
@@ -624,10 +631,13 @@ We implement in this order. The system runs at the end of each step. Everything 
    - **3.3 Alerts, wave 1.** The detector framework and wave 1 detectors in Stage 1, most-specific-follow set math, combining, deterministic alert ids (decision 15). **Merged** (PR #14, 2026-10-08; spec and plan `2026-10-07-phase-3-3-alerts-wave-1`; detectors replayed against the ESPN recordings; overturns alert once they hold).
    - **3.4 Live API.** `/games`, `/leagues`, the alert catalog, and live `game_update` over the WebSocket through a per-game channel published by the accept script; a schedule cache for yesterday through 7 days ahead; the unread badge as a Redis counter; `Final` labels; the no-score heal down to 10 seconds. **Merged** (PR #28, 2026-10-08; spec and plan `2026-10-08-phase-3-4-live-api`).
 3b. **New UI.** A full redesign of the web UI, frontend only: it calls the gateway's API and WebSocket and has no database, auth, or server code of its own. The code lives in `web/` and ships as static files in the same Helm chart. It is built against the API spec in `docs/api/`, written before Phase 3 and implemented by Phase 3, so the UI can start early against a mock server. Built as an installable web app (PWA) so Phase 7's Web Push can reach a phone. Screens can be designed any time; the build lands after Phase 3. Spec and plan `2026-10-08-phase-3b-ui`: the app is called Sideline, rebuilt on Vite and React from the user's v0 design (v0's code is the reference, not ported); the gateway serves the built files from the same image at `/`, same origin as `/api/v1`, so the session cookie and the socket need no CORS; checked by a Playwright run in CI after the smoke test and by a live-game check with real ESPN data (issue #3). Installing on a phone needs HTTPS, so it is first checked in Phase 5. **Merged** (PR #32, 2026-10-09). The live-game check was waived for the merge and is issue #36, due before Phase 5.
-4. **Proof tools.** Recorded-game replay, the correctness checker, OpenTelemetry traces, Prometheus and Grafana for lag and latency. Alert waves 2 and 3, each detector tested against recorded games.
+4. **Proof tools**, split into three sub-phases, each with its own spec, plan, and PR:
+   - **4.1 Replay and checker.** Recorded games replayed through the real poller at 1× to 60×, synthetic users on real sockets, the checker of decision 14, and the versioned `sub:built` marker (#16, #18). Spec `2026-10-09-phase-4-1-replay-checker`.
+   - **4.2 Chaos suite on k3d.** Scripts that kill a Stage 1 worker, a Stage 2 worker, a gateway, and the broker, and cut a worker off from Kafka with a network policy, during a checked replay, with two copies of each worker and gateway. Fixes for what it trips over (#9, #10, #17, #31, #44; #12 closes).
+   - **4.3 Traces and metrics.** OpenTelemetry trace ids through Kafka headers and the Redis pub/sub hop; Prometheus and Grafana for lag and latency, p50 and p99 from "poller saw it" to "gateway sent it".
 5. **AWS.** Terraform for the network, EKS, ECR, and S3. The Postgres dump and restore. Three Kafka brokers. KEDA on lag. GitHub Actions pushes the image to ECR.
-6. **Evidence.** The chaos suite with the checker, on EKS. A load test that makes KEDA scale out and back in. The numbers, a trace screenshot, and the scaling graph go in the README. A public demo build of the UI (fake data, static hosting), so the UI can be shown while AWS is off.
-7. **Push.** Web Push for a closed browser, quiet hours, rate caps. Then play-by-play and box scores for followed games: player alerts and the rest of decision 15's "later" list.
+6. **Evidence.** The chaos suite with the checker, on EKS (built and first run on k3d in 4.2). A load test that makes KEDA scale out and back in. The numbers, a trace screenshot, and the scaling graph go in the README. A public demo build of the UI (fake data, static hosting), so the UI can be shown while AWS is off.
+7. **Push.** Web Push for a closed browser, quiet hours, rate caps. Alert waves 2 and 3 (decision 15), each detector tested against recorded games. Then play-by-play and box scores for followed games: player alerts and the rest of decision 15's "later" list.
 8. **Maybe.** Hybrid fan-out, only if step 6 says the extra hop matters. Kafka transactions for Stage 1, only if the checker finds duplicates.
 9. **Next project phase: AI layer.** Scoped separately once the pipeline works. It would be its own consumer group, so it cannot slow delivery.
 
