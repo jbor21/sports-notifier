@@ -12,7 +12,7 @@ import { useLocation, useNavigate } from 'react-router'
 import useSWR, { useSWRConfig } from 'swr'
 import { fetcher, request, setOnSignedOut, socketUrl } from '../api/client'
 import type { AlertType, League, Notice } from '../api/types'
-import { isPublicPath, signInPath, useMe } from '../session'
+import { forgetUserData, isPublicPath, signInPath, useMe } from '../session'
 import { setCount } from './badge'
 import { LiveConnection, type ConnectionState, type SocketLike } from './connection'
 import { gameStore } from './games'
@@ -64,7 +64,7 @@ export function LiveProvider({
   const me = useMe()
   const navigate = useNavigate()
   const location = useLocation()
-  const { mutate } = useSWRConfig()
+  const { mutate, cache } = useSWRConfig()
   const toasts = useToastState()
   const known = useKnownTypesLoader()
 
@@ -72,12 +72,14 @@ export function LiveProvider({
   here.current = location.pathname + location.search
 
   const signOutLocally = useCallback(() => {
-    // Forget the user (the socket closes with it) without asking /me again.
+    // Forget the user (the socket closes with it) without asking /me again, and their cached
+    // follows and history, so whoever signs in next on this tab never sees them.
+    forgetUserData(cache)
     void mutate('/me', undefined, { revalidate: false })
     // Already on sign in or sign up: stay, so `next` survives and nothing loops.
     const pathname = here.current.split('?')[0]
     if (!isPublicPath(pathname)) navigate(signInPath(here.current), { replace: true })
-  }, [mutate, navigate])
+  }, [cache, mutate, navigate])
 
   useEffect(() => {
     setOnSignedOut(signOutLocally)

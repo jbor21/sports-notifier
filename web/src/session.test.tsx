@@ -1,8 +1,8 @@
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { signInPath } from './session'
 import { renderApp, unauthenticated } from './test/renderApp'
-import { user } from './test/fixtures'
+import { follow, user } from './test/fixtures'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -74,6 +74,39 @@ describe('the sign-in guard', () => {
     await expect(request('/follows')).rejects.toThrow()
     await waitFor(() => expect(app.location()).toBe('/signin?next=%2Fnotifications'))
     expect(app.sockets.last().closedWith).toBe(1000)
+  })
+
+  it('after a lost session, the next user does not see the last user’s follows', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    let follows = [follow]
+    const app = renderApp('/following', {
+      '/auth/login': () => {
+        follows = []
+        return { status: 200, body: { ...user, id: 'u_other', username: 'other' } }
+      },
+      '/follows': () => ({ status: 200, body: { items: follows } }),
+    })
+    expect(await screen.findByText('Chicago Bears')).toBeInTheDocument()
+    act(() => app.sockets.last().open())
+    act(() => app.sockets.last().serverClose(4401))
+    await waitFor(() => expect(app.location()).toBe('/signin?next=%2Ffollowing'))
+    // SWR shares a request made in the last 2 s instead of asking again; a real sign-in takes longer.
+    await act(() => vi.advanceTimersByTimeAsync(2100))
+
+    // Any render of the old list, however brief, would be caught here.
+    let leaked = false
+    const watch = new MutationObserver(() => {
+      if (document.body.textContent?.includes('Chicago Bears')) leaked = true
+    })
+    watch.observe(document.body, { subtree: true, childList: true, characterData: true })
+    fireEvent.change(await screen.findByLabelText('Username'), { target: { value: 'other' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'abcdefgh9' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    await waitFor(() => expect(app.location()).toBe('/following'))
+    expect(await screen.findByText('Find your people')).toBeInTheDocument()
+    watch.disconnect()
+    vi.useRealTimers()
+    expect(leaked).toBe(false)
   })
 
   it('a socket closed with 4401 sends to sign in', async () => {
