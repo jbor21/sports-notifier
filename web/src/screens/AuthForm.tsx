@@ -5,6 +5,7 @@ import { useSWRConfig } from 'swr'
 import { ApiError, request } from '../api/client'
 import type { User } from '../api/types'
 import { Logo } from '../components/Logo'
+import { forgetUserData, isUserKey } from '../session'
 
 // The same rules as openapi.yaml's Credentials, so a bad value never costs a request.
 const USERNAME = /^[a-z0-9_]{3,20}$/
@@ -43,7 +44,7 @@ export function AuthForm({ mode }: { mode: 'signin' | 'signup' }) {
   const [params] = useSearchParams()
   const next = params.get('next')
   const navigate = useNavigate()
-  const { mutate } = useSWRConfig()
+  const { mutate, cache } = useSWRConfig()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<Field, string>>>({})
@@ -70,6 +71,11 @@ export function AuthForm({ mode }: { mode: 'signin' | 'signup' }) {
           ? { username, password, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
           : { username, password },
       })
+      // Whoever was signed in before (if anyone) leaves nothing behind for this user to see. mutate
+      // also drops SWR's "fetched just now" record, so the new user's screens really ask again;
+      // forgetUserData then removes the paged lists, which a mutate filter doesn't reach.
+      await mutate(isUserKey, undefined)
+      forgetUserData(cache)
       // A sign-out leaves /me cleared without asking again, so the new user goes in directly.
       await mutate('/me', user, { revalidate: false })
       navigate(safeNext(next), { replace: true })

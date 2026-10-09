@@ -75,8 +75,9 @@ describe('Settings', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     let signedIn = true
     let follows = [follow]
+    let current = user
     const app = renderApp('/following', {
-      '/me': () => (signedIn ? { status: 200, body: user } : unauthenticated),
+      '/me': () => (signedIn ? { status: 200, body: current } : unauthenticated),
       '/auth/logout': () => {
         signedIn = false
         return { status: 204 }
@@ -84,7 +85,8 @@ describe('Settings', () => {
       '/auth/login': () => {
         signedIn = true
         follows = []
-        return { status: 200, body: { ...user, id: 'u_other', username: 'other' } }
+        current = { ...user, id: 'u_other', username: 'other' }
+        return { status: 200, body: current }
       },
       '/follows': () => ({ status: 200, body: { items: follows } }),
     })

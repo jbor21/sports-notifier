@@ -120,6 +120,22 @@ describe('game page', () => {
     await waitFor(() => expect(app.calls(path)).toBe(2))
   })
 
+  it('refetches the detail when the score changes, so the line score keeps adding up', async () => {
+    const g = detail()
+    const app = openGame(g)
+    await screen.findByText('Soldier Field · FOX')
+    const path = `/games/${g.id}`
+    expect(app.calls(path)).toBe(1)
+    act(() => {
+      gameStore.accept({
+        ...g,
+        version: g.version + 1,
+        away: { ...g.away, score: g.away.score + 7 },
+      })
+    })
+    await waitFor(() => expect(app.calls(path)).toBe(2))
+  })
+
   it('a game the API does not know is "Game not found"', async () => {
     renderApp('/games/nfl-nope')
     expect(await screen.findByText('Game not found')).toBeInTheDocument()

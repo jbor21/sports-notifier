@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter, useLocation } from 'react-router'
+import { act, render, screen } from '@testing-library/react'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router'
 import { vi } from 'vitest'
 import App from '../App'
 import type { League } from '../api/types'
@@ -93,6 +93,13 @@ function Where() {
   return <output data-testid="location">{location.pathname + location.search}</output>
 }
 
+/** Lets a test move the app the way a typed URL or an in-app link would. */
+const navigateRef: { current: ((to: string) => void) | null } = { current: null }
+function Navigator() {
+  navigateRef.current = useNavigate()
+  return null
+}
+
 /** The whole app at `path`, with the API stubbed and sockets the test drives. */
 export function renderApp(path = '/', routes: Routes = {}) {
   const api = stubApi(routes)
@@ -101,6 +108,7 @@ export function renderApp(path = '/', routes: Routes = {}) {
     <MemoryRouter initialEntries={[path]}>
       <App createSocket={sockets.create} />
       <Where />
+      <Navigator />
     </MemoryRouter>,
   )
   return {
@@ -108,6 +116,7 @@ export function renderApp(path = '/', routes: Routes = {}) {
     ...api,
     sockets,
     location: () => screen.getByTestId('location').textContent,
+    navigate: (to: string) => act(() => navigateRef.current?.(to)),
     root: () => utils.container.querySelector('.app') as HTMLElement,
   }
 }

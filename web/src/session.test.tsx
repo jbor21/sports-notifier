@@ -79,10 +79,13 @@ describe('the sign-in guard', () => {
   it('after a lost session, the next user does not see the last user’s follows', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     let follows = [follow]
+    let current = user
     const app = renderApp('/following', {
+      '/me': () => ({ status: 200, body: current }),
       '/auth/login': () => {
         follows = []
-        return { status: 200, body: { ...user, id: 'u_other', username: 'other' } }
+        current = { ...user, id: 'u_other', username: 'other' }
+        return { status: 200, body: current }
       },
       '/follows': () => ({ status: 200, body: { items: follows } }),
     })
@@ -106,6 +109,35 @@ describe('the sign-in guard', () => {
     expect(await screen.findByText('Find your people')).toBeInTheDocument()
     watch.disconnect()
     vi.useRealTimers()
+    expect(leaked).toBe(false)
+  })
+
+  it('signing in as someone else without signing out never shows the last user’s follows', async () => {
+    let follows = [follow]
+    let current = user
+    const app = renderApp('/following', {
+      '/me': () => ({ status: 200, body: current }),
+      '/auth/login': () => {
+        follows = []
+        current = { ...user, id: 'u_other', username: 'other' }
+        return { status: 200, body: current }
+      },
+      '/follows': () => ({ status: 200, body: { items: follows } }),
+    })
+    expect(await screen.findByText('Chicago Bears')).toBeInTheDocument()
+    app.navigate('/signin?next=%2Ffollowing')
+
+    let leaked = false
+    const watch = new MutationObserver(() => {
+      if (document.body.textContent?.includes('Chicago Bears')) leaked = true
+    })
+    watch.observe(document.body, { subtree: true, childList: true, characterData: true })
+    fireEvent.change(await screen.findByLabelText('Username'), { target: { value: 'other' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'abcdefgh9' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    await waitFor(() => expect(app.location()).toBe('/following'))
+    expect(await screen.findByText('Find your people')).toBeInTheDocument()
+    watch.disconnect()
     expect(leaked).toBe(false)
   })
 

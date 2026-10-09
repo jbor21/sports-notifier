@@ -29,6 +29,8 @@ const PING_MS = 25_000
 const RESET_AFTER_MS = 60_000
 const MAX_BACKOFF_MS = 30_000
 const MAX_GAMES = 100
+/** A socket still not open after this is given up on (a half-open network after sleep, a stuck proxy). */
+const CONNECT_TIMEOUT_MS = 10_000
 
 /** 1, 2, 4, 8, 16, 30, 30… s, plus 0–1 s so a thousand tabs don't all come back in the same instant. */
 export function backoffDelay(attempt: number, random: () => number): number {
@@ -44,6 +46,7 @@ export class LiveConnection {
   private retryTimer: ReturnType<typeof setTimeout> | undefined
   private resetTimer: ReturnType<typeof setTimeout> | undefined
   private pingTimer: ReturnType<typeof setInterval> | undefined
+  private connectTimer: ReturnType<typeof setTimeout> | undefined
   private readonly createSocket: (url: string) => SocketLike
   private readonly random: () => number
   private _state: ConnectionState = 'stopped'
@@ -109,9 +112,16 @@ export class LiveConnection {
     socket.onclose = (e) => this.closed(e.code)
     // The browser always follows an error with a close, which does the retrying.
     socket.onerror = null
+    // Without this, a socket stuck in CONNECTING would never close, and nothing would retry.
+    this.connectTimer = setTimeout(() => {
+      socket.onopen = socket.onmessage = socket.onclose = null
+      socket.close()
+      this.closed(1006)
+    }, CONNECT_TIMEOUT_MS)
   }
 
   private opened(): void {
+    clearTimeout(this.connectTimer)
     this._connects++
     this.setState('open')
     this.sendGames(true)
@@ -189,6 +199,7 @@ export class LiveConnection {
   }
 
   private clearTimers(): void {
+    clearTimeout(this.connectTimer)
     clearInterval(this.pingTimer)
     clearTimeout(this.resetTimer)
   }

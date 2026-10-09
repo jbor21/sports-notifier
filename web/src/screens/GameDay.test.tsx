@@ -43,6 +43,14 @@ async function card(id: string): Promise<HTMLElement> {
 }
 
 describe('Game day', () => {
+  it('names each card’s link with both teams and their scores, for screen readers', async () => {
+    const g = game()
+    openDay({ '/games': games(g) })
+    await card(g.id)
+    const name = `${g.away.team.displayName} ${g.away.score}, ${g.home.team.displayName} ${g.home.score}`
+    expect(screen.getByRole('button', { name: new RegExp(`^${name}`) })).toBeInTheDocument()
+  })
+
   it('asks for today in the user’s timezone', async () => {
     const app = openDay({ '/games': games(game()) })
     await waitFor(() => expect(app.calls('/games')).toBeGreaterThan(0))

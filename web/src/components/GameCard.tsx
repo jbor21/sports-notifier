@@ -82,7 +82,7 @@ export function GameCard({
         className="score-link"
         data-version={game.version}
         onClick={open}
-        aria-label={`View ${game.away.team.displayName} at ${game.home.team.displayName}`}
+        aria-label={cardName(game, timezone)}
       >
         {(['away', 'home'] as const).map((side) => {
           const { team, score, record } = game[side]
@@ -114,6 +114,16 @@ export function GameCard({
       </div>
     </article>
   )
+}
+
+/** What a screen reader announces for the card: both teams with their scores, then where it goes. */
+function cardName(game: Game, timezone: string): string {
+  const { away, home } = game
+  if (hasNoScore(game.status))
+    return `${away.team.displayName} at ${home.team.displayName}, ${timeIn(game.startTime, timezone)}. Open game`
+  const state = [game.periodLabel, game.clock].filter(Boolean).join(' ')
+  const scores = `${away.team.displayName} ${away.score}, ${home.team.displayName} ${home.score}`
+  return `${scores}${state ? `, ${state}` : ''}. Open game`
 }
 
 function StatusLabel({ game, timezone }: { game: Game; timezone: string }) {

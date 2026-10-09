@@ -38,16 +38,25 @@ export function GamePage() {
     if (detail.data) gameStore.accept(detail.data)
   }, [detail.data])
 
-  // game_update carries no line score: when the store moves to another period or status than
-  // the detail shows, ask for the detail again. A clock tick alone doesn't change the line score.
+  // game_update carries no line score: when the store's score, period, or status differs from
+  // what the detail shows, ask for the detail again, so the line score keeps adding up to the
+  // total. A clock tick alone changes none of them.
   const period = live?.game.period
   const status = live?.game.status
+  const homeScore = live?.game.home.score
+  const awayScore = live?.game.away.score
   const { data: shown, mutate } = detail
   useEffect(() => {
     if (!shown || period === undefined || status === undefined) return
-    if (period !== shown.period || status !== shown.status) void mutate()
-    // Only a change in the store's period or status should refetch; `shown` arriving must not.
-  }, [period, status])
+    if (
+      period !== shown.period ||
+      status !== shown.status ||
+      homeScore !== shown.home.score ||
+      awayScore !== shown.away.score
+    )
+      void mutate()
+    // Only a change in the store should refetch; `shown` arriving must not.
+  }, [period, status, homeScore, awayScore])
 
   if (detail.error?.status === 404)
     return (

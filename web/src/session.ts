@@ -26,7 +26,8 @@ export function useMe(): SWRResponse<User, ApiError> {
 }
 
 /** Cached answers that belong to the signed-in user; paged lists carry SWR's `$inf$` prefix. */
-function isUserKey(key: string): boolean {
+export function isUserKey(key: unknown): boolean {
+  if (typeof key !== 'string') return false
   const path = key.replace(/^\$inf\$/, '')
   return (
     path.startsWith('/follows') ||

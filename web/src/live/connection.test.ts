@@ -240,6 +240,29 @@ describe('LiveConnection', () => {
     expect(order).toEqual(['notification', 'unread 4', 'hello 3', 'game 57'])
   })
 
+  it('gives up on a socket stuck connecting after 10 s and backs off', () => {
+    const s = setup()
+    conn = s.conn
+    conn.start()
+    vi.advanceTimersByTime(9999)
+    expect(s.sockets.last().closedWith).toBeUndefined()
+    vi.advanceTimersByTime(1)
+    expect(s.sockets.last().closedWith).toBeDefined()
+    expect(conn.state).toBe('waiting')
+    vi.advanceTimersByTime(1500)
+    expect(s.sockets.all.length).toBe(2)
+  })
+
+  it('does not time out a socket that opened', () => {
+    const s = setup()
+    conn = s.conn
+    conn.start()
+    s.sockets.last().open()
+    vi.advanceTimersByTime(20000)
+    expect(conn.state).toBe('open')
+    expect(s.sockets.all.length).toBe(1)
+  })
+
   it('stays stopped after stop()', () => {
     const s = setup()
     conn = s.conn

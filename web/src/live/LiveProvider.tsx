@@ -12,7 +12,7 @@ import { useLocation, useNavigate } from 'react-router'
 import useSWR, { useSWRConfig } from 'swr'
 import { fetcher, request, setOnSignedOut, socketUrl } from '../api/client'
 import type { AlertType, League, Notice } from '../api/types'
-import { forgetUserData, isPublicPath, signInPath, useMe } from '../session'
+import { forgetUserData, isPublicPath, isUserKey, signInPath, useMe } from '../session'
 import { setCount } from './badge'
 import { LiveConnection, type ConnectionState, type SocketLike } from './connection'
 import { gameStore } from './games'
@@ -34,6 +34,7 @@ export interface ToastApi {
   toasts: Toast[]
   push(t: Toast): void
   dismiss(id: string): void
+  clear(): void
 }
 
 /** Notices and errors leave after this; an update toast waits for an answer. */
@@ -47,7 +48,12 @@ const ConnectionContext = createContext<ConnectionInfo>({
 })
 const SocketContext = createContext<LiveConnection | null>(null)
 const KnownContext = createContext<Set<string> | null>(null)
-const ToastContext = createContext<ToastApi>({ toasts: [], push: () => {}, dismiss: () => {} })
+const ToastContext = createContext<ToastApi>({
+  toasts: [],
+  push: () => {},
+  dismiss: () => {},
+  clear: () => {},
+})
 
 /**
  * Owns the live socket for the signed-in user and wires it to the stores: scores into the game
@@ -91,6 +97,19 @@ export function LiveProvider({
   latest.current = { known, push: toasts.push, mutate, signOutLocally }
 
   const userId = me.data && me.error?.status !== 401 ? me.data.id : null
+
+  // The account on this tab changed (signed out, or another account signed in, here or in
+  // another tab): the last user's toasts go, and so does their cached data if someone else is in.
+  const lastUser = useRef(userId)
+  const clearToasts = toasts.clear
+  useEffect(() => {
+    const previous = lastUser.current
+    lastUser.current = userId
+    if (previous === null || previous === userId) return
+    clearToasts()
+    // Screens may be showing the last user's data right now, so clear it and have them ask again.
+    if (userId !== null) void mutate(isUserKey, undefined)
+  }, [userId, mutate, clearToasts])
   const [conn, setConn] = useState<LiveConnection | null>(null)
   const [info, setInfo] = useState<Omit<ConnectionInfo, 'retryNow'>>({
     state: 'stopped',
@@ -168,12 +187,18 @@ function useToastState(): ToastApi {
     [dismiss],
   )
 
+  const clear = useCallback(() => {
+    timers.current.forEach(clearTimeout)
+    timers.current.clear()
+    setToasts([])
+  }, [])
+
   useEffect(() => {
     const pending = timers.current
     return () => pending.forEach(clearTimeout)
   }, [])
 
-  return useMemo(() => ({ toasts, push, dismiss }), [toasts, push, dismiss])
+  return useMemo(() => ({ toasts, push, dismiss, clear }), [toasts, push, dismiss, clear])
 }
 
 /** Every league's catalog, fetched once; null until all have loaded (then nothing is skipped). */
