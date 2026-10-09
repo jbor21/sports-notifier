@@ -178,46 +178,40 @@
   gap: 10px;
   margin: 20px 0 25px;
 }
-.date-switch {
+/* The 9 days /games serves (yesterday to 7 ahead), in place of v0's date input. */
+.date-strip {
   display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.date-strip button {
+  display: flex;
+  flex-direction: column;
   align-items: center;
+  gap: 2px;
+  min-width: 46px;
+  padding: 5px 6px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface);
-  height: 34px;
-}
-.date-switch button {
-  width: 27px;
-  display: grid;
-  place-items: center;
   color: var(--muted);
+  font-size: 9px;
+  flex-shrink: 0;
 }
-.date-switch label {
-  position: relative;
-  display: flex;
-  gap: 8px;
+.date-strip button strong {
   font-size: 10px;
-  font-weight: 550;
-  padding: 0 10px;
-  align-items: center;
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
-  height: 20px;
+  font-weight: 600;
+  color: var(--text);
 }
-.date-switch input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  width: 100%;
-  cursor: pointer;
-  padding: 0;
+.date-strip button.active {
+  border-color: var(--green);
+  background: var(--soft);
+  color: var(--green);
 }
-.date-switch input::-webkit-calendar-picker-indicator {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  cursor: pointer;
+.date-strip button.active strong {
+  color: var(--green);
 }
 .toolbar-right {
   display: flex;
@@ -902,14 +896,10 @@
   }
   .game-toolbar {
     margin: 17px 0 22px;
+    flex-wrap: wrap;
   }
-  .date-switch label {
-    font-size: 9px;
-    padding: 0 7px;
-    gap: 5px;
-  }
-  .date-switch button {
-    width: 23px;
+  .date-strip {
+    width: 100%;
   }
   .following-toggle {
     font-size: 9px;

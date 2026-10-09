@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { SWRConfig } from 'swr'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,6 +16,9 @@ function notice(i: number, type = 'TOUCHDOWN'): Notice {
     headline: { type, text: `Touchdown #${i}` },
   }
 }
+
+/** The toasts only: Game day's "Latest alerts" lists the same pushes. */
+const stack = () => within(document.querySelector('.toast-stack') as HTMLElement)
 
 /** Signed in on Game day with the socket open and every league's catalog loaded. */
 async function openApp() {
@@ -42,10 +45,12 @@ describe('notification toasts', () => {
       for (let i = 1; i <= 10; i++)
         socket.receive({ type: 'notification', notification: notice(i) })
     })
-    const shown = screen.getAllByText(/^Touchdown #\d+$/).map((el) => el.textContent)
+    const shown = stack()
+      .getAllByText(/^Touchdown #\d+$/)
+      .map((el) => el.textContent)
     expect(shown).toEqual(['Touchdown #10', 'Touchdown #9', 'Touchdown #8'])
     expect(pushed.get()).toHaveLength(10)
-    expect(screen.getAllByText('SIDELINE · LIVE ALERT')).toHaveLength(3)
+    expect(stack().getAllByText('SIDELINE · LIVE ALERT')).toHaveLength(3)
     expect(document.querySelector('.toast-stack')).toHaveAttribute('aria-live', 'polite')
   })
 
@@ -56,34 +61,34 @@ describe('notification toasts', () => {
     act(() => vi.advanceTimersByTime(3000))
     act(() => socket.receive({ type: 'notification', notification: notice(2) }))
     act(() => vi.advanceTimersByTime(3499))
-    expect(screen.getByText('Touchdown #1')).toBeInTheDocument()
+    expect(stack().getByText('Touchdown #1')).toBeInTheDocument()
     act(() => vi.advanceTimersByTime(1))
-    expect(screen.queryByText('Touchdown #1')).not.toBeInTheDocument()
-    expect(screen.getByText('Touchdown #2')).toBeInTheDocument()
+    expect(stack().queryByText('Touchdown #1')).not.toBeInTheDocument()
+    expect(stack().getByText('Touchdown #2')).toBeInTheDocument()
     act(() => vi.advanceTimersByTime(3000))
-    expect(screen.queryByText('Touchdown #2')).not.toBeInTheDocument()
+    expect(stack().queryByText('Touchdown #2')).not.toBeInTheDocument()
   })
 
   it('clicking a toast opens its game', async () => {
     const app = await openApp()
     act(() => app.socket.receive({ type: 'notification', notification: notice(1) }))
-    fireEvent.click(screen.getByText('Touchdown #1'))
+    fireEvent.click(stack().getByText('Touchdown #1'))
     expect(app.location()).toBe(`/games/${notification.game!.id}`)
-    expect(screen.queryByText('Touchdown #1')).not.toBeInTheDocument()
+    expect(stack().queryByText('Touchdown #1')).not.toBeInTheDocument()
   })
 
   it('the same push twice is one toast', async () => {
     const { socket } = await openApp()
     act(() => socket.receive({ type: 'notification', notification: notice(1) }))
     act(() => socket.receive({ type: 'notification', notification: notice(1) }))
-    expect(screen.getAllByText('Touchdown #1')).toHaveLength(1)
+    expect(stack().getAllByText('Touchdown #1')).toHaveLength(1)
     expect(pushed.get()).toHaveLength(1)
   })
 
   it('skips a notification whose headline type no catalog knows', async () => {
     const { socket } = await openApp()
     act(() => socket.receive({ type: 'notification', notification: notice(1, 'MYSTERY') }))
-    expect(screen.queryByText('Touchdown #1')).not.toBeInTheDocument()
+    expect(stack().queryByText('Touchdown #1')).not.toBeInTheDocument()
     expect(pushed.get()).toHaveLength(0)
   })
 
@@ -91,7 +96,7 @@ describe('notification toasts', () => {
     const { socket } = await openApp()
     act(() => socket.receive({ type: 'notification', notification: notice(1) }))
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss alert' }))
-    expect(screen.queryByText('Touchdown #1')).not.toBeInTheDocument()
+    expect(stack().queryByText('Touchdown #1')).not.toBeInTheDocument()
   })
 })
 

@@ -33,8 +33,14 @@ export const unauthenticated: Reply = {
   body: { error: { code: 'unauthenticated', message: 'Sign in first.' } },
 }
 
+/** What a function reply sees of the request. */
+export interface Sent {
+  method: string
+  body: unknown
+}
+
 /** Paths under /api/v1, optionally with the query; the query-less key matches any query. */
-export type Routes = Record<string, Reply | (() => Reply)>
+export type Routes = Record<string, Reply | ((sent: Sent) => Reply)>
 
 /** A fetch that answers from a table of API paths; anything else is the API's 404. */
 export function stubApi(routes: Routes = {}) {
@@ -44,11 +50,12 @@ export function stubApi(routes: Routes = {}) {
     '/leagues/NFL/alerts': { status: 200, body: { items: nflCatalog } },
     ...routes,
   }
-  const fetch = vi.fn(async (input: RequestInfo | URL) => {
+  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), 'http://localhost')
     const path = url.pathname.replace(/^\/api\/v1/, '')
     const entry = table[path + url.search] ?? table[path]
-    const reply = typeof entry === 'function' ? entry() : entry
+    const sent = sentOf(init)
+    const reply = typeof entry === 'function' ? entry(sent) : entry
     return json(
       reply ?? { status: 404, body: { error: { code: 'not_found', message: 'Not found.' } } },
     )
@@ -61,7 +68,24 @@ export function stubApi(routes: Routes = {}) {
       fetch.mock.calls.filter(
         ([input]) => new URL(String(input), 'http://localhost').pathname === '/api/v1' + path,
       ).length,
+    /** Every request to the API path (no query) with this method, oldest first. */
+    sent: (path: string, method = 'GET') =>
+      fetch.mock.calls
+        .filter(
+          ([input, init]) =>
+            new URL(String(input), 'http://localhost').pathname === '/api/v1' + path &&
+            sentOf(init).method === method,
+        )
+        .map(([input, init]) => ({
+          ...sentOf(init),
+          query: new URL(String(input), 'http://localhost').searchParams,
+        })),
   }
+}
+
+function sentOf(init?: RequestInit): Sent {
+  const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
+  return { method: init?.method ?? 'GET', body }
 }
 
 function Where() {

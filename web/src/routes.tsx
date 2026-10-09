@@ -2,9 +2,13 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router'
 import { LoadState } from './components/LoadState'
 import { Modal } from './components/Modal'
 import { Shell } from './components/Shell'
+import { GameDay } from './screens/GameDay'
+import { GamePage } from './screens/GamePage'
+import { SignIn } from './screens/SignIn'
+import { SignUp } from './screens/SignUp'
 import { signInPath, useMe } from './session'
 
-// Placeholders until the screens land (Tasks 7 and 8): swap each for its screen's import.
+// Placeholders until the screens land (Task 8): swap each for its screen's import.
 function Placeholder({ title }: { title: string }) {
   return (
     <div className="page-heading">
@@ -27,13 +31,13 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route element={<PublicLayout />}>
-        <Route path="/signin" element={<Placeholder title="Sign in" />} />
-        <Route path="/signup" element={<Placeholder title="Create an account" />} />
+        <Route path="/signin" element={<SignIn />} />
+        <Route path="/signup" element={<SignUp />} />
       </Route>
       <Route element={<RequireSignIn />}>
         <Route element={<Shell addFollow={(close) => <AddFollowPlaceholder onClose={close} />} />}>
-          <Route index element={<Placeholder title="Game day" />} />
-          <Route path="/games/:id" element={<Placeholder title="Game" />} />
+          <Route index element={<GameDay />} />
+          <Route path="/games/:id" element={<GamePage />} />
           <Route path="/following" element={<Placeholder title="Following" />} />
           <Route path="/following/:id" element={<Placeholder title="Alert switches" />} />
           <Route path="/notifications" element={<Placeholder title="Notifications" />} />
