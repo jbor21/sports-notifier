@@ -208,14 +208,15 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   `docs/superpowers/plans/2026-10-08-phase-3b-ui.md`. The live-game check (from #3)
   was waived for the merge and is issue #36.
 - **Phase 4 is split into 4.1–4.3** (`DESIGN.md` build order). **4.1 (replay and
-  checker)**: spec `docs/superpowers/specs/2026-10-09-phase-4-1-replay-checker-design.md`,
-  plan `docs/superpowers/plans/2026-10-09-phase-4-1-replay-checker.md`; closes #16 and #18.
-  Alert waves 2 and 3 moved to Phase 7.
+  checker) is merged** (PR #46, 2026-10-09): spec `docs/superpowers/specs/2026-10-09-phase-4-1-replay-checker-design.md`,
+  plan `docs/superpowers/plans/2026-10-09-phase-4-1-replay-checker.md`; closed #16 and #18.
+  Alert waves 2 and 3 moved to Phase 7. Replayed pushes reaching real accounts is #47
+  (decide before Phase 6).
 - **Next step: Phase 4.2 (chaos suite on k3d)**: kill Stage 1, Stage 2, a gateway, the
   broker, and cut a worker off from Kafka during a checked replay, two copies of each;
   pulls in #9, #10, #17, #31, #44 and closes #12. Then 4.3 (traces and metrics). Must-fix
   before Phase 5: #36 (the live check). Other deferred minors are issues #19–#27, #35,
-  #37–#43, #45.
+  #37–#43, #45, #47.
 - **Fixed after 3.4:** #29: `Db.create` passed `socketTimeout` as a number, which the
   Postgres driver silently ignores, so no connection had a read timeout; now a string
   (`DbTest`), and `HistoryStore` aborts a statement past `HISTORY_INSERT_DEADLINE_MS`
