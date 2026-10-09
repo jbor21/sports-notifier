@@ -15,8 +15,8 @@ import util.LoopHealth;
 import util.RedisKeys;
 import util.Topics;
 
-import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 public final class Stage1WorkerMain {
 
@@ -34,7 +34,7 @@ public final class Stage1WorkerMain {
         KafkaProducer<String, String> producer = new KafkaProducer<>(KafkaSettings.fanoutProducer(KafkaSettings.bootstrap()));
         GameLabels labels = new GameLabels(Teams.load());
         Stage1Worker worker = new Stage1Worker(new DetectorMemory(pool), Detectors.standard(labels),
-                new MomentFanout(pool, new AlertAudience(), labels), consumer, producer, Topics.NOTIFICATIONS, () -> {
+                new MomentFanout(pool, new AlertAudience(), labels), consumer, producer, Topics.NOTIFICATIONS, Topics.GAME_EVENTS_DLQ, () -> {
             try (Jedis jedis = pool.getResource()) {
                 return jedis.exists(RedisKeys.SUB_BUILT);
             }
@@ -57,7 +57,9 @@ public final class Stage1WorkerMain {
         // Fails when the consumer loop has died or stopped coming around, so Kubernetes restarts the pod.
         app.get("/health", ctx -> {
             boolean ok = health.isHealthy();
-            ctx.status(ok ? 200 : 503).json(Collections.singletonMap("status", ok ? "ok" : "consumer loop not running"));
+            // deadLettered: plays set aside on game-events-dlq since start; Phase 4 turns it into a metric.
+            ctx.status(ok ? 200 : 503).json(Map.of("status", ok ? "ok" : "consumer loop not running",
+                    "deadLettered", worker.deadLettered()));
         });
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

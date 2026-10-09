@@ -227,7 +227,7 @@ fi
 #    spec it last read (observedGeneration), so Ready for the current spec is the answer.
 k wait kafka/sports-notifier --for=condition=Ready --timeout=300s >/dev/null \
   || fail "Kafka cluster sports-notifier is not Ready"
-for topic_partitions in game-events:12 notifications:48; do
+for topic_partitions in game-events:12 notifications:48 game-events-dlq:1; do
   topic=${topic_partitions%%:*}; want=${topic_partitions##*:}
   k wait "kafkatopic/$topic" --for=condition=Ready --timeout=120s >/dev/null \
     || fail "KafkaTopic $topic is not Ready: $(k get kafkatopic "$topic" -o jsonpath='{.status.conditions}')"

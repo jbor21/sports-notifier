@@ -21,7 +21,12 @@ public final class Detectors {
 
     /** Every wave 1 detector, in the order they run. */
     public static Detectors standard(GameLabels labels) {
-        return new Detectors(List.of(
+        return new Detectors(standardChain(labels));
+    }
+
+    /** The wave 1 detectors themselves, for a chain that adds to them (tests). */
+    public static List<Detector> standardChain(GameLabels labels) {
+        return List.of(
             new GameStartDetector(labels),
             new ScoreDetector(labels),
             new LeadChangeDetector(labels),
@@ -30,7 +35,7 @@ public final class Detectors {
             new OvertimeDetector(labels),
             new ShootoutDetector(labels),
             new DelayDetector(labels),
-            new FinalDetector(labels)));
+            new FinalDetector(labels));
     }
 
     private GameMemory baseline(Play now) {

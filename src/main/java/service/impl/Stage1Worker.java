@@ -9,12 +9,19 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.WakeupException;
+import redis.clients.jedis.exceptions.JedisException;
 import util.GameEventParser;
 
 import util.LoopHealth;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -53,25 +60,38 @@ public final class Stage1Worker implements AutoCloseable {
     private final Consumer<String, String> consumer;
     private final Producer<String, String> producer;
     private final String notificationsTopic;
+    private final String deadLetterTopic;
     private static final long WAIT_WARN_EVERY_MILLIS = 30_000L;
+    /** Tries of a play that fails for a reason other than I/O before it is dead-lettered. */
+    static final int POISON_ATTEMPTS = 3;
 
     private final Detectors detectors;
     private final MomentFanout fanout;
     private final BooleanSupplier setsReady;
     private volatile boolean running = true;
     private volatile boolean waitingForSets;
+    /** Failed tries per record ("partition@offset"), for plays failing for a non-I/O reason. */
+    private final Map<String, Integer> attempts = new HashMap<>();
+    private final AtomicLong deadLettered = new AtomicLong();
     private long lastWaitWarning;
 
     /** {@code setsReady}: whether the sub:* sets can be trusted ({@code sub:built} exists). */
     public Stage1Worker(DetectorMemory memory, Detectors detectors, MomentFanout fanout, Consumer<String, String> consumer,
-                        Producer<String, String> producer, String notificationsTopic, BooleanSupplier setsReady) {
+                        Producer<String, String> producer, String notificationsTopic, String deadLetterTopic,
+                        BooleanSupplier setsReady) {
         this.memory = memory;
         this.detectors = detectors;
         this.fanout = fanout;
         this.consumer = consumer;
         this.producer = producer;
         this.notificationsTopic = notificationsTopic;
+        this.deadLetterTopic = deadLetterTopic;
         this.setsReady = setsReady;
+    }
+
+    /** Plays given up on and sent to the dead-letter topic since start. */
+    public long deadLettered() {
+        return deadLettered.get();
     }
 
     public boolean isWaitingForSets() {
@@ -119,7 +139,18 @@ public final class Stage1Worker implements AutoCloseable {
         int handled = 0;
         try {
             for (ConsumerRecord<String, String> r : records) {
-                handle(r);
+                try {
+                    handle(r);
+                    attempts.remove(attemptKey(r));
+                } catch (RuntimeException e) {
+                    // An outage (Redis, Kafka) is retried for as long as it lasts: waiting fixes it, and
+                    // skipping would lose the play's alerts. Anything else (a detector bug, a value the
+                    // fan-out can't handle) fails the same way every time, so after a few tries the play
+                    // is set aside and the lane, a twelfth of all games, moves on (issue #15).
+                    if (isOutage(e) || attempts.merge(attemptKey(r), 1, Integer::sum) < POISON_ATTEMPTS) throw e;
+                    deadLetter(r, e);
+                    attempts.remove(attemptKey(r));
+                }
                 handled++;
             }
         } catch (RuntimeException e) {
@@ -156,6 +187,43 @@ public final class Stage1Worker implements AutoCloseable {
             if (failed.get() != null) throw new IllegalStateException("notifications not all confirmed", failed.get());
         }
         memory.writeIfHigher(play.getGameId(), play.getVersion(), result.after());
+    }
+
+    /**
+     * Sends the play to the dead-letter topic with why it failed, then moves the game's det: version
+     * past it (its memory unchanged), so the game's next play is judged from the last good state. A
+     * failure here is I/O and fails the batch, so a play is never skipped without being kept.
+     */
+    private void deadLetter(ConsumerRecord<String, String> r, RuntimeException cause) {
+        ProducerRecord<String, String> dead = new ProducerRecord<>(deadLetterTopic, r.key(), r.value());
+        dead.headers().add("error", String.valueOf(cause).getBytes(StandardCharsets.UTF_8));
+        dead.headers().add("source", (r.topic() + "-" + r.partition() + "@" + r.offset()).getBytes(StandardCharsets.UTF_8));
+        try {
+            producer.send(dead).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new KafkaException("interrupted while dead-lettering", e);
+        } catch (ExecutionException e) {
+            throw new KafkaException("dead-letter send failed", e.getCause());
+        }
+        GameEvent play = GameEventParser.parse(r.value());
+        DetectorMemory.Stored stored = memory.read(play.getGameId());
+        if (stored.memory() != null) memory.writeIfHigher(play.getGameId(), play.getVersion(), stored.memory());
+        deadLettered.incrementAndGet();
+        System.err.println("[Stage1] DEAD-LETTERED play " + play.getGameId() + " v" + play.getVersion() + " from "
+            + r.topic() + "-" + r.partition() + "@" + r.offset() + " after " + POISON_ATTEMPTS + " tries: " + cause);
+    }
+
+    /** Redis or Kafka trouble anywhere in the cause chain: an outage, not a bad play. */
+    private static boolean isOutage(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof JedisException || t instanceof KafkaException) return true;
+        }
+        return false;
+    }
+
+    private static String attemptKey(ConsumerRecord<String, String> r) {
+        return r.partition() + "@" + r.offset();
     }
 
     /** The loop: poll, handle, commit. A failure is logged and the batch is retried after a second. */
