@@ -23,11 +23,8 @@ import java.util.function.BiConsumer;
 
 /**
  * Turns one play's alerts into messages: one per user per moment, plus the final as its own message
- * (Phase 3.3 spec, 5.2–5.4).
- *
- * Every moment message is handed to the sink before any final message. Both are keyed by user id, so
- * for a user who gets both, the final lands after the moment push in the same lane and Stage 2
- * delivers them in that order: the goal, then "Final (OT)".
+ * (Phase 3.3 spec, 5.2–5.4). Which alerts go in which push is {@link MomentPushes}; this class finds
+ * the audiences in Redis and hands each user's push to the sink, every moment message before any final.
  *
  * The audience is read a page at a time (SSCAN), and for each page one SMISMEMBER per alert says which
  * of the moment's alerts each user gets, so memory holds one page however big the audience.
@@ -49,8 +46,7 @@ public final class MomentFanout {
 
     public void send(Play play, Detectors.Result result, BiConsumer<String, NotificationMessage> sink) {
         try (Jedis jedis = pool.getResource()) {
-            if (!result.moment().isEmpty()) sendGroup(jedis, play, result.moment(), sink);
-            if (result.finalAlert() != null) sendGroup(jedis, play, List.of(result.finalAlert()), sink);
+            for (List<Alert> group : MomentPushes.groups(result)) sendGroup(jedis, play, group, sink);
         }
     }
 
@@ -77,13 +73,13 @@ public final class MomentFanout {
                 if (!users.isEmpty()) {
                     List<List<Boolean>> member = membership(jedis, built.keys(), users, alerts.size());
                     for (int u = 0; u < users.size(); u++) {
-                        List<Alert> theirs = new ArrayList<>();
+                        List<Boolean> in = new ArrayList<>(alerts.size());
                         StringBuilder shape = new StringBuilder();
                         for (int a = 0; a < alerts.size(); a++) {
-                            boolean in = member.get(a).get(u);
-                            shape.append(in ? '1' : '0');
-                            if (in) theirs.add(alerts.get(a));
+                            in.add(member.get(a).get(u));
+                            shape.append(in.get(a) ? '1' : '0');
                         }
+                        List<Alert> theirs = MomentPushes.pick(alerts, in);
                         if (theirs.isEmpty()) continue;
                         JsonObject body = bodies.computeIfAbsent(shape.toString(), k -> NotificationBody.of(play, theirs, labels));
                         sink.accept(users.get(u), NotificationMessage.of(play, users.get(u), body));
