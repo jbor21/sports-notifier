@@ -15,6 +15,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DbTest {
@@ -39,6 +40,20 @@ class DbTest {
 
     private static HikariDataSource pool(String url) {
         return Db.create(url, PostgresTestSupport.user(), PostgresTestSupport.password(), 2);
+    }
+
+    /**
+     * Issue #29: the socket timeout was passed as a number, and the driver reads its settings as
+     * strings, so it was dropped: every connection had no read timeout and a frozen Postgres hung
+     * the caller forever.
+     */
+    @Test
+    void socketTimeoutReachesTheDriver() throws Exception {
+        try (HikariDataSource ds = Db.create(PostgresTestSupport.jdbcUrl(), PostgresTestSupport.user(),
+                PostgresTestSupport.password(), 2, 3);
+             Connection c = ds.getConnection()) {
+            assertEquals(3000, c.getNetworkTimeout());
+        }
     }
 
     @Test
