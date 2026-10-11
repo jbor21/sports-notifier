@@ -253,7 +253,7 @@ The checker reads the claims with one pipelined `GET` per missing push, before c
 - **The crash and the cut reach into the k3d node** (`crictl`, `conntrack` through `docker exec`). EKS nodes are not Docker containers on the laptop; Phase 6 replaces those two functions in `chaos-lib.sh` (for example with a privileged `kubectl debug node/…` pod).
 - **The cut refuses, it does not black-hole.** kube-router rejects a blocked connection at once, so the worker knows quickly. A network that silently loses packets (long TCP timeouts) is the nastier case and is not tested.
 - **One broker on the laptop**, so `broker-crash` is a full Kafka outage; a leader moving between brokers waits for Phase 6's three.
-- **Redis and Postgres are not killed.** `DESIGN.md` treats a dead Redis or Postgres pod as a Kubernetes restart with no replicas. A Redis restart can lose the last second of claims, so a redelivered push can reach a socket twice; that is a known property of decision 9's single Redis, not something 4.2 tests.
+- **Redis and Postgres are not killed.** `DESIGN.md` treats a dead Redis or Postgres pod as a Kubernetes restart with no replicas. A Redis restart can lose the last second of claims, so a redelivered push can reach a socket twice; that is a known property of decision 9's single Redis, not something 4.2 tests. Tracked as issue #52, after Phase 6.
 - **One fault per run**, at one point in the run. Several faults at once, or one at a random time, are not in 4.2.
 - **The 45 s session timeout** decides how long a crashed worker's lanes stall. It is measured (the worst delay), not tuned, unless a scenario fails because of it.
 - **Heals run on wall time** at 60×, as in 4.1; the checker is unaffected (4.1 spec, 2.4).
