@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-10-09 (Phase 4.1).
+asks. Last updated 2026-10-11 (Phase 4.1 merged, 4.2 next).
 
 ---
 
@@ -214,9 +214,11 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   (decide before Phase 6).
 - **Next step: Phase 4.2 (chaos suite on k3d)**: kill Stage 1, Stage 2, a gateway, the
   broker, and cut a worker off from Kafka during a checked replay, two copies of each;
-  pulls in #9, #10, #17, #31, #44 and closes #12. Then 4.3 (traces and metrics). Must-fix
-  before Phase 5: #36 (the live check). Other deferred minors are issues #19–#27, #35,
-  #37–#43, #45, #47.
+  pulls in #9, #10, #17, #31, #44, the checker's socket-excuse rule (#48) and a time limit
+  on the checker Job (#49), and closes #12. Then 4.3 (traces and metrics). Must-fix
+  before Phase 5: #36 (the live check). Before the checker runs on AWS: reserve the `ck_`
+  prefix (#51); decide #47 (replayed pushes reach real accounts) before Phase 6. Other
+  deferred minors are issues #19–#27, #35, #37–#43, #45, #50.
 - **Fixed after 3.4:** #29: `Db.create` passed `socketTimeout` as a number, which the
   Postgres driver silently ignores, so no connection had a read timeout; now a string
   (`DbTest`), and `HistoryStore` aborts a statement past `HISTORY_INSERT_DEADLINE_MS`
