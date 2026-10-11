@@ -54,7 +54,7 @@ About 1 GB more on the laptop (three pods at 256–512 MiB).
 
 **What happens.** The dead consumer does not leave its group; Kafka hands its lanes to the other copy after the session timeout (45 s, the default), and the restarted process joins as a new member. Records it had read but not committed are read again; Stage 2's dedup key and History's `ON CONFLICT DO NOTHING` absorb them. The 45 s stays unless a run gives a reason to change it; the report's worst push delay (section 4.4) shows what it costs.
 
-**Proof it is a crash.** Plan task 1 checks once that `crictl stop --timeout 0` kills without SIGTERM: the previous container's log (`kubectl logs --previous`) has no shutdown-hook output.
+**Proof it is a crash.** The restarted container's last exit code (`status.containerStatuses[0].lastState.terminated.exitCode`) is 137, killed by SIGKILL; a SIGTERM shutdown exits 143. Plan task 1 checks this once by hand, and every crash scenario checks it.
 
 ### 2.2 Rolling restart
 
@@ -82,12 +82,12 @@ Each scenario is one `make check` run on the `evening` set (10 games, all four l
 
 | Scenario | Fault (section 2) | Target | Proof the fault landed |
 |---|---|---|---|
-| `stage1-crash` | crash | one `stage1-worker` pod | its restart count went up |
-| `stage2-crash` | crash | one `stage2-worker` pod | its restart count went up |
-| `history-crash` | crash | the `history` pod | its restart count went up |
-| `gateway-crash` | crash | one `gateway` pod | its restart count went up |
+| `stage1-crash` | crash | one `stage1-worker` pod | its restart count went up, last exit 137 |
+| `stage2-crash` | crash | one `stage2-worker` pod | its restart count went up, last exit 137 |
+| `history-crash` | crash | the `history` pod | its restart count went up, last exit 137 |
+| `gateway-crash` | crash | one `gateway` pod | its restart count went up, last exit 137 |
 | `gateway-rollout` | rolling restart | `deployment/gateway` | both gateway pods are new; no 5xx (below) |
-| `broker-crash` | crash | the Kafka pod (`<release>-dual-role-0`) | its restart count went up |
+| `broker-crash` | crash | the Kafka pod (`<release>-dual-role-0`) | its restart count went up, last exit 137 |
 | `stage1-cut` | cut, 60 s | one `stage1-worker` pod | its IP left group `stage1` during the cut |
 | `stage2-cut` | cut, 60 s | one `stage2-worker` pod | its IP left group `stage2` during the cut |
 
@@ -135,7 +135,7 @@ gateway-rollout  PASS  pushes 6,573  socket misses excused 388   worst delay 1.1
 
 ## 5. The manual workflow
 
-`.github/workflows/chaos.yml`, triggered only by hand (`workflow_dispatch`), with one input, `scenario` (a choice: `all` or one of the eight). It sets up the runner like CI's cluster job, runs `make cluster up chaos SCENARIO=…`, and uploads `target/chaos/` as an artifact whatever the result (and `make logs` on failure). Timeout 90 minutes (eight runs of about 6 minutes plus the cluster).
+`.github/workflows/chaos.yml`, triggered only by hand, two ways: `workflow_dispatch`, with one input, `scenario` (a choice: `all` or one of the eight); and adding the label `chaos` to a pull request (`pull_request` of type `labeled`, run only for that label), which runs all eight on the PR's code. The label is needed because GitHub offers `workflow_dispatch` only for workflows already on the default branch, so the first run, from this phase's PR, can only come from the label. It sets up the runner like CI's cluster job, runs `make cluster up chaos SCENARIO=…`, and uploads `target/chaos/` as an artifact whatever the result (and `make logs` on failure). Timeout 90 minutes (eight runs of about 6 minutes plus the cluster).
 
 Not on every push: all eight take about 45 minutes, and the repo is private, so the runner is small and minutes count. CI keeps its one checked run, now with two copies.
 
