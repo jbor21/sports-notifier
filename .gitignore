@@ -29,3 +29,6 @@ pids/
 
 # Superpowers plan workspaces (ledger, briefs)
 .superpowers/
+
+# Python bytecode (scripts/)
+__pycache__/
