@@ -11,6 +11,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.errors.SerializationException;
@@ -22,6 +23,7 @@ import util.LoopHealth;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -75,7 +77,7 @@ public final class Stage1Worker implements AutoCloseable {
     private final BooleanSupplier setsReady;
     private volatile boolean running = true;
     private volatile boolean waitingForSets;
-    /** Failed tries per record ("partition@offset"), for plays failing for a non-I/O reason. */
+    /** Failed tries per record ("topic-partition@offset"), for plays failing for a non-I/O reason. */
     private final Map<String, Integer> attempts = new HashMap<>();
     private final AtomicLong deadLettered = new AtomicLong();
     private long lastWaitWarning;
@@ -258,8 +260,24 @@ public final class Stage1Worker implements AutoCloseable {
         return false;
     }
 
-    private static String attemptKey(ConsumerRecord<String, String> r) {
-        return r.partition() + "@" + r.offset();
+    static String attemptKey(ConsumerRecord<?, ?> r) {
+        return r.topic() + "-" + r.partition() + "@" + r.offset();
+    }
+
+    /**
+     * Forgets the poison counts of lanes this worker no longer owns (issue #44): the lane's next owner
+     * keeps its own count, and an entry here would never be cleared. Called from the rebalance
+     * listener, on the polling thread, the same thread that keeps the counts.
+     */
+    public void forget(Collection<TopicPartition> lanes) {
+        for (TopicPartition lane : lanes) {
+            String prefix = lane.topic() + "-" + lane.partition() + "@";
+            attempts.keySet().removeIf(k -> k.startsWith(prefix));
+        }
+    }
+
+    int attemptsTracked() {
+        return attempts.size();
     }
 
     /** The loop: poll, handle, commit. A failure is logged and the batch is retried after a second. */
