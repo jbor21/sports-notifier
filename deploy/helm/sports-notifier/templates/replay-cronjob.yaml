@@ -16,6 +16,7 @@ spec:
         {{- include "sports-notifier.labels" "replay" | nindent 8 }}
     spec:
       backoffLimit: 0
+      activeDeadlineSeconds: {{ .Values.replay.activeDeadlineSeconds }}
       ttlSecondsAfterFinished: 3600
       template:
         metadata:

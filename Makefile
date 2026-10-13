@@ -15,7 +15,7 @@ export KUBE_CONTEXT
 # A new tag per build so Kubernetes always rolls pods onto new code. Uncommitted changes get a unique suffix.
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
-.PHONY: test cluster up simulate replay check check-clean check-selftest smoke e2e logs down replay-detectors
+.PHONY: test cluster up simulate replay check check-clean check-selftest chaos smoke e2e logs down replay-detectors
 
 # Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
 # until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
@@ -67,8 +67,16 @@ simulate:
 # Recorded ESPN games through the real poller and pipeline, e.g. make replay SET=ci SPEED=60.
 SET   ?= evening
 SPEED ?= 10
+# Each replay set's length in replay minutes (scripts/pack-replay.py). A Job's time limit is that
+# length at SPEED plus room for setup and the end; make stops on a set it doesn't know, or a SPEED that
+# is not a positive number, rather than start a Job with a nonsense limit.
+REPLAY_MINUTES_ci      := 136
+REPLAY_MINUTES_evening := 192
+deadline = $(if $(REPLAY_MINUTES_$(1)),,$(error unknown replay set $(1)))$(or \
+  $(shell awk 'BEGIN { s = "$(2)" + 0; if (s > 0) printf "%d", $(REPLAY_MINUTES_$(1)) * 60 / s + $(3) }'),\
+  $(error SPEED must be a positive number, not "$(2)"))
 replay:
-	@scripts/run-job.sh replay REPLAY_SET=$(SET) REPLAY_SPEED=$(SPEED)
+	@scripts/run-job.sh --deadline $(call deadline,$(SET),$(SPEED),300) replay REPLAY_SET=$(SET) REPLAY_SPEED=$(SPEED)
 
 # The correctness checker: synthetic users follow the replayed games, then every push is checked in
 # history and on every socket. Prints a report and exits 0 only on PASS, e.g.
@@ -79,20 +87,33 @@ replay:
 CHECK_OPTS = $(if $(USERS),CHECK_USERS=$(USERS)) $(if $(SEED),CHECK_SEED=$(SEED)) \
              $(if $(KEEP),CHECK_KEEP=$(KEEP)) $(if $(FAULT),CHECK_FAULT=$(FAULT))
 check:
-	@scripts/run-job.sh checker CHECK_SET=$(SET) CHECK_SPEED=$(SPEED) $(CHECK_OPTS)
+	@scripts/run-job.sh --deadline $(call deadline,$(SET),$(SPEED),900) checker CHECK_SET=$(SET) CHECK_SPEED=$(SPEED) $(CHECK_OPTS)
 
 check-clean:
-	@scripts/run-job.sh checker CHECK_MODE=clean
+	@scripts/run-job.sh --deadline 600 checker CHECK_MODE=clean
 
 # Proof the checker can fail: three ci runs at 60x, each injecting one fault (a lost sub:* write, a
 # push delivered twice, a follow changed mid-run). Each run exits 0 only if it reports that fault.
 check-selftest:
 	@for fault in srem dup follow; do \
 		echo "=== check-selftest: FAULT=$$fault ==="; \
-		scripts/run-job.sh checker CHECK_SET=ci CHECK_SPEED=60 CHECK_FAULT=$$fault \
+		scripts/run-job.sh --deadline $(call deadline,ci,60,900) checker CHECK_SET=ci CHECK_SPEED=60 CHECK_FAULT=$$fault \
 			$(if $(USERS),CHECK_USERS=$(USERS)) $(if $(SEED),CHECK_SEED=$(SEED)) \
 			|| { echo "check-selftest: FAULT=$$fault was not caught"; exit 1; }; \
 	done
+
+# The chaos suite: each scenario is one checked replay (evening at 60x unless SET/SPEED are given)
+# with one fault at 40% of the way: a crash, a gateway rollout, or a worker cut off from Kafka.
+#   make chaos [SCENARIO=stage2-crash]   (all eight by default; reports in target/chaos/)
+SCENARIO ?= all
+CHAOS_SET   = $(if $(filter command line,$(origin SET)),$(SET),evening)
+CHAOS_SPEED = $(if $(filter command line,$(origin SPEED)),$(SPEED),60)
+# On a Mac the suite runs under caffeinate: a laptop that sleeps mid-run freezes the cluster and jumps
+# its clock, so a fault lands minutes late (seen on the first full run).
+CAFFEINATE := $(shell command -v caffeinate >/dev/null 2>&1 && echo caffeinate -i)
+chaos:
+	@SET=$(CHAOS_SET) SPEED=$(CHAOS_SPEED) DEADLINE=$(call deadline,$(CHAOS_SET),$(CHAOS_SPEED),900) \
+		$(CAFFEINATE) scripts/chaos.sh $(SCENARIO)
 
 smoke:
 	@scripts/smoke-test.sh

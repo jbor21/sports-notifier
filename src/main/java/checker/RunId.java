@@ -5,7 +5,7 @@ public final class RunId {
 
     private RunId() {}
 
-    /** The run's start in epoch seconds, base 36: six characters until the year 2059. */
+    /** The run's start in epoch seconds, base 36: six characters until the year 2038. */
     public static String of(long epochSeconds) {
         return Long.toString(epochSeconds, 36);
     }

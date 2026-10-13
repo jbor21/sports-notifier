@@ -6,6 +6,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import util.GsonJsonMapper;
 import util.Db;
 import util.KafkaSettings;
+import util.LaneLog;
 import util.LoopHealth;
 import util.Topics;
 
@@ -26,7 +27,7 @@ public final class HistoryWriterMain {
         Db.migrate(db);
 
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(KafkaSettings.consumer(KafkaSettings.bootstrap(), Topics.HISTORY_GROUP));
-        consumer.subscribe(List.of(Topics.NOTIFICATIONS));
+        consumer.subscribe(List.of(Topics.NOTIFICATIONS), new LaneLog("History"));
         // Well under the loop's 60 s silence limit and Kafka's 5 min poll interval: a frozen Postgres
         // fails the batch (retried a second later) instead of stalling the loop (issue #29).
         Duration insertDeadline = Duration.ofMillis(Long.parseLong(System.getenv().getOrDefault("HISTORY_INSERT_DEADLINE_MS", "10000")));

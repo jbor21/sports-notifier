@@ -49,6 +49,15 @@ spec:
                   fieldPath: metadata.name
             {{- end }}
           {{- include "sports-notifier.httpProbes" (dict "port" $svc.port "probes" $.Values.probes) | nindent 10 }}
+          {{- with $svc.preStopSleepSeconds }}
+          # Kubernetes runs this before SIGTERM. A terminating pod leaves the Service's endpoints
+          # asynchronously, so for a few seconds requests still arrive; the process keeps serving them.
+          # Kubernetes' own sleep action: the image needs no shell.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ . }}
+          {{- end }}
           resources:
             {{- toYaml $.Values.javaResources | nindent 12 }}
 {{- if $svc.clusterService }}

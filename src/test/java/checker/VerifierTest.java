@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -43,6 +44,19 @@ class VerifierTest {
         log.arrived(new SocketLog.Arrival(e.messageId(), e.gameId(), e.body(), at));
     }
 
+    private static Verifier.Result verify(List<ExpectedPush> expected, List<HistoryRow> history, List<SocketLog> sockets) {
+        return Verifier.verify(RUN, expected, history, sockets, Map.of(), 0);
+    }
+
+    private static Verifier.Result verify(List<ExpectedPush> expected, List<HistoryRow> history, List<SocketLog> sockets,
+                                          Map<String, Long> deliveredAt, long clockOffsetMillis) {
+        return Verifier.verify(RUN, expected, history, sockets, deliveredAt, clockOffsetMillis);
+    }
+
+    private static Map<String, Long> delivered(ExpectedPush e, long redisMillis) {
+        return Map.of(Verifier.key(e.userId(), e.messageId()), redisMillis);
+    }
+
     private static List<String> kinds(Verifier.Result r) {
         return r.findings().stream().map(Finding::kind).toList();
     }
@@ -53,7 +67,7 @@ class VerifierTest {
         SocketLog s = socket("u1", 0);
         arrive(s, a, T + 100);
         arrive(s, b, T + 300);
-        Verifier.Result r = Verifier.verify(RUN, List.of(a, b), List.of(hist(a, T + 50), hist(b, T + 250)), List.of(s));
+        Verifier.Result r = verify(List.of(a, b), List.of(hist(a, T + 50), hist(b, T + 250)), List.of(s));
         assertEquals(List.of(), r.findings());
         assertEquals(List.of(100L, 300L), r.latenciesMillis());
     }
@@ -63,13 +77,13 @@ class VerifierTest {
         ExpectedPush a = exp("u1", G1, G1 + ":A");
         SocketLog s = socket("u1", 0);
         arrive(s, a, T + 100);
-        assertEquals(List.of("history_missing"), kinds(Verifier.verify(RUN, List.of(a), List.of(), List.of(s))));
+        assertEquals(List.of("history_missing"), kinds(verify(List.of(a), List.of(), List.of(s))));
     }
 
     @Test
     void historyUnexpectedReported() {
         ExpectedPush a = exp("u1", G1, G1 + ":A");
-        assertEquals(List.of("history_unexpected"), kinds(Verifier.verify(RUN, List.of(), List.of(hist(a, T)), List.of())));
+        assertEquals(List.of("history_unexpected"), kinds(verify(List.of(), List.of(hist(a, T)), List.of())));
     }
 
     @Test
@@ -77,7 +91,7 @@ class VerifierTest {
         ExpectedPush a = exp("u1", G1, G1 + ":A");
         HistoryRow h = hist(a, T);
         h.body().addProperty("extra", "different");
-        assertEquals(List.of("history_wrong_body"), kinds(Verifier.verify(RUN, List.of(a), List.of(h), List.of())));
+        assertEquals(List.of("history_wrong_body"), kinds(verify(List.of(a), List.of(h), List.of())));
     }
 
     @Test
@@ -85,7 +99,7 @@ class VerifierTest {
         ExpectedPush a = exp("u1", G1, G1 + ":A");
         HistoryRow h = hist(a, T);
         h.body().addProperty("createdAt", "2026-10-09T12:00:00Z");
-        assertEquals(List.of(), kinds(Verifier.verify(RUN, List.of(a), List.of(h), List.of())));
+        assertEquals(List.of(), kinds(verify(List.of(a), List.of(h), List.of())));
     }
 
     @Test
@@ -94,7 +108,7 @@ class VerifierTest {
         SocketLog s = socket("u1", 0);
         arrive(s, a, T + 100);
         arrive(s, a, T + 200);
-        assertEquals(List.of("socket_duplicate"), kinds(Verifier.verify(RUN, List.of(a), List.of(hist(a, T)), List.of(s))));
+        assertEquals(List.of("socket_duplicate"), kinds(verify(List.of(a), List.of(hist(a, T)), List.of(s))));
     }
 
     @Test
@@ -103,7 +117,7 @@ class VerifierTest {
         SocketLog s = socket("u1", 0);
         arrive(s, b, T + 100);
         arrive(s, a, T + 200);
-        Verifier.Result r = Verifier.verify(RUN, List.of(a, b), List.of(hist(a, T), hist(b, T + 10)), List.of(s));
+        Verifier.Result r = verify(List.of(a, b), List.of(hist(a, T), hist(b, T + 10)), List.of(s));
         assertEquals(List.of("socket_out_of_order"), kinds(r));
         assertEquals(G1 + ":A", r.findings().get(0).messageId());
     }
@@ -113,31 +127,41 @@ class VerifierTest {
         ExpectedPush a = exp("u1", G1, G1 + ":A");
         SocketLog s = socket("u1", 0);
         arrive(s, a, T + 100);
-        assertEquals(List.of("socket_unexpected"), kinds(Verifier.verify(RUN, List.of(), List.of(), List.of(s)))
+        assertEquals(List.of("socket_unexpected"), kinds(verify(List.of(), List.of(), List.of(s)))
             .stream().filter(k -> !k.equals("history_unexpected")).toList());
     }
 
     @Test
-    void missingOutsideGapNotAllowed() {
-        // A arrived in history at T, B arrived on the socket later, and the socket never dropped: A was lost.
-        ExpectedPush a = exp("u1", G1, G1 + ":A"), b = exp("u1", G1, G1 + ":B");
+    void missingWithGapAtDeliveryAllowed() {
+        ExpectedPush a = exp("u1", G1, G1 + ":A");
         SocketLog s = socket("u1", 0);
-        arrive(s, b, T + 500);
-        Verifier.Result r = Verifier.verify(RUN, List.of(a, b), List.of(hist(a, T), hist(b, T + 400)), List.of(s));
-        assertEquals(List.of("socket_missing"), kinds(r));
-        assertEquals(G1 + ":A", r.findings().get(0).messageId());
+        s.disconnected(T + 500);
+        s.connected(T + 1500);
+        Verifier.Result r = verify(List.of(a), List.of(hist(a, T)), List.of(s), delivered(a, T + 1000), 0);
+        assertEquals(List.of(), kinds(r));
+        assertEquals(1, r.allowedInGaps());
     }
 
     @Test
-    void missingInsideGapWithHistoryAllowed() {
-        ExpectedPush a = exp("u1", G1, G1 + ":A"), b = exp("u1", G1, G1 + ":B");
+    void gapThreeSecondsAfterDeliveryNotAllowed() {
+        ExpectedPush a = exp("u1", G1, G1 + ":A");
         SocketLog s = socket("u1", 0);
-        s.disconnected(T - 10);
-        s.connected(T + 200);
-        arrive(s, b, T + 500);
-        Verifier.Result r = Verifier.verify(RUN, List.of(a, b), List.of(hist(a, T), hist(b, T + 400)), List.of(s));
-        assertEquals(List.of(), kinds(r));
-        assertEquals(1, r.allowedInGaps());
+        s.disconnected(T + 4000);
+        s.connected(T + 5000);
+        Verifier.Result r = verify(List.of(a), List.of(hist(a, T)), List.of(s), delivered(a, T + 1000), 0);
+        assertEquals(List.of("socket_missing"), kinds(r));
+        assertTrue(r.findings().get(0).detail().contains("socket was up"), r.findings().get(0).detail());
+    }
+
+    @Test
+    void lastPushWithLateDisconnectNotAllowed() {
+        // Issue #48: the user's last push (often the final) has no later arrival to bound the window,
+        // so a disconnect ten minutes later used to excuse it.
+        ExpectedPush a = exp("u1", G1, G1 + ":A");
+        SocketLog s = socket("u1", 0);
+        s.disconnected(T + 600_000);                    // dropped much later and never came back
+        Verifier.Result r = verify(List.of(a), List.of(hist(a, T)), List.of(s), delivered(a, T + 1000), 0);
+        assertEquals(List.of("socket_missing"), kinds(r));
     }
 
     @Test
@@ -145,18 +169,40 @@ class VerifierTest {
         ExpectedPush a = exp("u1", G1, G1 + ":A");
         SocketLog s = socket("u1", 0);
         s.disconnected(T - 10);
-        Verifier.Result r = Verifier.verify(RUN, List.of(a), List.of(), List.of(s));
+        Verifier.Result r = verify(List.of(a), List.of(), List.of(s), delivered(a, T + 1000), 0);
         assertTrue(kinds(r).contains("socket_missing"), kinds(r).toString());
         assertTrue(kinds(r).contains("history_missing"));
     }
 
     @Test
-    void missingAfterLastArrivalWithOpenGapAllowed() {
+    void missingWithoutClaimNotAllowed() {
         ExpectedPush a = exp("u1", G1, G1 + ":A");
         SocketLog s = socket("u1", 0);
-        s.disconnected(T + 1000);                       // dropped later and never came back
-        Verifier.Result r = Verifier.verify(RUN, List.of(a), List.of(hist(a, T)), List.of(s));
+        s.disconnected(T - 10);
+        Verifier.Result r = verify(List.of(a), List.of(hist(a, T)), List.of(s), Map.of(), 0);
+        assertEquals(List.of("socket_missing"), kinds(r));
+        assertTrue(r.findings().get(0).detail().contains("no delivery time"), r.findings().get(0).detail());
+    }
+
+    @Test
+    void clockOffsetShiftsTheWindow() {
+        // Redis's clock runs 10 s ahead of the checker's: delivered at T+11 s in Redis time is T+1 s locally.
+        ExpectedPush a = exp("u1", G1, G1 + ":A");
+        SocketLog s = socket("u1", 0);
+        s.disconnected(T + 500);
+        s.connected(T + 1500);
+        assertEquals(List.of(), kinds(verify(List.of(a), List.of(hist(a, T)), List.of(s), delivered(a, T + 11_000), 10_000)));
+        assertEquals(List.of("socket_missing"), kinds(verify(List.of(a), List.of(hist(a, T)), List.of(s), delivered(a, T + 11_000), 0)));
+    }
+
+    @Test
+    void openGapAtEndExcusesWithoutOverflow() {
+        ExpectedPush a = exp("u1", G1, G1 + ":A");
+        SocketLog s = socket("u1", 0);
+        s.disconnected(T + 500);                        // still down when the run ended
+        Verifier.Result r = verify(List.of(a), List.of(hist(a, T)), List.of(s), delivered(a, T - 4000), -5000);
         assertEquals(List.of(), kinds(r));
+        assertEquals(1, r.allowedInGaps());
     }
 
     @Test
@@ -165,7 +211,7 @@ class VerifierTest {
         SocketLog tab0 = socket("u1", 0), tab1 = socket("u1", 1);
         arrive(tab0, a, T + 100);
         arrive(tab1, a, T + 120);
-        assertEquals(List.of(), kinds(Verifier.verify(RUN, List.of(a), List.of(hist(a, T)), List.of(tab0, tab1))));
+        assertEquals(List.of(), kinds(verify(List.of(a), List.of(hist(a, T)), List.of(tab0, tab1))));
     }
 
     @Test
@@ -177,7 +223,7 @@ class VerifierTest {
         arrive(s, a1, T + 100);
         arrive(s, b1, T + 200);
         List<HistoryRow> h = List.of(hist(a2, T), hist(a1, T + 10), hist(b1, T + 20));
-        assertEquals(List.of(), kinds(Verifier.verify(RUN, List.of(a1, b1, a2), h, List.of(s))));
+        assertEquals(List.of(), kinds(verify(List.of(a1, b1, a2), h, List.of(s))));
     }
 
     @Test
@@ -188,7 +234,7 @@ class VerifierTest {
         arrive(s, live, T);
         arrive(s, otherRun, T);
         List<HistoryRow> h = new ArrayList<>(List.of(hist(live, T), hist(otherRun, T)));
-        Verifier.Result r = Verifier.verify(RUN, List.of(), h, List.of(s));
+        Verifier.Result r = verify(List.of(), h, List.of(s));
         assertEquals(List.of(), r.findings());
         assertEquals(2, r.outsideRun());
     }
@@ -201,7 +247,7 @@ class VerifierTest {
         a.body().getAsJsonObject("game").add("clock", com.google.gson.JsonNull.INSTANCE);
         HistoryRow h = hist(a, T);
         h.body().getAsJsonObject("game").remove("clock");
-        assertEquals(List.of(), kinds(Verifier.verify(RUN, List.of(a), List.of(h), List.of())));
+        assertEquals(List.of(), kinds(verify(List.of(a), List.of(h), List.of())));
     }
 
     @Test
@@ -210,6 +256,6 @@ class VerifierTest {
         a.body().getAsJsonObject("game").addProperty("clock", "4:12");
         HistoryRow h = hist(a, T);
         h.body().getAsJsonObject("game").remove("clock");
-        assertEquals(List.of("history_wrong_body"), kinds(Verifier.verify(RUN, List.of(a), List.of(h), List.of())));
+        assertEquals(List.of("history_wrong_body"), kinds(verify(List.of(a), List.of(h), List.of())));
     }
 }

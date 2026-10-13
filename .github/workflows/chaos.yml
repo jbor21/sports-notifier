@@ -1,0 +1,52 @@
+name: Chaos
+
+# The chaos suite (Phase 4.2): eight checked replays on a throwaway k3d cluster, each with one fault.
+# About 45 minutes, so never on every push. Two ways to start it by hand:
+# - Actions → Chaos → Run workflow, choosing a scenario or all (only once this file is on main:
+#   GitHub offers workflow_dispatch only for workflows on the default branch);
+# - add the label "chaos" to a pull request, which runs all eight on the PR's code.
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: Which scenario to run
+        type: choice
+        default: all
+        options: [all, stage1-crash, stage2-crash, history-crash, gateway-crash, gateway-rollout, broker-crash, stage1-cut, stage2-cut]
+  pull_request:
+    types: [labeled]
+
+env:
+  # Same versions as CI and the laptop.
+  K3D_VERSION: v5.9.0
+  HELM_VERSION: v4.3.0
+
+jobs:
+  chaos:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'chaos'
+    # At job level, not workflow level: a run started by any other label is skipped by the `if`
+    # and so never joins the group, and cannot cancel a chaos run in progress.
+    concurrency:
+      group: chaos-${{ github.ref }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install k3d
+        run: curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=$K3D_VERSION bash
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - run: make cluster up chaos SCENARIO=${{ inputs.scenario || 'all' }}
+      - name: Show pods and logs
+        if: failure()
+        run: make logs
+      # Each scenario's checker report and the runner's own lines, plus summary.txt.
+      - name: Save the chaos reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: chaos-reports
+          path: target/chaos/
+          if-no-files-found: ignore

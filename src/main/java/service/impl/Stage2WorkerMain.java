@@ -6,6 +6,7 @@ import redis.clients.jedis.JedisPool;
 import util.GsonJsonMapper;
 import util.JedisPoolHolder;
 import util.KafkaSettings;
+import util.LaneLog;
 import util.LoopHealth;
 import util.Topics;
 
@@ -24,7 +25,7 @@ public final class Stage2WorkerMain {
         JedisPool pool = JedisPoolHolder.create();
 
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(KafkaSettings.consumer(KafkaSettings.bootstrap(), Topics.STAGE2_GROUP));
-        consumer.subscribe(List.of(Topics.NOTIFICATIONS));
+        consumer.subscribe(List.of(Topics.NOTIFICATIONS), new LaneLog("Stage2"));
         Stage2Worker worker = new Stage2Worker(consumer, new Delivery(pool));
 
         // The consumer is not thread-safe, so the loop owns it: shutdown asks the loop to stop, and the

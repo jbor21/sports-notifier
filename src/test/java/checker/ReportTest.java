@@ -24,9 +24,15 @@ class ReportTest {
             sockets   missing 0 (allowed in disconnects: 0)   duplicate 0   out of order 0   unexpected 0
             follows   frozen ✓
             outside the run: 0 messages
-            latency detectedAt → socket: p50 500 ms  p99 990 ms  (preview; 4.3 measures it properly)
+            latency detectedAt → socket: p50 500 ms  p99 990 ms  max 1000 ms  (preview; 4.3 measures it properly)
             PASS
             """, out);
+    }
+
+    @Test
+    void latencyLineHasMax() {
+        String out = Report.render(H, new Verifier.Result(List.of(), 0, 0, List.of(10L, 20L, 900L)), List.of());
+        assertTrue(out.contains("max 900 ms"), out);
     }
 
     @Test
@@ -39,7 +45,7 @@ class ReportTest {
         assertTrue(out.contains("follows   changed 1"), out);
         assertTrue(out.contains("socket_missing: 25 (first 20)"), out);
         assertEquals(20, out.lines().filter(l -> l.startsWith("  socket_missing ")).count());
-        assertTrue(out.contains("latency detectedAt → socket: p50 -  p99 -"), out);
+        assertTrue(out.contains("latency detectedAt → socket: p50 -  p99 -  max -"), out);
         assertTrue(out.endsWith("FAIL\n"), out);
     }
 }

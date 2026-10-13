@@ -269,12 +269,16 @@ fi
 #     group with no bookmark yet, is tested in Stage1WorkerTest.newGroupReadsEarlierPlays: here the
 #     workers join their groups before any play is sent, so "latest" would pass too.)
 starts_before=$(curl -fsS -b "$bob_jar" "$BASE_URL/api/v1/notifications?team=mlb-hou&limit=100" | jq '[.items[] | select(.headline.type == "GAME_START")] | length')
+# Put back as many copies as were running (the chart runs two), not a fixed one.
+s1_replicas=$(k get deploy/stage1-worker -o jsonpath='{.spec.replicas}')
+s2_replicas=$(k get deploy/stage2-worker -o jsonpath='{.spec.replicas}')
 k scale deploy/stage1-worker deploy/stage2-worker --replicas=0 >/dev/null
 k wait pod -l 'app.kubernetes.io/name in (stage1-worker,stage2-worker)' --for=delete --timeout=120s >/dev/null 2>&1 || true
 k delete jobs -l app.kubernetes.io/name=simulator --cascade=foreground --wait=true --ignore-not-found >/dev/null
 job=$("$repo_root/scripts/simulate.sh" SIM_WAVES=1)
 k wait "job/$job" --for=condition=complete --timeout=300s >/dev/null || fail "simulator job $job did not finish while the workers were down"
-k scale deploy/stage1-worker deploy/stage2-worker --replicas=1 >/dev/null
+k scale deploy/stage1-worker --replicas="$s1_replicas" >/dev/null
+k scale deploy/stage2-worker --replicas="$s2_replicas" >/dev/null
 got=0
 for _ in $(seq 1 90); do
   now=$(curl -fsS -b "$bob_jar" "$BASE_URL/api/v1/notifications?team=mlb-hou&limit=100" | jq '[.items[] | select(.headline.type == "GAME_START")] | length')
@@ -282,5 +286,7 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 [[ "$got" == 1 ]] || fail "a game start sent while the stage workers were down never reached Bob after they came back"
+k rollout status deploy/stage1-worker deploy/stage2-worker --timeout=180s >/dev/null \
+  || fail "the stage workers did not come back to $s1_replicas and $s2_replicas copies"
 
 echo "SMOKE PASS"

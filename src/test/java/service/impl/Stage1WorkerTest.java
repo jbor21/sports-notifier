@@ -338,6 +338,40 @@ class Stage1WorkerTest {
         assertEquals(3, messages().size());
     }
 
+    /** Issue #44: a lane's poison count goes with the lane; another owner starts its own count. */
+    @Test
+    void forgetDropsAttemptsOfRevokedLanes() throws Exception {
+        Detector bug = new Detector() {
+            @Override public void detect(GameMemory before, alerts.Play now, GameMemory after, List<alerts.Alert> out) {
+                if (now.version() == 2) throw new IllegalArgumentException("detector bug");
+            }
+        };
+        List<Detector> chain = new ArrayList<>(List.of(bug));
+        chain.addAll(Detectors.standardChain(LABELS));
+        sendToLaneZero(play("nhl-1", 1, 0, 0));
+        sendToLaneZero(play("nhl-1", 2, 0, 1));
+        Stage1Worker w = worker("s1-" + UUID.randomUUID(), new DetectorMemory(pool), () -> true, new Detectors(chain));
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (w.attemptsTracked() == 0) {
+            assertTrue(System.nanoTime() < deadline, "the poison play never failed");
+            try {
+                w.pollOnce(Duration.ofMillis(200));
+            } catch (RuntimeException e) {
+                // the first failed try; counted
+            }
+        }
+        assertEquals(1, w.attemptsTracked());
+        w.forget(List.of(new TopicPartition(gameEvents, 5)));
+        assertEquals(1, w.attemptsTracked(), "another lane's loss leaves this count");
+        w.forget(List.of(new TopicPartition(gameEvents, 0)));
+        assertEquals(0, w.attemptsTracked());
+    }
+
+    @Test
+    void attemptKeyNamesTheTopic() {
+        assertEquals("game-events-0@7", Stage1Worker.attemptKey(new ConsumerRecord<>("game-events", 0, 7L, "k", "v")));
+    }
+
     /** Issue #15: a readable play that always throws is dead-lettered after 3 tries, not retried forever. */
     @Test
     void poisonPlayIsDeadLetteredAndTheLaneMovesOn() throws Exception {

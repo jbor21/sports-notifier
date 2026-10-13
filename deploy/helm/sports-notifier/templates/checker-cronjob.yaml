@@ -21,6 +21,7 @@ spec:
     spec:
       # A failed check is an answer, not something to retry.
       backoffLimit: 0
+      activeDeadlineSeconds: {{ .Values.checker.activeDeadlineSeconds }}
       ttlSecondsAfterFinished: 3600
       template:
         metadata:

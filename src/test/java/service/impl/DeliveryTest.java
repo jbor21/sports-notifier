@@ -130,6 +130,30 @@ class DeliveryTest {
         assertTrue(ttl > 172_700 && ttl <= 172_800, "outlives notifications' 1-day retention: " + ttl);
     }
 
+    private long redisNowMillis() {
+        List<String> t = jedis.time();
+        return Long.parseLong(t.get(0)) * 1000 + Long.parseLong(t.get(1)) / 1000;
+    }
+
+    @Test
+    void claimHoldsDeliveryTime() {
+        long before = redisNowMillis();
+        assertTrue(delivery.deliver(msg("u1", 1)));
+        long after = redisNowMillis();
+        long claimed = Long.parseLong(jedis.get("notif:nba-1:v1:u1"));
+        assertTrue(claimed >= before && claimed <= after,
+            "the claim is when the push was published, by Redis's clock: " + before + " <= " + claimed + " <= " + after);
+    }
+
+    @Test
+    void legacyClaimStillDedups() throws Exception {
+        jedis.zadd("conn:u1", redisNow() + 90, "A");
+        jedis.set("notif:nba-1:v1:u1", "1");   // written by the script before claims held a time
+        assertFalse(delivery.deliver(msg("u1", 1)));
+        assertEquals(List.of(), receivedOn("gw:A"));
+        assertEquals("1", jedis.get("notif:nba-1:v1:u1"));
+    }
+
     @Test
     void deliverAllKeepsOrderAndDedupsInsideTheBatch() throws Exception {
         jedis.zadd("conn:u1", redisNow() + 90, "A");

@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-10-11 (Phase 4.1 merged, 4.2 next).
+asks. Last updated 2026-10-12 (Phase 4.2 in PR #53; 4.3 next).
 
 ---
 
@@ -43,11 +43,11 @@ unread badge (`unread_count`); `/games` lists yesterday through 7 days ahead.
 ## Architecture
 
 Separate JVM processes, one Docker image (`SERVICE` picks the main), deployed
-by one Helm chart on k3d. **Kafka** (Strimzi, one broker locally) is the event
-log; **Postgres** (one pod) holds accounts, follows, and notification history;
-**Redis** holds the live score, the outbox, sessions, the `sub:*` sets (rebuilt
-from Postgres), the schedule cache (`sched:`), the unread badge cache, and pub/sub
-to gateways.
+by one Helm chart on k3d, with two copies each of the gateway, Stage 1, and Stage 2.
+**Kafka** (Strimzi, one broker locally) is the event log; **Postgres** (one pod)
+holds accounts, follows, and notification history; **Redis** holds the live score,
+the outbox, sessions, the `sub:*` sets (rebuilt from Postgres), the schedule cache
+(`sched:`), the unread badge cache, and pub/sub to gateways.
 
 ```
 Simulator / ESPN Poller
@@ -92,7 +92,7 @@ kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · PostgreSQL 17 · Hi
 Flyway · Testcontainers 2.0.5 · web: Vite 8 · React 19 · TypeScript 5 · React Router ·
 SWR · vite-plugin-pwa (Workbox) · Vitest · Playwright · pnpm 12 · Node 24
 **Size:** ~11,800 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
-design) · 667 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
+design) · 688 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -170,7 +170,8 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   `make replay SET=evening SPEED=10` plays recorded games; `make check SET=ci SPEED=60`
   runs the correctness checker (`KEEP=1` keeps its users, `FAULT=srem|dup|follow`
   injects one fault), `make check-selftest` proves each fault is caught, and
-  `make check-clean` removes leftover synthetic users.
+  `make check-clean` removes leftover synthetic users. `make chaos [SCENARIO=…]` runs
+  the chaos suite (eight checked replays, each with one fault; reports in `target/chaos/`).
   `make down` deletes the cluster but not accounts: Postgres keeps its data in
   `~/.sportsnotifier/postgres` on the Mac, mounted into k3d by `make cluster`
   (laptop password fixed in `values-local.yaml`). `scripts/persistence-check.sh`
@@ -212,13 +213,34 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   plan `docs/superpowers/plans/2026-10-09-phase-4-1-replay-checker.md`; closed #16 and #18.
   Alert waves 2 and 3 moved to Phase 7. Replayed pushes reaching real accounts is #47
   (decide before Phase 6).
-- **Next step: Phase 4.2 (chaos suite on k3d)**: kill Stage 1, Stage 2, a gateway, the
-  broker, and cut a worker off from Kafka during a checked replay, two copies of each;
-  pulls in #9, #10, #17, #31, #44, the checker's socket-excuse rule (#48) and a time limit
-  on the checker Job (#49), and closes #12. Then 4.3 (traces and metrics). Must-fix
-  before Phase 5: #36 (the live check). Before the checker runs on AWS: reserve the `ck_`
-  prefix (#51); decide #47 (replayed pushes reach real accounts) before Phase 6. Other
-  deferred minors are issues #19–#27, #35, #37–#43, #45, #50.
+- **Phase 4.2 (chaos suite on k3d) is in PR #53**: spec
+  `docs/superpowers/specs/2026-10-11-phase-4-2-chaos-design.md`, plan
+  `docs/superpowers/plans/2026-10-11-phase-4-2-chaos.md`; closes #9, #10, #12, #17, #31, #44,
+  #48, #49. A Redis crash losing dedup claims (a duplicate push) is #52, after Phase 6.
+- **Next step: Phase 4.3 (traces and metrics).** Must-fix before Phase 5: #36 (the live
+  check). Before the checker runs on AWS: reserve the `ck_` prefix (#51); decide #47
+  (replayed pushes reach real accounts) before Phase 6. Other deferred minors are issues
+  #19–#27, #35, #37–#43, #45, #50.
+- **New in Phase 4.2:** `make chaos` (`scripts/chaos.sh`, primitives in `scripts/chaos-lib.sh`)
+  runs eight scenarios, each one checker run on `evening` at 60× with one fault at 40% of the
+  replay: crashes of Stage 1, Stage 2, History, a gateway, the broker (SIGKILL through `crictl`
+  on the k3d node, proven by exit 137; `kubectl delete` would be a polite SIGTERM), a gateway
+  rolling restart under a request loop (no 5xx allowed), and Stage 1 or Stage 2 cut from Kafka
+  for 60 s while keeping Redis (NetworkPolicy `chaos-cut` plus `conntrack -D` on the node,
+  because k3s lets already-open connections through a new policy). A scenario passes only if
+  the fault provably landed and the checker passes. The `Chaos` workflow runs it by hand
+  (`workflow_dispatch`, once on main) or when a PR gets the `chaos` label. Stage 2's claim
+  `notif:<msg>:<user>` holds the delivery time (Redis `TIME`, ms); the checker excuses a push
+  missing from a socket only if that socket was down within 2 s of it, in Redis time
+  (`Claims`, `RedisClock`; #48). Checker and replay Jobs have a time limit computed from set
+  and speed, and `run-job.sh` passes the exit code through (#49). Workers log lane changes
+  (`util/LaneLog`); Stage 1 drops poison counts of lanes it loses (#44). The fan-out refreshes
+  its temporary sets every page and throws if one vanished (#17). The gateway stops renewals
+  before removing `conn:` entries (`GatewayShutdown`, #10), re-adds a reloaded tab's entry (#9),
+  and waits 5 s in `preStop` (native `sleep`; Kubernetes 1.34+) before SIGTERM (#31).
+  `bash scripts/test-chaos-scripts.sh` tests the scripts' failure paths with a fake kubectl (a
+  failed group read, a failed heal, an API blip during a Job, fractional `SPEED`); a fault step
+  that cannot run fails its scenario, never the suite.
 - **Fixed after 3.4:** #29: `Db.create` passed `socketTimeout` as a number, which the
   Postgres driver silently ignores, so no connection had a read timeout; now a string
   (`DbTest`), and `HistoryStore` aborts a statement past `HISTORY_INSERT_DEADLINE_MS`
@@ -256,8 +278,8 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   included), pushed notifications merged into history by id. Every screen needs
   sign-in. PWA: `src/sw.ts` precaches the app; a waiting worker shows "New version",
   and an unanswered one is applied on the next in-app navigation. A gateway rollout
-  can answer 504 for a few seconds (no drain delay before shutdown); the UI tolerates
-  it.
+  answered 504 for a few seconds (no drain delay before shutdown) until Phase 4.2's 5 s
+  preStop (#31); the UI tolerates it either way.
 - **New in Phase 3.4:** `/api/v1/ws` (`gateway/LiveSocket`): `hello` with the unread
   count, 4401 without a session, ping/pong, idle close after 60 s, notifications in the
   API shape, `unread_count`, `game_update`. The accept script saves start time and line

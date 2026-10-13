@@ -6,6 +6,7 @@ import catalog.AlertCatalog;
 import catalog.FollowKind;
 import catalog.Teams;
 import checker.Api;
+import checker.Claims;
 import checker.Cleanup;
 import checker.EndCondition;
 import checker.ExpectedPush;
@@ -17,6 +18,7 @@ import checker.FollowSnapshot;
 import checker.HistoryRow;
 import checker.Lag;
 import checker.Oracle;
+import checker.RedisClock;
 import checker.PlayReader;
 import checker.Report;
 import checker.RunId;
@@ -35,6 +37,7 @@ import model.GameEvent;
 import model.GameSnapshot;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import service.impl.Follow;
 import service.impl.FollowSets;
@@ -116,11 +119,27 @@ public final class Checker {
         System.exit(code);
     }
 
+    /** The replay set, or a setup failure naming it (exit 2, before any user or game exists). */
+    static List<RecordedScoreFeed.Line> loadSet(String set) {
+        try {
+            return RecordedScoreFeed.load(set);
+        } catch (IllegalArgumentException e) {
+            throw new SetupException(e.getMessage(), e);
+        }
+    }
+
     private int run() throws Exception {
         if (fault != null) Faults.primaryKind(fault);              // reject an unknown fault before doing anything
+        List<RecordedScoreFeed.Line> lines;
+        try {
+            lines = loadSet(set);
+        } catch (SetupException e) {
+            System.out.println("SETUP FAILED: " + e.getMessage());
+            return 2;
+        }
         long runStart = System.currentTimeMillis();
         String runId = RunId.of(runStart / 1000);
-        RecordedScoreFeed feed = new RecordedScoreFeed(RecordedScoreFeed.load(set), runId, runStart,
+        RecordedScoreFeed feed = new RecordedScoreFeed(lines, runId, runStart,
                 System::currentTimeMillis, speed);
         Replay replay = new Replay(feed, new Poller(feed, pool, new HttpEventSink(epsUrl), System::currentTimeMillis),
                 pool, Replay.pollMillis(speed));
@@ -163,13 +182,18 @@ public final class Checker {
                            List<FollowMix.UserPlan> plans, List<String> userIds) throws Exception {
         Thread.sleep(1000);                                          // every follow write is strictly before T0
         Instant t0 = Snapshots.dbNow(db);
+        long offsetAtStart = redisClockOffset();
         List<FollowSnapshot> start = Snapshots.follows(db, userIds);
         applyFaultBeforeRun(plans, userIds);
         replay.start();
+        // scripts/chaos.sh times its fault from this line.
+        System.out.println("[Checker] run started: T0 " + t0 + ", replay "
+                + (long) Math.ceil(feed.lengthMillis() / speed / 1000) + " s at " + Report.speed(speed) + "x");
 
         EndCondition.State state = waitForEnd(replay);
         replay.stop();
         Instant runEnd = Snapshots.dbNow(db);
+        long clockOffset = (offsetAtStart + redisClockOffset()) / 2;
         List<FollowSnapshot> end = Snapshots.follows(db, userIds);
         clients.forEach(SocketClient::close);
 
@@ -178,7 +202,8 @@ public final class Checker {
         List<Follow> follows = start.stream().map(FollowSnapshot::follow).toList();
         List<ExpectedPush> expected = new Oracle(Detectors.standard(labels), labels).expected(plays, follows);
         List<HistoryRow> history = Snapshots.history(db, userIds, RunId.gameMarker(runId));
-        Verifier.Result result = Verifier.verify(runId, expected, history, logs);
+        Map<String, Long> deliveredAt = Claims.deliveredAt(pool, expected);
+        Verifier.Result result = Verifier.verify(runId, expected, history, logs, deliveredAt, clockOffset);
 
         List<Finding> other = new ArrayList<>(FollowFreeze.compare(start, end, t0, runEnd));
         if (state.kind() == EndCondition.Kind.TIMED_OUT) {
@@ -303,6 +328,13 @@ public final class Checker {
         JsonObject alerts = new JsonObject();
         alerts.add(type, s);
         return alerts;
+    }
+
+    /** Redis's clock minus ours: Stage 2's delivery times are Redis's, socket times are ours (Phase 4.2 spec, 7.1). */
+    private long redisClockOffset() {
+        try (Jedis jedis = pool.getResource()) {
+            return RedisClock.offsetMillis(jedis, System::currentTimeMillis);
+        }
     }
 
     private EndCondition.State waitForEnd(Replay replay) throws Exception {

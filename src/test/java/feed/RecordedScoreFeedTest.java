@@ -119,6 +119,14 @@ class RecordedScoreFeedTest {
     }
 
     @Test
+    void lengthIsTheLastSnapshot() {
+        long last = lines.stream().mapToLong(RecordedScoreFeed.Line::t).max().orElseThrow();
+        long nflLast = nflLines().stream().mapToLong(RecordedScoreFeed.Line::t).max().orElseThrow();
+        assertEquals(last, feed(60).lengthMillis(), "replay time, whatever the speed");
+        assertTrue(last > nflLast, "the later game decides the length");
+    }
+
+    @Test
     void gameIdsListsEveryGame() {
         assertEquals(2, feed(1).gameIds().size());
         assertEquals(2, feed(1).firstSnapshots().size());

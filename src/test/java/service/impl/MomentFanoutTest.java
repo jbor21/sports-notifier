@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
+import redis.clients.jedis.exceptions.JedisException;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -173,6 +174,49 @@ class MomentFanoutTest {
             if (!extras(e.getValue()).isEmpty()) withExtra++;
         }
         assertEquals(1200, withExtra);
+    }
+
+    /** 2,500 Bears followers of a touchdown and lead change: the union path, three pages of about 1,000. */
+    private void bigAudience() {
+        String[] users = new String[2500];
+        for (int i = 0; i < users.length; i++) users[i] = "u" + i;
+        jedis.sadd("sub:team:nfl-chi:ANY", users);
+        jedis.sadd("sub:team:nfl-chi:TOUCHDOWN", users);
+        jedis.sadd("sub:team:nfl-chi:LEAD_CHANGE", users);
+    }
+
+    /** Issue #17: the whole fan-out outlasts the sets' TTL, but no single page does. */
+    @Test
+    void slowPagesStillReachEveryone() {
+        bigAudience();
+        MomentFanout slow = new MomentFanout(pool, new AlertAudience(), new GameLabels(Teams.load()), 1);
+        int[] n = {0};
+        slow.send(PLAY, new Detectors.Result(List.of(TD, LEAD), null, new GameMemory()), (u, m) -> {
+            if (n[0]++ % 400 == 0) sleep(200);
+            sent.add(Map.entry(u, m));
+        });
+        assertEquals(2500, sent.size());
+        assertEquals(2500, sent.stream().map(Map.Entry::getKey).distinct().count());
+    }
+
+    /** Issue #17: a set gone between pages is an error Stage 1 retries, never a silent stop. */
+    @Test
+    void pageSlowerThanTtlFailsInsteadOfSkipping() {
+        bigAudience();
+        MomentFanout slow = new MomentFanout(pool, new AlertAudience(), new GameLabels(Teams.load()), 1);
+        int[] n = {0};
+        assertThrows(JedisException.class, () ->
+            slow.send(PLAY, new Detectors.Result(List.of(TD, LEAD), null, new GameMemory()), (u, m) -> {
+                if (n[0]++ == 0) sleep(1500);
+            }));
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Test

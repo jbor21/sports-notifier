@@ -11,6 +11,7 @@ import redis.clients.jedis.JedisPool;
 import util.GsonJsonMapper;
 import util.JedisPoolHolder;
 import util.KafkaSettings;
+import util.LaneLog;
 import util.LoopHealth;
 import util.Topics;
 
@@ -29,7 +30,6 @@ public final class Stage1WorkerMain {
         JedisPool pool = JedisPoolHolder.create();
 
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(KafkaSettings.consumer(KafkaSettings.bootstrap(), Topics.STAGE1_GROUP));
-        consumer.subscribe(List.of(Topics.GAME_EVENTS));
         KafkaProducer<String, String> producer = new KafkaProducer<>(KafkaSettings.fanoutProducer(KafkaSettings.bootstrap()));
         GameLabels labels = new GameLabels(Teams.load());
         Stage1Worker worker = new Stage1Worker(new DetectorMemory(pool), Detectors.standard(labels),
@@ -38,6 +38,7 @@ public final class Stage1WorkerMain {
                 return FollowSets.isBuilt(jedis);
             }
         });
+        consumer.subscribe(List.of(Topics.GAME_EVENTS), new LaneLog("Stage1", worker::forget));
 
         // The consumer is not thread-safe, so the loop owns it: shutdown asks the loop to stop, and the
         // loop's own thread closes the consumer (leaving the group, so its lanes move at once).

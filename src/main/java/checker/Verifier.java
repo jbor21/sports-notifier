@@ -11,7 +11,8 @@ import java.util.Map;
 
 /**
  * Compares what the oracle expected with what history holds and what every socket saw (Phase 4.1
- * spec, 6.2–6.3). Only the run's games count; anything else a socket hears is "outside the run".
+ * spec, 6.2–6.3; Phase 4.2 spec, 7.1). Only the run's games count; anything else a socket hears is
+ * "outside the run".
  */
 public final class Verifier {
 
@@ -22,13 +23,21 @@ public final class Verifier {
      */
     public record Result(List<Finding> findings, int outsideRun, int allowedInGaps, List<Long> latenciesMillis) {}
 
+    /** How far from a push's delivery a socket's disconnect may be and still excuse the push. */
+    static final long EXCUSE_WINDOW_MILLIS = 2000;
+
     private Verifier() {}
 
-    private static String key(String user, String messageId) {
+    static String key(String user, String messageId) {
         return user + " " + messageId;
     }
 
-    public static Result verify(String runId, List<ExpectedPush> expected, List<HistoryRow> history, List<SocketLog> sockets) {
+    /**
+     * @param deliveredAt       when Stage 2 published each push, by {@link #key}, in Redis time ({@link Claims})
+     * @param clockOffsetMillis Redis's clock minus the checker's ({@link RedisClock}); socket times are the checker's
+     */
+    public static Result verify(String runId, List<ExpectedPush> expected, List<HistoryRow> history, List<SocketLog> sockets,
+                                Map<String, Long> deliveredAt, long clockOffsetMillis) {
         String marker = RunId.gameMarker(runId);
         List<Finding> findings = new ArrayList<>();
         int outside = 0;
@@ -82,17 +91,22 @@ public final class Verifier {
             }
             findings.addAll(outOfOrder(s, first.values(), wantByUserGame));
 
-            // Missing: allowed only while this tab was down. One user's pushes are delivered in order, so
-            // if a push published later than the missing one arrived and the tab never dropped in
-            // between, the missing one reached an open socket and was lost.
+            // Missing: allowed only if the tab was down when Stage 2 published the push. Stage 2's claim
+            // records that moment by Redis's clock; the window is moved into the checker's clock (not
+            // the gaps into Redis's), so a gap still open at the end of the run cannot overflow. A
+            // push published to an open, registered socket and not received was lost.
             for (ExpectedPush e : wantByUser.getOrDefault(user, List.of())) {
                 if (first.containsKey(e.messageId())) continue;
                 HistoryRow h = have.get(key(user, e.messageId()));
-                if (h != null && wasDown(s, h.createdAt().toEpochMilli(), nextArrival(first.values(), have, user, h.createdAt()))) {
+                Long at = deliveredAt.get(key(user, e.messageId()));
+                if (h != null && at != null && wasDown(s, at - clockOffsetMillis - EXCUSE_WINDOW_MILLIS,
+                        at - clockOffsetMillis + EXCUSE_WINDOW_MILLIS)) {
                     allowed++;
                 } else {
-                    findings.add(new Finding("socket_missing", user, e.gameId(), e.messageId(),
-                            "tab " + s.tab() + (h == null ? ", not in history either" : ", socket was up")));
+                    String why = h == null ? ", not in history either"
+                            : at == null ? ", no delivery time (Stage 2 never claimed it)"
+                            : ", socket was up when it was delivered";
+                    findings.add(new Finding("socket_missing", user, e.gameId(), e.messageId(), "tab " + s.tab() + why));
                 }
             }
         }
@@ -123,16 +137,6 @@ public final class Verifier {
     private static int indexOf(List<ExpectedPush> order, String messageId) {
         for (int i = 0; i < order.size(); i++) if (order.get(i).messageId().equals(messageId)) return i;
         return -1;
-    }
-
-    /** When this tab got its first push published after {@code after}; never, as Long.MAX_VALUE. */
-    private static long nextArrival(Iterable<SocketLog.Arrival> arrivals, Map<String, HistoryRow> have, String user, Instant after) {
-        long next = Long.MAX_VALUE;
-        for (SocketLog.Arrival a : arrivals) {
-            HistoryRow h = have.get(key(user, a.messageId()));
-            if (h != null && h.createdAt().isAfter(after)) next = Math.min(next, a.atMillis());
-        }
-        return next;
     }
 
     private static boolean wasDown(SocketLog s, long from, long to) {

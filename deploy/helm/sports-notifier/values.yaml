@@ -16,13 +16,18 @@ probes:
 # kafka: true gives the service KAFKA_BOOTSTRAP, the broker's address.
 # postgres: true gives it PG_URL, PG_USER and PG_PASSWORD (from the postgres Secret).
 services:
+  # Two copies of the gateway and both stages everywhere (Phase 4.2): every check runs the system with
+  # lanes split between two group members and sockets split between two gateways.
   gateway:
-    replicas: 1
+    replicas: 2
     port: 8080
     portEnv: GATEWAY_PORT
     clusterService: true
     espn: true          # gets ESPN_HOST / ESPN_USER_AGENT for /api/upcoming
     podNameEnv: GATEWAY_ID   # this gateway's id: its channel is gw:<id>, and conn:<userId> names it
+    # Wait 5 s before SIGTERM so Traefik stops routing here first: no 504s during a rollout (#31).
+    # Needs Kubernetes 1.34+ (the native sleep action); terminationGracePeriodSeconds stays 30.
+    preStopSleepSeconds: 5
     env:
       USER_PREF_URL: http://user-pref:8081
       GAME_STATE_URL: http://game-state:8082
@@ -33,14 +38,14 @@ services:
   notification:     { replicas: 1, port: 8087, portEnv: NOTIFICATION_PORT,     clusterService: true, postgres: true }
   # Stage 1: reads game-events, writes one notifications message per user.
   stage1-worker:
-    replicas: 1
+    replicas: 2
     port: 8085
     portEnv: STAGE1_WORKER_PORT
     clusterService: false
     kafka: true
   # Stage 2: reads notifications, delivers each exactly once in effect (history + the user's gateways).
   stage2-worker:
-    replicas: 1
+    replicas: 2
     port: 8086
     portEnv: STAGE2_WORKER_PORT
     clusterService: false
@@ -104,6 +109,7 @@ simulator:
 replay:
   set: evening
   speed: 10
+  activeDeadlineSeconds: 14400   # for a Job started without one; make replay passes its own (evening at 1x is 3.2 h)
 
 # The correctness checker (tools.Checker): make check runs one Job with these defaults; the make
 # command line overrides them (SET, SPEED, USERS, SEED). It holds a socket per synthetic user and
@@ -113,6 +119,7 @@ checker:
   speed: 10
   users: 500
   seed: 1
+  activeDeadlineSeconds: 3600    # for a Job started without one; make check passes its own (#49)
   resources:
     requests: { cpu: 200m, memory: 512Mi }
     limits: { memory: 1Gi }

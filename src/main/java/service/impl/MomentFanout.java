@@ -10,6 +10,7 @@ import model.NotificationMessage;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.Pipeline;
+import redis.clients.jedis.exceptions.JedisException;
 import redis.clients.jedis.Response;
 import redis.clients.jedis.params.ScanParams;
 import redis.clients.jedis.resps.ScanResult;
@@ -37,11 +38,18 @@ public final class MomentFanout {
     private final JedisPool pool;
     private final AlertAudience audience;
     private final GameLabels labels;
+    private final long tempKeyTtlSeconds;
 
     public MomentFanout(JedisPool pool, AlertAudience audience, GameLabels labels) {
+        this(pool, audience, labels, TEMP_KEY_TTL_SECONDS);
+    }
+
+    /** {@code tempKeyTtlSeconds}: how long an audience set outlives its last page; short only in tests. */
+    MomentFanout(JedisPool pool, AlertAudience audience, GameLabels labels, long tempKeyTtlSeconds) {
         this.pool = pool;
         this.audience = audience;
         this.labels = labels;
+        this.tempKeyTtlSeconds = tempKeyTtlSeconds;
     }
 
     public void send(Play play, Detectors.Result result, BiConsumer<String, NotificationMessage> sink) {
@@ -62,13 +70,19 @@ public final class MomentFanout {
             } else {
                 Pipeline p = jedis.pipelined();
                 p.sunionstore(union, built.keys().toArray(new String[0]));
-                p.expire(union, TEMP_KEY_TTL_SECONDS);
+                p.expire(union, tempKeyTtlSeconds);
                 RedisPipelines.syncChecked(p);
             }
             ScanParams params = new ScanParams().count(PAGE_SIZE);
             String cursor = ScanParams.SCAN_POINTER_START;
             do {
+                // A set that expired between pages would scan as empty and end the loop: the rest of
+                // the audience skipped without a word (#17). Fail instead; Stage 1 retries the play.
+                if (!cursor.equals(ScanParams.SCAN_POINTER_START) && !jedis.exists(union)) {
+                    throw new JedisException("fan-out set " + union + " expired between pages; the play will be retried");
+                }
                 ScanResult<String> page = jedis.sscan(union, cursor, params);
+                refreshTtl(jedis, union, built.keys());
                 List<String> users = page.getResult();
                 if (!users.isEmpty()) {
                     List<List<Boolean>> member = membership(jedis, built.keys(), users, alerts.size());
@@ -91,6 +105,17 @@ public final class MomentFanout {
             audience.drop(jedis, built);
             jedis.del(union);
         }
+    }
+
+    /**
+     * Gives the sets this fan-out still reads a full TTL again. It runs after each scan, not before:
+     * handing a page to Kafka, not the scan, is the slow part, so the sets must last one page's handling.
+     */
+    private void refreshTtl(Jedis jedis, String union, List<String> keys) {
+        Pipeline p = jedis.pipelined();
+        p.expire(union, tempKeyTtlSeconds);
+        for (String k : keys) p.expire(k, tempKeyTtlSeconds);
+        RedisPipelines.syncChecked(p);
     }
 
     /** For each alert, whether each user of the page is in its audience. A single alert needs no lookup. */
