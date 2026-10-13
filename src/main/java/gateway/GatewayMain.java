@@ -13,6 +13,7 @@ import util.JedisPoolHolder;
 import util.SimpleHttp;
 
 import java.net.InetAddress;
+import java.time.Duration;
 import java.time.Instant;
 import java.net.URLEncoder;
 import java.net.UnknownHostException;
@@ -20,6 +21,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -77,21 +79,18 @@ public final class GatewayMain {
         ScheduledExecutorService sweeper = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "idle-sweeper"));
         live.startSweeper(sweeper);
 
-        // Graceful shutdown: stop being anyone's gateway first, then tell every client to reconnect
-        // (code 4000), so Stage 2 stops publishing here while the browsers move to another gateway.
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                registry.removeAll(channel.users());
-            } catch (RuntimeException e) {
-                System.err.println("[Gateway] could not remove conn: entries; they expire in 90 s: " + e.getMessage());
-            }
-            channel.closeAll(4000, "server shutting down");
-            renewals.shutdownNow();
-            sweeper.shutdownNow();
-            channel.stop();
-            app.stop();
-            pool.close();
-        }));
+        // Graceful shutdown. Kubernetes has already waited 5 s (preStop) so new requests go elsewhere.
+        // Stop the renewals first, or a running one re-adds the entries just removed (#10); then stop
+        // being anyone's gateway, so Stage 2 stops publishing here; then tell every client to
+        // reconnect (4000) while the browsers move to another gateway; the Redis pool closes last,
+        // after anything that could still use it.
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> GatewayShutdown.run(
+            List.of(renewals, sweeper), Duration.ofSeconds(5), List.of(
+                () -> registry.removeAll(channel.users()),
+                () -> channel.closeAll(4000, "server shutting down"),
+                app::stop,
+                channel::stop,
+                pool::close))));
 
         System.out.println("[Gateway] listening on :" + port);
     }

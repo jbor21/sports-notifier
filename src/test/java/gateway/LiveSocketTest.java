@@ -82,13 +82,15 @@ class LiveSocketTest {
         }
     }
 
+    private String gatewayId;
+
     @BeforeEach
     void setUp() throws Exception {
         pool = new JedisPool(new JedisPoolConfig(), "localhost", 6379, 2000, null, 1);
         jedis = new Jedis("localhost", 6379);
         jedis.select(1);
         jedis.flushDB();
-        String gatewayId = "gw-" + UUID.randomUUID();
+        gatewayId = "gw-" + UUID.randomUUID();
         channel = new GatewayChannel(() -> new Jedis("localhost", 6379), gatewayId);
         channel.start();
         Thread.sleep(200);
@@ -117,6 +119,25 @@ class LiveSocketTest {
         c.ws = b.buildAsync(URI.create("ws://localhost:" + app.port() + "/api/v1/ws"), c).join();
         clients.add(c);
         return c;
+    }
+
+    /**
+     * Issue #9: a tab reload closes the user's last socket here while the new one registers. If the new
+     * socket's ZADD lands before the old one's ZREM, the open socket must still have its entry.
+     */
+    @Test
+    void reRegisteredUserKeepsConnEntry() {
+        new ConnectionRegistry(pool, gatewayId, 90).add("u7");
+        channel.register("u7", new GatewayChannelTest.FakeSocket());   // the new tab, registered in between
+        live.released("u7");
+        assertNotNull(jedis.zscore("conn:u7", gatewayId), "the open socket keeps its routing entry");
+    }
+
+    @Test
+    void releasedUserWithNoSocketLosesEntry() {
+        new ConnectionRegistry(pool, gatewayId, 90).add("u7");
+        live.released("u7");
+        assertNull(jedis.zscore("conn:u7", gatewayId));
     }
 
     @Test

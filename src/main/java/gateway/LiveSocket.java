@@ -171,7 +171,18 @@ public final class LiveSocket {
     private void gone(SocketSession session) {
         if (session == null || !sessions.remove(session)) return;
         games.removeAll(session);
-        if (channel.unregister(session.userId(), session)) registry.remove(session.userId());
+        if (channel.unregister(session.userId(), session)) released(session.userId());
+    }
+
+    /**
+     * The user's last socket here closed. A tab reload races this: the new socket can register (ZADD)
+     * just before the old one's ZREM lands, leaving an open socket with no routing entry until the
+     * next renewal, and its live pushes going nowhere (#9). Both run on this gateway, so checking our
+     * own sockets after the ZREM sees any that registered meanwhile.
+     */
+    void released(String userId) {
+        registry.remove(userId);
+        if (channel.users().contains(userId)) registry.add(userId);
     }
 
     /** Javalin's socket, as the routing code sees it. */

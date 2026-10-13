@@ -23,6 +23,9 @@ services:
     clusterService: true
     espn: true          # gets ESPN_HOST / ESPN_USER_AGENT for /api/upcoming
     podNameEnv: GATEWAY_ID   # this gateway's id: its channel is gw:<id>, and conn:<userId> names it
+    # Wait 5 s before SIGTERM so Traefik stops routing here first: no 504s during a rollout (#31).
+    # Needs Kubernetes 1.34+ (the native sleep action); terminationGracePeriodSeconds stays 30.
+    preStopSleepSeconds: 5
     env:
       USER_PREF_URL: http://user-pref:8081
       GAME_STATE_URL: http://game-state:8082
