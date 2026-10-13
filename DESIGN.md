@@ -2,7 +2,7 @@
 
 This is the map of the project: what it does today, what we are changing it into, and every decision we made on the way. It is written so you can explain the system without reading the code line by line.
 
-Last updated 2026-10-11. Phases 1, 2, 3.1–3.4, 3b, and 4.1 are merged (see "Build order"); 4.2, the chaos suite on k3d, is next. "What exists today" describes the course version as it was before the redesign.
+Last updated 2026-10-13. Phases 1, 2, 3.1–3.4, 3b, and 4.1 are merged (see "Build order"); 4.2, the chaos suite on k3d, is in PR #53; 4.3, traces and metrics, is next. "What exists today" describes the course version as it was before the redesign.
 
 Revised 2026-09-28: hosting moved from one always-on Hetzner VM to Kubernetes, run on your laptop (k3d) and on AWS (EKS) only when you want it up. Kafka gets three brokers in the cloud. The evidence step became a correctness checker plus a chaos suite. Decisions 2, 6, 7, and 9 changed; 12 through 14 are new.
 
