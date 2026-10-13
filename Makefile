@@ -68,11 +68,13 @@ simulate:
 SET   ?= evening
 SPEED ?= 10
 # Each replay set's length in replay minutes (scripts/pack-replay.py). A Job's time limit is that
-# length at SPEED plus room for setup and the end (whole-number SPEED); make stops on a set it doesn't
-# know rather than start a Job with a nonsense limit.
+# length at SPEED plus room for setup and the end; make stops on a set it doesn't know, or a SPEED that
+# is not a positive number, rather than start a Job with a nonsense limit.
 REPLAY_MINUTES_ci      := 136
 REPLAY_MINUTES_evening := 192
-deadline = $(if $(REPLAY_MINUTES_$(1)),$(shell expr $(REPLAY_MINUTES_$(1)) \* 60 / $(2) + $(3)),$(error unknown replay set $(1)))
+deadline = $(if $(REPLAY_MINUTES_$(1)),,$(error unknown replay set $(1)))$(or \
+  $(shell awk 'BEGIN { s = "$(2)" + 0; if (s > 0) printf "%d", $(REPLAY_MINUTES_$(1)) * 60 / s + $(3) }'),\
+  $(error SPEED must be a positive number, not "$(2)"))
 replay:
 	@scripts/run-job.sh --deadline $(call deadline,$(SET),$(SPEED),300) replay REPLAY_SET=$(SET) REPLAY_SPEED=$(SPEED)
 

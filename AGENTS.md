@@ -238,6 +238,9 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   its temporary sets every page and throws if one vanished (#17). The gateway stops renewals
   before removing `conn:` entries (`GatewayShutdown`, #10), re-adds a reloaded tab's entry (#9),
   and waits 5 s in `preStop` (native `sleep`; Kubernetes 1.34+) before SIGTERM (#31).
+  `bash scripts/test-chaos-scripts.sh` tests the scripts' failure paths with a fake kubectl (a
+  failed group read, a failed heal, an API blip during a Job, fractional `SPEED`); a fault step
+  that cannot run fails its scenario, never the suite.
 - **Fixed after 3.4:** #29: `Db.create` passed `socketTimeout` as a number, which the
   Postgres driver silently ignores, so no connection had a read timeout; now a string
   (`DbTest`), and `HistoryStore` aborts a statement past `HISTORY_INSERT_DEADLINE_MS`

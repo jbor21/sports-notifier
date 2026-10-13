@@ -43,15 +43,23 @@ k logs -f "job/$name" || true
 
 # A log stream can end before the Job does (a dropped connection), so the verdict is the Job's own
 # Complete or Failed condition, however long that takes; the time limit bounds it.
+# A failed read (an API blip) is retried for a minute rather than reported as the Job failing.
+misses=0
 while :; do
-  conditions=$(k get job "$name" -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}:{.reason} {end}')
+  if ! conditions=$(k get job "$name" -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}:{.reason} {end}'); then
+    misses=$((misses + 1))
+    [ "$misses" -lt 30 ] || { echo "job/$name: could not read its status for a minute" >&2; exit 1; }
+    sleep 2
+    continue
+  fi
+  misses=0
   case " $conditions" in
     *" Complete:"*|*" Failed:"*) break ;;
   esac
   sleep 2
 done
 if [[ " $conditions" == *" Failed:DeadlineExceeded"* ]]; then
-  echo "job/$name: time limit reached ($deadline s)" >&2
+  echo "job/$name: time limit reached${deadline:+ ($deadline s)}" >&2
   exit 1
 fi
 code=$(k get pods -l job-name="$name" -o jsonpath='{.items[0].status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || true)

@@ -27,7 +27,7 @@ fi
 
 # The scenarios assume a second copy takes over; with one copy a crash only tests a restart.
 for d in stage1-worker stage2-worker gateway; do
-  n=$(_k get deploy "$d" -o jsonpath='{.spec.replicas}')
+  n=$(_k get deploy "$d" -o jsonpath='{.spec.replicas}') || { echo "chaos: cannot read deployment/$d" >&2; exit 2; }
   [ "${n:-0}" -ge 2 ] || { echo "chaos: deployment/$d runs $n copies; the suite needs at least 2 (make up restores the chart's)" >&2; exit 2; }
 done
 
@@ -40,8 +40,12 @@ job_pid="" loop_pid="" log=""
 # Whatever happens (a failure, Ctrl-C), leave nothing cut and no request loop running. A checker Job
 # still running is stopped too; its synthetic users are then removed by `make check-clean`.
 cleanup() {
-  chaos_heal
-  [ -z "$loop_pid" ] || kill "$loop_pid" 2>/dev/null || true
+  set +e   # every step runs, whatever fails before it
+  [ -z "$loop_pid" ] || kill "$loop_pid" 2>/dev/null
+  if ! chaos_heal; then
+    echo "chaos: could not heal the cluster; it may still be cut. Run:" >&2
+    echo "  kubectl --context $KUBE_CONTEXT delete networkpolicy chaos-cut; kubectl --context $KUBE_CONTEXT label pods -l chaos chaos-" >&2
+  fi
   if [ -n "$job_pid" ] && kill -0 "$job_pid" 2>/dev/null; then
     kill "$job_pid" 2>/dev/null || true
     job=$(grep -oE '^job/checker-[0-9a-z-]+' "$log" | head -1 || true)
@@ -65,13 +69,14 @@ deployment_of() {
   esac
 }
 
-# Sets fault_ok and proof.
+# Each fault sets fault_ok and proof, and returns non-zero if a step of it could not run. It runs
+# inside `if`, where errexit is off, so every step that matters checks its own result.
 crash() {
   local pod before
-  pod=$(chaos_first_pod "$(deployment_of "$1")")
-  before=$(chaos_restarts "$pod")
+  pod=$(chaos_first_pod "$(deployment_of "$1")") && [ -n "$pod" ] || { proof="no running pod to crash"; return 1; }
+  before=$(chaos_restarts "$pod") || return 1
   say "crash $pod (restarts $before)"
-  chaos_crash "$pod"
+  chaos_crash "$pod" 2>>"$log" || { proof="crictl could not stop $pod"; return 1; }
   if chaos_wait_restarted "$pod" "$before" 2>>"$log"; then
     proof="$pod restarted at +$fault_at s"
   else
@@ -88,7 +93,10 @@ rollout() {
   ( while :; do curl -s -o /dev/null -w '%{http_code}\n' --max-time 5 "$BASE_URL/" >> "$codes" || true; sleep 0.1; done ) &
   loop_pid=$!
   say "rollout restart deployment/gateway (old pods: $old)"
-  chaos_rollout gateway
+  if ! chaos_rollout gateway; then
+    kill "$loop_pid" 2>/dev/null; loop_pid=""
+    proof="the rollout did not finish"; return 1
+  fi
   nap 10
   kill "$loop_pid" 2>/dev/null || true; wait "$loop_pid" 2>/dev/null || true; loop_pid=""
   new=$(_k get pods -l app.kubernetes.io/name=gateway --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}')
@@ -102,14 +110,20 @@ rollout() {
 # A worker cut off from Kafka for 60 s while it keeps Redis; at 50 s its IP must have left the group.
 cut() {
   local pod ip group left back
-  pod=$(chaos_first_pod "$(deployment_of "$1")")
-  ip=$(chaos_pod_ip "$pod")
+  local members
+  pod=$(chaos_first_pod "$(deployment_of "$1")") && [ -n "$pod" ] || { proof="no running pod to cut"; return 1; }
+  ip=$(chaos_pod_ip "$pod") || return 1
   group=${1%%-*}
   say "cut $pod ($ip) from Kafka"
-  chaos_cut "$pod"
+  chaos_cut "$pod" || { chaos_heal "$pod"; proof="could not apply the cut to $pod"; return 1; }
   nap 50
-  if chaos_members "$group" | grep -qx "$ip"; then
+  # Proof needs a successful read showing the other copy still in the group and the cut pod gone.
+  if ! members=$(chaos_members "$group"); then
+    fault_ok=0; proof="could not read group $group at 50 s"
+  elif grep -qx "$ip" <<< "$members"; then
     fault_ok=0; proof="fault did not land: $pod still in $group after 50 s"
+  elif [ -z "$members" ]; then
+    fault_ok=0; proof="group $group was empty at 50 s: the other copy is gone too"
   fi
   left=$((SECONDS - t0))
   nap 10
@@ -162,11 +176,14 @@ for name in "${run[@]}"; do
   nap $((replay * 40 / 100))
   fault_at=$((SECONDS - t_run))
   say "fault at +$fault_at s into a $replay s replay"
-  case $name in
-    *-crash) crash "$name" ;;
-    gateway-rollout) rollout "$name" ;;
-    *-cut) cut "$name" ;;
-  esac
+  # A fault step that cannot run fails this scenario, never the suite (spec 4.2).
+  if ! case $name in
+         *-crash) crash "$name" ;;
+         gateway-rollout) rollout "$name" ;;
+         *-cut) cut "$name" ;;
+       esac; then
+    fault_ok=0; proof="fault step failed: ${proof:-see the log}"
+  fi
   say "$proof"
 
   wait "$job_pid" || rc=$?

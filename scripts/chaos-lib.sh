@@ -83,20 +83,25 @@ EOF
 }
 
 # Ends a cut. With no pod, removes the label from every pod: safe to call when nothing is cut.
+# Fails if the policy could not be deleted, so a caller can say the cluster is still cut.
 chaos_heal() {
-  _k delete networkpolicy chaos-cut --ignore-not-found >/dev/null
+  local rc=0
+  _k delete networkpolicy chaos-cut --ignore-not-found >/dev/null || rc=1
   if [ $# -gt 0 ]; then
     _k label pod "$1" chaos- >/dev/null 2>&1 || true
   else
     _k label pods -l chaos chaos- >/dev/null 2>&1 || true
   fi
+  return $rc
 }
 
-# The IPs of a consumer group's members, one per line (nothing for an empty group).
+# The IPs of a consumer group's members, one per line (nothing for an empty group). Fails if the
+# group could not be read: an unreadable group must never pass for "the cut pod left it".
 chaos_members() {
-  _k exec "$RELEASE-dual-role-0" -c kafka -- bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
-    --describe --group "$1" --members 2>/dev/null \
-    | awk '$3 ~ /^\// { sub("/", "", $3); print $3 }'
+  local out
+  out=$(_k exec "$RELEASE-dual-role-0" -c kafka -- bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+    --describe --group "$1" --members 2>/dev/null) || return 1
+  printf '%s\n' "$out" | awk '$3 ~ /^\// { sub("/", "", $3); print $3 }'
 }
 
 chaos_rollout() {
@@ -104,10 +109,11 @@ chaos_rollout() {
   _k rollout status "deployment/$1" --timeout=180s >/dev/null
 }
 
-# Waits up to 180 s until every Deployment of the app is fully ready, the broker is ready, and each
+# Waits up to CHAOS_STEADY_SECONDS (180) until every Deployment of the app is fully ready, the broker is ready, and each
 # consumer group has one member per pod of its Deployment. Prints "steady", or why not and fails.
 chaos_steady() {
-  local why="" deadline=$((SECONDS + 180)) name want ready
+  local limit=${CHAOS_STEADY_SECONDS:-180} why="" name want ready
+  local deadline=$((SECONDS + limit))
   while :; do
     why=""
     while read -r name want ready; do
@@ -124,7 +130,7 @@ chaos_steady() {
       done
     fi
     if [ -z "$why" ]; then echo steady; return 0; fi
-    if [ $SECONDS -ge $deadline ]; then echo "not steady after 180 s:$why" >&2; return 1; fi
+    if [ $SECONDS -ge $deadline ]; then echo "not steady after $limit s:$why" >&2; return 1; fi
     sleep 3
   done
 }
