@@ -15,7 +15,7 @@ export KUBE_CONTEXT
 # A new tag per build so Kubernetes always rolls pods onto new code. Uncommitted changes get a unique suffix.
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
-.PHONY: test cluster up simulate replay check check-clean check-selftest smoke e2e logs down replay-detectors
+.PHONY: test cluster up simulate replay check check-clean check-selftest chaos smoke e2e logs down replay-detectors
 
 # Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
 # until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
@@ -99,6 +99,16 @@ check-selftest:
 			$(if $(USERS),CHECK_USERS=$(USERS)) $(if $(SEED),CHECK_SEED=$(SEED)) \
 			|| { echo "check-selftest: FAULT=$$fault was not caught"; exit 1; }; \
 	done
+
+# The chaos suite: each scenario is one checked replay (evening at 60x unless SET/SPEED are given)
+# with one fault at 40% of the way: a crash, a gateway rollout, or a worker cut off from Kafka.
+#   make chaos [SCENARIO=stage2-crash]   (all eight by default; reports in target/chaos/)
+SCENARIO ?= all
+CHAOS_SET   = $(if $(filter command line,$(origin SET)),$(SET),evening)
+CHAOS_SPEED = $(if $(filter command line,$(origin SPEED)),$(SPEED),60)
+chaos:
+	@SET=$(CHAOS_SET) SPEED=$(CHAOS_SPEED) DEADLINE=$(call deadline,$(CHAOS_SET),$(CHAOS_SPEED),900) \
+		scripts/chaos.sh $(SCENARIO)
 
 smoke:
 	@scripts/smoke-test.sh
