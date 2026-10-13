@@ -104,6 +104,7 @@ simulator:
 replay:
   set: evening
   speed: 10
+  activeDeadlineSeconds: 14400   # for a Job started without one; make replay passes its own (evening at 1x is 3.2 h)
 
 # The correctness checker (tools.Checker): make check runs one Job with these defaults; the make
 # command line overrides them (SET, SPEED, USERS, SEED). It holds a socket per synthetic user and
@@ -113,6 +114,7 @@ checker:
   speed: 10
   users: 500
   seed: 1
+  activeDeadlineSeconds: 3600    # for a Job started without one; make check passes its own (#49)
   resources:
     requests: { cpu: 200m, memory: 512Mi }
     limits: { memory: 1Gi }

@@ -119,11 +119,27 @@ public final class Checker {
         System.exit(code);
     }
 
+    /** The replay set, or a setup failure naming it (exit 2, before any user or game exists). */
+    static List<RecordedScoreFeed.Line> loadSet(String set) {
+        try {
+            return RecordedScoreFeed.load(set);
+        } catch (IllegalArgumentException e) {
+            throw new SetupException(e.getMessage(), e);
+        }
+    }
+
     private int run() throws Exception {
         if (fault != null) Faults.primaryKind(fault);              // reject an unknown fault before doing anything
+        List<RecordedScoreFeed.Line> lines;
+        try {
+            lines = loadSet(set);
+        } catch (SetupException e) {
+            System.out.println("SETUP FAILED: " + e.getMessage());
+            return 2;
+        }
         long runStart = System.currentTimeMillis();
         String runId = RunId.of(runStart / 1000);
-        RecordedScoreFeed feed = new RecordedScoreFeed(RecordedScoreFeed.load(set), runId, runStart,
+        RecordedScoreFeed feed = new RecordedScoreFeed(lines, runId, runStart,
                 System::currentTimeMillis, speed);
         Replay replay = new Replay(feed, new Poller(feed, pool, new HttpEventSink(epsUrl), System::currentTimeMillis),
                 pool, Replay.pollMillis(speed));

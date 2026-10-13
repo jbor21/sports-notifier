@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 # Runs one of the chart's suspended CronJobs (replay, checker) once, as a one-off Job, streams its log,
-# and exits with the Job's result: 0 if it succeeded, 1 if it failed or never finished.
+# and exits with the Job's result: the pod's own exit code (the checker: 0 PASS, 1 FAIL, 2 SETUP
+# FAILED), or 1 if the Job ran out of time or never got a pod.
 #
-# Usage: scripts/run-job.sh <cronjob> [KEY=VALUE ...]   (KEY=VALUE args override the Job's env)
+# Usage: scripts/run-job.sh [--deadline SECONDS] <cronjob> [KEY=VALUE ...]
+#   --deadline  the Job's time limit (activeDeadlineSeconds); Kubernetes stops it after that long
+#   KEY=VALUE   overrides the Job's env
 set -euo pipefail
 
 KUBE_CONTEXT=${KUBE_CONTEXT:-k3d-sports-notifier}
 k() { kubectl --context "$KUBE_CONTEXT" "$@"; }
+usage() { echo "usage: run-job.sh [--deadline SECONDS] <cronjob> [KEY=VALUE ...]" >&2; exit 2; }
 
-[ $# -ge 1 ] || { echo "usage: run-job.sh <cronjob> [KEY=VALUE ...]" >&2; exit 2; }
+deadline=""
+if [ "${1:-}" = --deadline ]; then
+  [[ "${2:-}" =~ ^[0-9]+$ ]] || usage
+  deadline=$2; shift 2
+fi
+[ $# -ge 1 ] || usage
 cronjob=$1; shift
 for arg in "$@"; do
   [[ "$arg" =~ ^[A-Z_][A-Z0-9_]*= ]] || { echo "not KEY=VALUE: $arg" >&2; exit 2; }
@@ -22,7 +31,9 @@ if [[ $# -gt 0 ]]; then
 else
   k create job "$name" --from="cronjob/$cronjob" >/dev/null
 fi
-echo "job/$name" >&2
+# The time limit is mutable on a running Job and counts from its start, so set it right after creating.
+[ -z "$deadline" ] || k patch job "$name" --type merge -p "{\"spec\":{\"activeDeadlineSeconds\":$deadline}}" >/dev/null
+echo "job/$name${deadline:+ (time limit $deadline s)}" >&2
 
 # Wait for the pod to start (image already in the cluster), then follow its log to the end.
 k wait --for=condition=Ready pod -l job-name="$name" --timeout=120s >/dev/null 2>&1 \
@@ -30,10 +41,20 @@ k wait --for=condition=Ready pod -l job-name="$name" --timeout=120s >/dev/null 2
   || k wait --for=jsonpath='{.status.phase}'=Failed pod -l job-name="$name" --timeout=5s >/dev/null 2>&1 || true
 k logs -f "job/$name" || true
 
-for _ in $(seq 1 30); do
-  if [ "$(k get job "$name" -o jsonpath='{.status.succeeded}')" = "1" ]; then exit 0; fi
-  if [ "$(k get job "$name" -o jsonpath='{.status.failed}')" = "1" ]; then exit 1; fi
+# A log stream can end before the Job does (a dropped connection), so the verdict is the Job's own
+# Complete or Failed condition, however long that takes; the time limit bounds it.
+while :; do
+  conditions=$(k get job "$name" -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}:{.reason} {end}')
+  case " $conditions" in
+    *" Complete:"*|*" Failed:"*) break ;;
+  esac
   sleep 2
 done
-echo "job/$name did not finish" >&2
-exit 1
+if [[ " $conditions" == *" Failed:DeadlineExceeded"* ]]; then
+  echo "job/$name: time limit reached ($deadline s)" >&2
+  exit 1
+fi
+code=$(k get pods -l job-name="$name" -o jsonpath='{.items[0].status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || true)
+if [[ " $conditions" == *" Complete:"* ]]; then exit "${code:-0}"; fi
+echo "job/$name failed${code:+ (exit $code)}" >&2
+exit "${code:-1}"

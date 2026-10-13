@@ -67,8 +67,14 @@ simulate:
 # Recorded ESPN games through the real poller and pipeline, e.g. make replay SET=ci SPEED=60.
 SET   ?= evening
 SPEED ?= 10
+# Each replay set's length in replay minutes (scripts/pack-replay.py). A Job's time limit is that
+# length at SPEED plus room for setup and the end (whole-number SPEED); make stops on a set it doesn't
+# know rather than start a Job with a nonsense limit.
+REPLAY_MINUTES_ci      := 136
+REPLAY_MINUTES_evening := 192
+deadline = $(if $(REPLAY_MINUTES_$(1)),$(shell expr $(REPLAY_MINUTES_$(1)) \* 60 / $(2) + $(3)),$(error unknown replay set $(1)))
 replay:
-	@scripts/run-job.sh replay REPLAY_SET=$(SET) REPLAY_SPEED=$(SPEED)
+	@scripts/run-job.sh --deadline $(call deadline,$(SET),$(SPEED),300) replay REPLAY_SET=$(SET) REPLAY_SPEED=$(SPEED)
 
 # The correctness checker: synthetic users follow the replayed games, then every push is checked in
 # history and on every socket. Prints a report and exits 0 only on PASS, e.g.
@@ -79,17 +85,17 @@ replay:
 CHECK_OPTS = $(if $(USERS),CHECK_USERS=$(USERS)) $(if $(SEED),CHECK_SEED=$(SEED)) \
              $(if $(KEEP),CHECK_KEEP=$(KEEP)) $(if $(FAULT),CHECK_FAULT=$(FAULT))
 check:
-	@scripts/run-job.sh checker CHECK_SET=$(SET) CHECK_SPEED=$(SPEED) $(CHECK_OPTS)
+	@scripts/run-job.sh --deadline $(call deadline,$(SET),$(SPEED),900) checker CHECK_SET=$(SET) CHECK_SPEED=$(SPEED) $(CHECK_OPTS)
 
 check-clean:
-	@scripts/run-job.sh checker CHECK_MODE=clean
+	@scripts/run-job.sh --deadline 600 checker CHECK_MODE=clean
 
 # Proof the checker can fail: three ci runs at 60x, each injecting one fault (a lost sub:* write, a
 # push delivered twice, a follow changed mid-run). Each run exits 0 only if it reports that fault.
 check-selftest:
 	@for fault in srem dup follow; do \
 		echo "=== check-selftest: FAULT=$$fault ==="; \
-		scripts/run-job.sh checker CHECK_SET=ci CHECK_SPEED=60 CHECK_FAULT=$$fault \
+		scripts/run-job.sh --deadline $(call deadline,ci,60,900) checker CHECK_SET=ci CHECK_SPEED=60 CHECK_FAULT=$$fault \
 			$(if $(USERS),CHECK_USERS=$(USERS)) $(if $(SEED),CHECK_SEED=$(SEED)) \
 			|| { echo "check-selftest: FAULT=$$fault was not caught"; exit 1; }; \
 	done
