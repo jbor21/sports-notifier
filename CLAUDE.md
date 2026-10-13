@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-10-12 (Phase 4.2 in PR #53; 4.3 next).
+asks. Last updated 2026-10-13 (Phase 4.2 merged, 4.3 next).
 
 ---
 
@@ -213,14 +213,16 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   plan `docs/superpowers/plans/2026-10-09-phase-4-1-replay-checker.md`; closed #16 and #18.
   Alert waves 2 and 3 moved to Phase 7. Replayed pushes reaching real accounts is #47
   (decide before Phase 6).
-- **Phase 4.2 (chaos suite on k3d) is in PR #53**: spec
+- **Phase 4.2 (chaos suite on k3d) is merged** (PR #53, 2026-10-13): spec
   `docs/superpowers/specs/2026-10-11-phase-4-2-chaos-design.md`, plan
   `docs/superpowers/plans/2026-10-11-phase-4-2-chaos.md`; closes #9, #10, #12, #17, #31, #44,
-  #48, #49. A Redis crash losing dedup claims (a duplicate push) is #52, after Phase 6.
+  #48, #49. All eight scenarios passed on the laptop and in the Chaos workflow. A Redis crash
+  losing dedup claims (a duplicate push) is #52, after Phase 6; the review's six deferred
+  minors are #54.
 - **Next step: Phase 4.3 (traces and metrics).** Must-fix before Phase 5: #36 (the live
   check). Before the checker runs on AWS: reserve the `ck_` prefix (#51); decide #47
   (replayed pushes reach real accounts) before Phase 6. Other deferred minors are issues
-  #19–#27, #35, #37–#43, #45, #50.
+  #19–#27, #35, #37–#43, #45, #50, #54.
 - **New in Phase 4.2:** `make chaos` (`scripts/chaos.sh`, primitives in `scripts/chaos-lib.sh`)
   runs eight scenarios, each one checker run on `evening` at 60× with one fault at 40% of the
   replay: crashes of Stage 1, Stage 2, History, a gateway, the broker (SIGKILL through `crictl`
