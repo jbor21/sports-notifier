@@ -53,11 +53,17 @@ public class Delivery {
      * INCR on a missing key would start at 1 instead of the real count, so a missing counter waits for
      * the gateway to fill it from Postgres. The new count goes to the same gateways, after the push.
      *
+     * The claim holds when the push was published, in epoch milliseconds from Redis's own TIME, so
+     * every delivery time comes from one clock. The checker uses it to tell a push lost on an open
+     * socket from one published while that socket was down (Phase 4.2 spec, 7.1). The dedup check is
+     * only EXISTS, so a claim written as '1' before this still dedups.
+     *
      * Returns 1 delivered, 0 already delivered.
      */
     private static final String DELIVER_SCRIPT =
         "if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end\n" +
-        "local now = tonumber(redis.call('TIME')[1])\n" +
+        "local t = redis.call('TIME')\n" +
+        "local now = tonumber(t[1])\n" +
         "redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now)\n" +
         "local gateways = redis.call('ZRANGE', KEYS[2], 0, -1)\n" +
         "if ARGV[2] ~= '' then\n" +
@@ -68,7 +74,7 @@ public class Delivery {
         "  local count = '{\"userId\":' .. ARGV[4] .. ',\"payload\":{\"type\":\"unread_count\",\"count\":' .. n .. '}}'\n" +
         "  for _, gw in ipairs(gateways) do redis.call('PUBLISH', ARGV[3] .. gw, count) end\n" +
         "end\n" +
-        "redis.call('SET', KEYS[1], '1', 'EX', ARGV[1])\n" +
+        "redis.call('SET', KEYS[1], now * 1000 + math.floor(tonumber(t[2]) / 1000), 'EX', ARGV[1])\n" +
         "return 1\n";
 
     private final JedisPool pool;
