@@ -106,9 +106,12 @@ check-selftest:
 SCENARIO ?= all
 CHAOS_SET   = $(if $(filter command line,$(origin SET)),$(SET),evening)
 CHAOS_SPEED = $(if $(filter command line,$(origin SPEED)),$(SPEED),60)
+# On a Mac the suite runs under caffeinate: a laptop that sleeps mid-run freezes the cluster and jumps
+# its clock, so a fault lands minutes late (seen on the first full run).
+CAFFEINATE := $(shell command -v caffeinate >/dev/null 2>&1 && echo caffeinate -i)
 chaos:
 	@SET=$(CHAOS_SET) SPEED=$(CHAOS_SPEED) DEADLINE=$(call deadline,$(CHAOS_SET),$(CHAOS_SPEED),900) \
-		scripts/chaos.sh $(SCENARIO)
+		$(CAFFEINATE) scripts/chaos.sh $(SCENARIO)
 
 smoke:
 	@scripts/smoke-test.sh
