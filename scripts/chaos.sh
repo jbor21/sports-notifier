@@ -25,6 +25,12 @@ else
   run=("$want")
 fi
 
+# The scenarios assume a second copy takes over; with one copy a crash only tests a restart.
+for d in stage1-worker stage2-worker gateway; do
+  n=$(_k get deploy "$d" -o jsonpath='{.spec.replicas}')
+  [ "${n:-0}" -ge 2 ] || { echo "chaos: deployment/$d runs $n copies; the suite needs at least 2 (make up restores the chart's)" >&2; exit 2; }
+done
+
 out="target/chaos/$(date -u +%Y%m%dT%H%MZ)"
 mkdir -p "$out"
 summary="$out/summary.txt"
