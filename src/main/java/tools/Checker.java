@@ -186,6 +186,9 @@ public final class Checker {
         List<FollowSnapshot> start = Snapshots.follows(db, userIds);
         applyFaultBeforeRun(plans, userIds);
         replay.start();
+        // scripts/chaos.sh times its fault from this line.
+        System.out.println("[Checker] run started: T0 " + t0 + ", replay "
+                + (long) Math.ceil(feed.lengthMillis() / speed / 1000) + " s at " + Report.speed(speed) + "x");
 
         EndCondition.State state = waitForEnd(replay);
         replay.stop();

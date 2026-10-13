@@ -34,8 +34,8 @@ public final class Report {
         int changed = n(byKind, "follow_changed");
         out.append(changed == 0 ? "follows   frozen ✓\n" : "follows   changed " + changed + "\n");
         out.append(String.format("outside the run: %d messages%n", r.outsideRun()));
-        out.append(String.format("latency detectedAt → socket: p50 %s  p99 %s  (preview; 4.3 measures it properly)%n",
-                percentile(r.latenciesMillis(), 50), percentile(r.latenciesMillis(), 99)));
+        out.append(String.format("latency detectedAt → socket: p50 %s  p99 %s  max %s  (preview; 4.3 measures it properly)%n",
+                percentile(r.latenciesMillis(), 50), percentile(r.latenciesMillis(), 99), percentile(r.latenciesMillis(), 100)));
         for (Map.Entry<String, List<Finding>> e : byKind.entrySet()) {
             List<Finding> fs = e.getValue();
             out.append(e.getKey()).append(": ").append(fs.size())
@@ -54,7 +54,8 @@ public final class Report {
         return byKind.getOrDefault(kind, List.of()).size();
     }
 
-    private static String speed(double s) {
+    /** 60, or 2.5: how the report and the run-started line print a speed. */
+    public static String speed(double s) {
         return s == Math.rint(s) ? String.valueOf((long) s) : String.valueOf(s);
     }
 

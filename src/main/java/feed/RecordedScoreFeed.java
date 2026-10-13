@@ -126,6 +126,11 @@ public final class RecordedScoreFeed implements ScoreFeed {
         return out;
     }
 
+    /** The set's length in replay time: its last snapshot's time. At speed {@code s} a run lasts this ÷ s. */
+    public long lengthMillis() {
+        return lastT;
+    }
+
     /** True once replay time has passed every game's last snapshot. */
     public boolean done() {
         long e = elapsed();
