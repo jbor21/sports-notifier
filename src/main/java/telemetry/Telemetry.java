@@ -8,6 +8,7 @@ import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdk;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -36,15 +37,7 @@ public final class Telemetry {
     static void init(String serviceName, Map<String, String> env) {
         String endpoint = env.get("OTEL_EXPORTER_OTLP_ENDPOINT");
         if (endpoint == null || endpoint.isBlank()) return;
-        // Our defaults first; every OTEL_* variable given overrides them. Only the HTTP sender is in the
-        // JAR, so the protocol defaults to http/protobuf, and logs stay in stdout.
-        Map<String, String> props = new HashMap<>();
-        props.put("otel.service.name", serviceName);
-        props.put("otel.exporter.otlp.protocol", "http/protobuf");
-        props.put("otel.logs.exporter", "none");
-        env.forEach((k, v) -> {
-            if (k.startsWith("OTEL_")) props.put(k.toLowerCase(Locale.ROOT).replace('_', '.'), v);
-        });
+        Map<String, String> props = properties(serviceName, env);
         OpenTelemetrySdk built = AutoConfiguredOpenTelemetrySdk.builder()
             .addPropertiesSupplier(() -> props)
             .disableShutdownHook()          // Launcher's hook calls close()
@@ -52,6 +45,32 @@ public final class Telemetry {
             .getOpenTelemetrySdk();
         sdk = built;
         install(built);
+    }
+
+    /**
+     * The SDK's settings: our defaults first, then every OTEL_* variable given. Only the HTTP sender is
+     * in the JAR, so the protocol defaults to http/protobuf, and logs stay in stdout.
+     *
+     * Each process is its own {@code service.instance.id} (the pod name, which Kubernetes puts in
+     * HOSTNAME). Without one, Prometheus files the two gateways' metrics, or the two Stage 1s', under
+     * one series, and every alternation between their counters reads as a reset: rates in the
+     * hundreds while idle, and a p99 that never comes down after a spike (seen in the first chaos run).
+     */
+    static Map<String, String> properties(String serviceName, Map<String, String> env) {
+        Map<String, String> props = new HashMap<>();
+        props.put("otel.service.name", serviceName);
+        props.put("otel.exporter.otlp.protocol", "http/protobuf");
+        props.put("otel.logs.exporter", "none");
+        env.forEach((k, v) -> {
+            if (k.startsWith("OTEL_")) props.put(k.toLowerCase(Locale.ROOT).replace('_', '.'), v);
+        });
+        String attrs = props.getOrDefault("otel.resource.attributes", "");
+        if (!attrs.contains("service.instance.id=")) {
+            String host = env.get("HOSTNAME");
+            String id = "service.instance.id=" + (host == null || host.isBlank() ? UUID.randomUUID() : host);
+            props.put("otel.resource.attributes", attrs.isBlank() ? id : attrs + "," + id);
+        }
+        return props;
     }
 
     /** Makes {@code o} the implementation every span and metric uses from now on (tests install their own). */

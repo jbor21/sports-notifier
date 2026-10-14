@@ -51,4 +51,30 @@ class TelemetryTest {
         Telemetry.close();
         assertTrue(System.nanoTime() - closing < 6_000_000_000L, "close took over 6 s");
     }
+
+    @Test
+    void eachProcessIsItsOwnInstance() {
+        // Two copies of a service must not share a metric series: Prometheus would read every
+        // alternation between their counters as a reset.
+        Map<String, String> props = Telemetry.properties("gateway", Map.of("HOSTNAME", "gateway-7c9-x2k"));
+        assertEquals("service.instance.id=gateway-7c9-x2k", props.get("otel.resource.attributes"));
+        assertEquals("gateway", props.get("otel.service.name"));
+    }
+
+    @Test
+    void givenResourceAttributesKeepTheirOwnInstance() {
+        Map<String, String> props = Telemetry.properties("gateway",
+            Map.of("HOSTNAME", "h", "OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=laptop"));
+        assertEquals("deployment.environment=laptop,service.instance.id=h", props.get("otel.resource.attributes"));
+        props = Telemetry.properties("gateway", Map.of("OTEL_RESOURCE_ATTRIBUTES", "service.instance.id=mine"));
+        assertEquals("service.instance.id=mine", props.get("otel.resource.attributes"));
+    }
+
+    @Test
+    void noHostnameStillUnique() {
+        String a = Telemetry.properties("x", Map.of()).get("otel.resource.attributes");
+        String b = Telemetry.properties("x", Map.of()).get("otel.resource.attributes");
+        assertTrue(a.startsWith("service.instance.id="), a);
+        assertNotEquals(a, b);
+    }
 }
