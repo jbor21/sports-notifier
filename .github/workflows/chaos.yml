@@ -33,6 +33,10 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
+      # The runner has about 14 GB of free disk; with the observability image (Phase 4.3) the k3d node fell
+      # below kubelet's eviction threshold and every pod was evicted. These preinstalled SDKs are never used.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
       - name: Install k3d
         run: curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=$K3D_VERSION bash
       - uses: azure/setup-helm@v5
