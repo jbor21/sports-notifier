@@ -5,7 +5,6 @@ import service.PlayPublisher;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
@@ -42,11 +41,11 @@ public final class OutboxRelay {
     public CompletableFuture<Void> runOnce() {
         List<CompletableFuture<Void>> sends = new ArrayList<>();
         for (String gameId : outbox.gamesWaitingSince(nowMillis.getAsLong() - minAgeMillis)) {
-            Optional<GameEvent> play = outbox.play(gameId);
-            play.ifPresent(p -> {
+            outbox.waiting(gameId).ifPresent(w -> {
+                GameEvent p = w.play();
                 String key = p.getGameId() + ":" + p.getVersion();
                 if (!inFlight.add(key)) return;
-                sends.add(outbox.send(publisher, p)
+                sends.add(outbox.send(publisher, p, w.traceparent(), true)
                     .whenComplete((ok, err) -> inFlight.remove(key))
                     .exceptionally(err -> null));
             });

@@ -62,7 +62,7 @@ class OutboxTest {
     @Test
     void acceptWritesPlayWithVersionToOutbox() {
         service(new TestPublisher(false)).processEvent(play("e10", 10, 2));
-        GameEvent waiting = outbox.play("g1").orElseThrow();
+        GameEvent waiting = outbox.waiting("g1").orElseThrow().play();
         assertEquals(V1, waiting.getVersion());
         assertEquals("e10", waiting.getEventId());
         assertEquals(10L, waiting.getSeq());
@@ -96,7 +96,7 @@ class OutboxTest {
     void sixteenDigitSeqSurvivesTheOutbox() {
         // Simulator seqs are 16 digits; the outbox must not round them (cjson would print 1.79e+15).
         service(new TestPublisher(false)).processEvent(play("sim", 1_790_000_000_000_005L, 5));
-        assertEquals(1_790_000_000_000_005L, outbox.play("g1").orElseThrow().getSeq());
+        assertEquals(1_790_000_000_000_005L, outbox.waiting("g1").orElseThrow().play().getSeq());
     }
 
     @Test
@@ -106,5 +106,17 @@ class OutboxTest {
             "LAL", "BOS", 1, 0, "IN_PROGRESS", "NBA", 10);
         new EventProcessingServiceImpl(pool, new TestPublisher(false), () -> 9_000L).processEvent(other);
         assertEquals(List.of("g1"), outbox.gamesWaitingSince(4_000L));
+    }
+
+    @Test
+    void waitingReadsTraceparent() {
+        String tp = "00-5b8efff798038103d269b633813fc60c-eee19b7ec3c1b174-01";
+        String json = util.GameEventParser.toJson(play("e10", 10, 2));
+        jedis.hset("outbox:g1", java.util.Map.of("version", "7", "play", json, "traceparent", tp));
+        assertEquals(tp, outbox.waiting("g1").orElseThrow().traceparent());
+        jedis.hdel("outbox:g1", "traceparent");
+        assertNull(outbox.waiting("g1").orElseThrow().traceparent());
+        jedis.hset("outbox:g1", "traceparent", "");
+        assertNull(outbox.waiting("g1").orElseThrow().traceparent());
     }
 }

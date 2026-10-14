@@ -15,6 +15,7 @@ public final class TestPublisher implements PlayPublisher {
 
     public final List<GameEvent> plays = new ArrayList<>();
     public final List<CompletableFuture<Void>> pending = new ArrayList<>();
+    private final List<String> traceparents = new ArrayList<>();
     private final boolean autoComplete;
 
     public TestPublisher(boolean autoComplete) {
@@ -22,11 +23,17 @@ public final class TestPublisher implements PlayPublisher {
     }
 
     @Override
-    public synchronized CompletableFuture<Void> publish(GameEvent play) {
+    public synchronized CompletableFuture<Void> publish(GameEvent play, String traceparent) {
         plays.add(play);
+        traceparents.add(traceparent);
         CompletableFuture<Void> f = autoComplete ? CompletableFuture.completedFuture(null) : new CompletableFuture<>();
         pending.add(f);
         return f;
+    }
+
+    /** The trace context sent with each play, in order (null: none). */
+    public synchronized List<String> traceparents() {
+        return new ArrayList<>(traceparents);
     }
 
     /** Event types sent, in order. */

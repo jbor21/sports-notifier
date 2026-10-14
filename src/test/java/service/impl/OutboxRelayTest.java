@@ -1,5 +1,7 @@
 package service.impl;
 
+import io.opentelemetry.api.common.AttributeKey;
+import testsupport.TelemetryTestSupport;
 import model.GameEvent;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -152,7 +154,7 @@ class OutboxRelayTest {
         // Review Focus 4: Kafka is slow, not down. The first send reaches the log but its confirmation
         // is late; the retry loop sends the same play again. One duplicate (same version), never a reorder.
         CompletableFuture<Void> lateConfirmation = new CompletableFuture<>();
-        PlayPublisher slow = p -> kafka.publish(p).thenCompose(ok -> lateConfirmation);
+        PlayPublisher slow = (p, tp) -> kafka.publish(p, tp).thenCompose(ok -> lateConfirmation);
         EventProcessingServiceImpl eps = new EventProcessingServiceImpl(pool, slow, now::get);
         eps.processEvent(play("g1", 10, 1));
         relay(kafka, 0).runOnce().get(10, TimeUnit.SECONDS);
@@ -161,5 +163,33 @@ class OutboxRelayTest {
         assertEquals(ProcessResult.ACCEPTED, eps.processEvent(play("g1", 11, 2)));
         List<Long> versions = fromOne(versionsOnTopic(topic, "g1", Duration.ofSeconds(2)));
         assertEquals(List.of(1L, 1L, 2L), versions);
+    }
+
+    @Test
+    void relayJoinsTheOriginalTrace() throws Exception {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            new EventProcessingServiceImpl(pool, new TestPublisher(false), now::get).processEvent(play("g1", 10, 1));
+            TestPublisher later = new TestPublisher(true);
+            new OutboxRelay(outbox, later, () -> Long.MAX_VALUE / 2, 0).runOnce().get(10, TimeUnit.SECONDS);
+            var accept = otel.spans("accept").get(0);
+            var retry = otel.spans("produce").stream()
+                .filter(sp -> Boolean.TRUE.equals(sp.getAttributes().get(AttributeKey.booleanKey("produce.retry"))))
+                .findFirst().orElseThrow();
+            assertEquals(accept.getTraceId(), retry.getTraceId());
+            assertEquals(accept.getSpanId(), retry.getParentSpanId());
+            assertTrue(later.traceparents().get(0).contains(retry.getSpanId()), "the record carries the produce span");
+        }
+    }
+
+    @Test
+    void slotWithoutTraceparentRelaysAsNewTrace() throws Exception {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            jedis.hset("outbox:g1", java.util.Map.of("version", "1", "play", util.GameEventParser.toJson(play("g1", 10, 1))));
+            jedis.zadd("outbox:pending", 1, "g1");
+            TestPublisher later = new TestPublisher(true);
+            new OutboxRelay(outbox, later, () -> Long.MAX_VALUE / 2, 0).runOnce().get(10, TimeUnit.SECONDS);
+            assertEquals(1, later.plays.size());
+            assertFalse(otel.spans("produce").get(0).getParentSpanContext().isValid());
+        }
     }
 }

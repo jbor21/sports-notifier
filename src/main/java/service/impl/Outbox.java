@@ -1,9 +1,13 @@
 package service.impl;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.api.trace.StatusCode;
 import model.GameEvent;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import service.PlayPublisher;
+import telemetry.Traces;
 import util.GameEventParser;
 import util.RedisKeys;
 
@@ -51,19 +55,37 @@ public final class Outbox {
         }
     }
 
+    /** A play waiting in its game's slot, and the trace context the accept script saved with it (or null). */
+    public record Waiting(GameEvent play, String traceparent) {}
+
     /**
      * Sends a waiting play and clears its slot once the log confirms it. If the send fails, the slot
      * stays and the retry loop sends it again. Both Event Processing and the retry loop send this way.
      *
+     * The send is a {@code produce} span whose parent is the accept span saved with the play, so a
+     * play the retry loop sends after a broker outage, from another thread, is still part of its trace
+     * and the wait shows as a gap in it (Phase 4.3 spec, 3.2). The record carries the produce span.
+     *
+     * @param parentTraceparent the accept span's context, or null (an older slot, or telemetry off)
+     * @param retry true when the retry loop sends it
      * @return completes after the slot is cleared; completes exceptionally if the send failed
      */
-    public CompletableFuture<Void> send(PlayPublisher publisher, GameEvent play) {
+    public CompletableFuture<Void> send(PlayPublisher publisher, GameEvent play, String parentTraceparent, boolean retry) {
+        Span span = Traces.start("produce", SpanKind.PRODUCER, Traces.fromTraceparent(parentTraceparent));
+        span.setAttribute("produce.retry", retry);
         CompletableFuture<Void> sent;
         try {
-            sent = publisher.publish(play);
+            sent = publisher.publish(play, Traces.traceparent(span));
         } catch (RuntimeException e) {
             sent = CompletableFuture.failedFuture(e);
         }
+        sent.whenComplete((ok, err) -> {
+            if (err != null) {
+                span.recordException(err);
+                span.setStatus(StatusCode.ERROR);
+            }
+            span.end();
+        });
         return sent.whenComplete((ok, err) -> {
             if (err != null) {
                 System.err.println("[Outbox] send failed, left in the outbox for retry: "
@@ -87,11 +109,13 @@ public final class Outbox {
     }
 
     /** The play waiting for this game, with its version set, if there is one. */
-    public Optional<GameEvent> play(String gameId) {
+    public Optional<Waiting> waiting(String gameId) {
         try (Jedis jedis = pool.getResource()) {
             Map<String, String> slot = jedis.hgetAll(RedisKeys.OUTBOX_PREFIX + gameId);
             if (slot.isEmpty()) return Optional.empty();
-            return Optional.of(GameEventParser.parse(slot.get("play")).withVersion(Long.parseLong(slot.get("version"))));
+            GameEvent play = GameEventParser.parse(slot.get("play")).withVersion(Long.parseLong(slot.get("version")));
+            String traceparent = slot.get("traceparent");
+            return Optional.of(new Waiting(play, traceparent == null || traceparent.isEmpty() ? null : traceparent));
         }
     }
 }

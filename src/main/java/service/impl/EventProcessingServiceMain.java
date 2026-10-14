@@ -1,7 +1,9 @@
 package service.impl;
 
 import io.javalin.Javalin;
+import io.opentelemetry.context.Scope;
 import service.ProcessResult;
+import telemetry.Traces;
 import redis.clients.jedis.JedisPool;
 import util.GsonJsonMapper;
 import util.JedisPoolHolder;
@@ -45,8 +47,12 @@ public final class EventProcessingServiceMain {
 
         // Duplicate and stale are not errors: the sender did its job, there was just nothing new.
         // Only INVALID is a 400. A Redis failure throws, so Javalin answers 500 and the poller retries.
+        // The poller's poll span arrives as a traceparent header; the accept span becomes its child.
         app.post("/events", ctx -> {
-            ProcessResult result = eps.processJson(ctx.body());
+            ProcessResult result;
+            try (Scope scope = Traces.fromTraceparent(ctx.header(Traces.HEADER)).makeCurrent()) {
+                result = eps.processJson(ctx.body());
+            }
             ctx.status(result == ProcessResult.INVALID ? 400 : 200)
                .json(Collections.singletonMap("result", result.name().toLowerCase()));
         });

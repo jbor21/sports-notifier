@@ -4,8 +4,10 @@ import model.GameEvent;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import service.PlayPublisher;
+import telemetry.Traces;
 import util.GameEventParser;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
@@ -26,10 +28,12 @@ public final class KafkaPlayPublisher implements PlayPublisher, AutoCloseable {
     }
 
     @Override
-    public CompletableFuture<Void> publish(GameEvent play) {
+    public CompletableFuture<Void> publish(GameEvent play, String traceparent) {
         CompletableFuture<Void> confirmed = new CompletableFuture<>();
         try {
-            producer.send(new ProducerRecord<>(topic, play.getGameId(), GameEventParser.toJson(play)), (meta, err) -> {
+            ProducerRecord<String, String> record = new ProducerRecord<>(topic, play.getGameId(), GameEventParser.toJson(play));
+            if (traceparent != null) record.headers().add(Traces.HEADER, traceparent.getBytes(StandardCharsets.UTF_8));
+            producer.send(record, (meta, err) -> {
                 if (err != null) confirmed.completeExceptionally(err);
                 else confirmed.complete(null);
             });
