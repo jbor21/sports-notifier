@@ -18,6 +18,34 @@ app.kubernetes.io/part-of: sports-notifier
 {{- end }}
 
 {{/*
+OpenTelemetry settings (Phase 4.3), only when observability is on: without an endpoint the service's
+telemetry stays off. The SDK reads these itself. Arg: dict with "root" (root context) and "name" (the
+service key, which names its spans and metrics).
+*/}}
+{{- define "sports-notifier.otelEnv" -}}
+{{- if .root.Values.observability.enabled }}
+- name: OTEL_SERVICE_NAME
+  value: {{ .name | quote }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: http://lgtm:4318
+- name: OTEL_EXPORTER_OTLP_PROTOCOL
+  value: http/protobuf
+- name: OTEL_TRACES_SAMPLER
+  value: parentbased_traceidratio
+- name: OTEL_TRACES_SAMPLER_ARG
+  value: {{ .root.Values.observability.sampleRate | quote }}
+# A 60x replay lasts about 3 minutes; the default 60 s push would draw three points.
+- name: OTEL_METRIC_EXPORT_INTERVAL
+  value: "5000"
+# One touchdown with 500 followers is over 1,000 spans at once; the default queue (2,048) could drop some.
+- name: OTEL_BSP_MAX_QUEUE_SIZE
+  value: "8192"
+- name: OTEL_LOGS_EXPORTER
+  value: none
+{{- end }}
+{{- end }}
+
+{{/*
 Startup, readiness and liveness checks against /health.
 Readiness and liveness only begin once startup passes, so a slow JVM boot is not restarted.
 Arg: dict with "port" and "probes" (.Values.probes).

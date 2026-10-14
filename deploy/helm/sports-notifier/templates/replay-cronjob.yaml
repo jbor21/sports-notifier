@@ -32,6 +32,7 @@ spec:
                 - name: SERVICE
                   value: replay
                 {{- include "sports-notifier.baseEnv" . | nindent 16 }}
+                {{- include "sports-notifier.otelEnv" (dict "root" . "name" "replay") | nindent 16 }}
                 - name: EPS_URL
                   value: http://event-processing:8083
                 - name: REPLAY_SET

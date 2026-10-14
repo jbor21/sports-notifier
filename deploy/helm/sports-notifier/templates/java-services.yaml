@@ -27,6 +27,7 @@ spec:
             - name: SERVICE
               value: {{ $name }}
             {{- include "sports-notifier.baseEnv" $ | nindent 12 }}
+            {{- include "sports-notifier.otelEnv" (dict "root" $ "name" $name) | nindent 12 }}
             {{- if $svc.espn }}
             {{- include "sports-notifier.espnEnv" $ | nindent 12 }}
             {{- end }}

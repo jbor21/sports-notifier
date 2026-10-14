@@ -37,6 +37,7 @@ spec:
                 - name: SERVICE
                   value: checker
                 {{- include "sports-notifier.baseEnv" . | nindent 16 }}
+                {{- include "sports-notifier.otelEnv" (dict "root" . "name" "checker") | nindent 16 }}
                 {{- include "sports-notifier.postgresEnv" . | nindent 16 }}
                 {{- include "sports-notifier.kafkaEnv" . | nindent 16 }}
                 - name: GATEWAY_URL
