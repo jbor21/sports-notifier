@@ -104,7 +104,7 @@ public final class Verifier {
                     allowed++;
                 } else {
                     String why = h == null ? ", not in history either"
-                            : at == null ? ", no delivery time (Stage 2 never claimed it)"
+                            : at == null ? ", no delivery time in its claim"
                             : ", socket was up when it was delivered";
                     findings.add(new Finding("socket_missing", user, e.gameId(), e.messageId(), "tab " + s.tab() + why));
                 }

@@ -182,7 +182,7 @@ public final class LiveSocket {
      */
     void released(String userId) {
         registry.remove(userId);
-        if (channel.users().contains(userId)) registry.add(userId);
+        if (channel.holds(userId)) registry.add(userId);
     }
 
     /** Javalin's socket, as the routing code sees it. */

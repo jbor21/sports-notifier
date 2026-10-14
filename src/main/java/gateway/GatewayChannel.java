@@ -116,6 +116,11 @@ public final class GatewayChannel {
         return last[0];
     }
 
+    /** Whether this gateway holds a socket for the user: a lookup, not a copy of every user (#54). */
+    public boolean holds(String userId) {
+        return socketsByUser.containsKey(userId);
+    }
+
     /** Users with at least one socket here, for renewals and for graceful shutdown. */
     public Set<String> users() {
         return Set.copyOf(socketsByUser.keySet());

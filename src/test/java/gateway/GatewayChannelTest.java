@@ -279,4 +279,18 @@ class GatewayChannelTest {
             assertEquals(0, otel.counter("socket.sends", null, null));
         }
     }
+
+    @Test
+    void holdsTracksSockets() throws Exception {
+        GatewayChannel a = gateway();
+        FakeSocket one = new FakeSocket(), two = new FakeSocket();
+        assertFalse(a.holds("u1"));
+        a.register("u1", one);
+        a.register("u1", two);
+        assertTrue(a.holds("u1"));
+        a.unregister("u1", one);
+        assertTrue(a.holds("u1"), "one tab still open");
+        a.unregister("u1", two);
+        assertFalse(a.holds("u1"));
+    }
 }
