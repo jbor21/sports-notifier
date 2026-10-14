@@ -123,3 +123,14 @@ checker:
   resources:
     requests: { cpu: 200m, memory: 512Mi }
     limits: { memory: 1Gi }
+
+# Traces and metrics (Phase 4.3): one grafana/otel-lgtm pod (OpenTelemetry Collector, Prometheus, Tempo,
+# Grafana), Strimzi's Kafka exporter for lag, and OTEL_* settings on every Java workload. Off means no
+# pod and no endpoint, so the services' telemetry is a no-op. Data lives in the pod and is lost on restart.
+observability:
+  enabled: true
+  image: grafana/otel-lgtm:0.35.0
+  sampleRate: "1.0"         # traces kept per play; the latency histogram counts every push whatever the rate
+  resources:
+    requests: { cpu: 100m, memory: 1Gi }
+    limits: { memory: 2Gi }

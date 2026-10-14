@@ -1,0 +1,8 @@
+{
+  "uid": "pipeline",
+  "title": "Pipeline",
+  "schemaVersion": 39,
+  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "5s",
+  "panels": []
+}
