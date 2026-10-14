@@ -130,7 +130,8 @@ jobs:
         working-directory: web
         run: pnpm install --frozen-lockfile && pnpm exec playwright install --with-deps chromium
       # check: the correctness checker on the ci replay set at 60x (about 4 minutes); its report is in this log.
-      - run: make cluster up smoke check e2e SET=ci SPEED=60
+      # trace-check: that run's traces and metrics reached the observability pod, one trace through every hop.
+      - run: make cluster up smoke check trace-check e2e SET=ci SPEED=60
       - name: Show pods and logs
         if: failure()
         run: make logs

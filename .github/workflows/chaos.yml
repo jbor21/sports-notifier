@@ -38,7 +38,7 @@ jobs:
       - uses: azure/setup-helm@v5
         with:
           version: ${{ env.HELM_VERSION }}
-      - run: make cluster up chaos SCENARIO=${{ inputs.scenario || 'all' }}
+      - run: make cluster up chaos trace-check SCENARIO=${{ inputs.scenario || 'all' }}
       - name: Show pods and logs
         if: failure()
         run: make logs
