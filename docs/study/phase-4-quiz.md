@@ -285,3 +285,120 @@ A chaos test that injects nothing passes every time. So each scenario proves its
 No accepted play was lost; fewer plays were accepted. While Kafka is down, Event Processing keeps a game's first unsent play in `outbox:<gameId>` and answers `pending` for that game's later plays, so the order on the log is kept. The poller skips those snapshots, and when Kafka is back the relay sends the kept play and the next poll sends the latest one. The positions in between merge into one, as they would with a slower poll. The checker's truth is the accepted plays, so it passes. At 60×, a 17 s outage is 17 minutes of game time (263 plays); live it would be 17 seconds. The cost of the outbox design is coarser pushes during an outage, never pushes out of order.
 
 </details>
+
+## 4.3 Traces and metrics
+
+| # | Topic | First run |
+|---|---|---|
+| 1 | Where the trace id crosses a boundary, and why the outbox carries it | **Not yet taken** |
+| 2 | Why one latency histogram of "time since the poller saw it" | **Not yet taken** |
+| 3 | What an exemplar is, and why the record happens inside the span | **Not yet taken** |
+| 4 | Why lag is scraped from outside instead of reported by the workers | **Not yet taken** |
+| 5 | Why the buckets go to 120 s | **Not yet taken** |
+| 6 | How a redelivery shows in a trace | **Not yet taken** |
+| 7 | Why two gateways once looked like 630 pushes a second | **Not yet taken** |
+| 8 | Why two checker runs failed with every socket up, and what the fix was | **Not yet taken** |
+
+---
+
+### 1. Where the trace id crosses a boundary, and why the outbox carries it
+
+> One touchdown is one trace from the poller to the socket. Name every place the trace id crosses from one process (or one moment) to the next. Which one is easy to miss?
+
+<details>
+<summary>Model answer</summary>
+
+Five carriers, each a W3C `traceparent` string: the poller's `POST /events` header; the `outbox:<gameId>` hash, written by the accept script in the same step as the play; the `game-events` record's Kafka header; the header on every `notifications` message Stage 1 sends; and a field in the JSON Stage 2 publishes on `gw:<gatewayId>`. The easy one to miss is the outbox. Normally Event Processing sends the play right away, from the same thread, so the context is still in memory. But when the broker is down, the play waits in Redis and the retry loop sends it later from another thread. Without the saved `traceparent`, that `produce` would start a new trace and the outage would vanish from the picture; with it, the trace shows `accept`, a gap as long as the outage, then `produce` with `retry=true`. Missing or malformed values read as "no parent", so nothing on the push path can fail because of tracing.
+
+</details>
+
+---
+
+### 2. Why one latency histogram of "time since the poller saw it"
+
+> The dashboard shows p99 per stage: accepted, stage1, stage2, gateway. Why one histogram measured at four places instead of one histogram per hop?
+
+<details>
+<summary>Model answer</summary>
+
+Every value is now − `detectedAt`, the instant the poller saw the play, which every message already carries. So the four p99 lines stack on one clock, and the space between two lines is that hop's cost. A per-hop histogram would need each hop's start time carried along too. The gateway's line is the headline number, "poller saw it → gateway sent it", and the same `detectedAt` is where the root span starts, so the trace and the metric begin at the same instant. Stage 1 records only for plays that sent pushes, because stage2 and the gateway only ever see pushes; otherwise the lines would compare different populations. The catch: `detectedAt` is the poller's clock and each later stage reads its own. On one laptop that is one clock; on EKS the nodes are synced to well under a millisecond.
+
+</details>
+
+---
+
+### 3. What an exemplar is, and why the record happens inside the span
+
+> You click a dot on the p99 line during the spike and Tempo opens one play's trace. What is that dot, and what would break it?
+
+<details>
+<summary>Model answer</summary>
+
+An exemplar: one real sample stored beside a histogram bucket, together with the trace id of the span that was current when it was recorded. The SDK keeps one when a sampled span is current (its default `trace_based` filter); the collector forwards it, Prometheus stores it (`exemplar-storage`), and Grafana's data source links `trace_id` to Tempo. So each `pipeline.latency` record is made with its span current: `accept`, `fanout`, `deliver`, `send`. Record it after `span.end()` or outside the scope and the sample still counts, but the dot has no trace. That is the bridge between "something was slow at 07:52" and "this play waited 35 s between `produce` and `fanout`".
+
+</details>
+
+---
+
+### 4. Why lag is scraped from outside instead of reported by the workers
+
+> Workers already talk to Kafka. Why does Kafka lag come from Strimzi's Kafka exporter instead?
+
+<details>
+<summary>Model answer</summary>
+
+Lag belongs to the consumer group, not to one worker: the end offset of each partition minus the group's committed offset. A worker only knows its own lanes, and a crashed worker reports nothing at all, which is exactly when lag matters. The exporter, a small Deployment Strimzi runs beside the broker, reads every group's committed offsets and every partition's end and exposes `kafka_consumergroup_lag`; the collector scrapes it every 5 s. It is the same number KEDA will scale on in Phase 5. In the `stage1-crash` screenshot it is the line that climbs to about 500 while the dead worker's lanes wait for the 45 s session timeout, then drops in one step when the other copy takes them.
+
+</details>
+
+---
+
+### 5. Why the buckets go to 120 s
+
+> The SDK's default histogram buckets stop at 10 s. Why did that matter here?
+
+<details>
+<summary>Model answer</summary>
+
+A histogram only knows which bucket a sample fell in, and `histogram_quantile` interpolates inside that bucket. With the default buckets, every push delayed past 10 s lands in the last bucket (10 s to infinity), and the p99 reads as "about 10 s" whether the stall lasted 11 s or 45 s. A crashed worker stalls its lanes for about 45 s (Kafka's session timeout), so the buckets go 5 ms … 1 s … 10, 20, 30, 45, 60, 90, 120 s, set as advice on the instrument in code. The spike then reads as 44 s, which matches the checker's own "worst delay 44.0 s" for that scenario.
+
+</details>
+
+---
+
+### 6. How a redelivery shows in a trace
+
+> After a Stage 1 crash, Kafka hands the same play to the other copy. What does that look like in Tempo, and why is that useful?
+
+<details>
+<summary>Model answer</summary>
+
+The redelivered record carries the same `traceparent` header, so the second `fanout` lands in the same trace as the first. If the first copy had already confirmed its sends and written `det:<gameId>`, the second is marked `fanout.skipped=true` (the version check); if it had sent some messages but not committed, Stage 2's script dedups them, and those show as `deliver` spans with `deliver.result=duplicate`. One picture shows Kafka's at-least-once delivery and the two places it is absorbed. In the `stage1-crash` trace the visible signature is the 35 s gap between `produce` and the surviving copy's `fanout`.
+
+</details>
+
+---
+
+### 7. Why two gateways once looked like 630 pushes a second
+
+> The first chaos screenshot showed about 630 pushes per second while nothing was running, and a p99 that never came back down after the spike. What was wrong?
+
+<details>
+<summary>Model answer</summary>
+
+Two processes were writing one series. Prometheus names a series by its labels; from OTLP, the service name becomes `job` and `service.instance.id` becomes `instance`, but the Java SDK sets no instance id by default. So both gateways' `socket.sends` counters, and both Stage 1s' histograms, landed in one series, alternating between two different running totals. Every step down reads to `rate()` as a counter reset (a restart), so it adds the whole new value as fresh increase: hundreds per second from nothing, and quantiles stuck high. The fix: each process sets `service.instance.id` to its pod name (Kubernetes puts it in `HOSTNAME`). The lesson: the dashboard is evidence too, and it needed its own check.
+
+</details>
+
+---
+
+### 8. Why two checker runs failed with every socket up, and what the fix was
+
+> Early in 4.3, two `make check` runs reported hundreds of pushes "missing, socket was up when it was delivered", with history complete. The code was fine. What happened?
+
+<details>
+<summary>Model answer</summary>
+
+The Mac went to sleep mid-run (the power log showed idle sleep a few seconds after each run's T0). The k3d VM froze, and on wake Redis's clock jumped forward by the length of the sleep. `conn:<userId>` entries hold expiry times from Redis's clock, so they all looked expired; Stage 2's delivery script removes expired entries, publishes to nobody, and claims the push. History still gets it (another consumer group), and the socket never closed, so the checker correctly called those pushes lost. Nothing in the system was wrong for a frozen-then-jumped clock: the fix was to run `make check`, like `make chaos`, under `caffeinate -i`. A CI run on GitHub, which doesn't sleep, passed the same check.
+
+</details>
