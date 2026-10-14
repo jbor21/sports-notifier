@@ -84,10 +84,14 @@ replay:
 # USERS, SEED, KEEP and FAULT are passed only when given; otherwise the chart's checker defaults apply.
 # KEEP=1 leaves the run's users in place (it prints one username; password checker-pass) to look at
 # in the UI; make check-clean removes every leftover synthetic user.
+# On a Mac, checks and the chaos suite run under caffeinate: a laptop that sleeps mid-run freezes the
+# cluster and jumps its clock, so a fault lands minutes late (4.2's first full run) and conn: entries
+# look expired on wake, so pushes reach no gateway until the next renewal (4.3, two failed checks).
+CAFFEINATE := $(shell command -v caffeinate >/dev/null 2>&1 && echo caffeinate -i)
 CHECK_OPTS = $(if $(USERS),CHECK_USERS=$(USERS)) $(if $(SEED),CHECK_SEED=$(SEED)) \
              $(if $(KEEP),CHECK_KEEP=$(KEEP)) $(if $(FAULT),CHECK_FAULT=$(FAULT))
 check:
-	@scripts/run-job.sh --deadline $(call deadline,$(SET),$(SPEED),900) checker CHECK_SET=$(SET) CHECK_SPEED=$(SPEED) $(CHECK_OPTS)
+	@$(CAFFEINATE) scripts/run-job.sh --deadline $(call deadline,$(SET),$(SPEED),900) checker CHECK_SET=$(SET) CHECK_SPEED=$(SPEED) $(CHECK_OPTS)
 
 check-clean:
 	@scripts/run-job.sh --deadline 600 checker CHECK_MODE=clean
@@ -108,9 +112,6 @@ check-selftest:
 SCENARIO ?= all
 CHAOS_SET   = $(if $(filter command line,$(origin SET)),$(SET),evening)
 CHAOS_SPEED = $(if $(filter command line,$(origin SPEED)),$(SPEED),60)
-# On a Mac the suite runs under caffeinate: a laptop that sleeps mid-run freezes the cluster and jumps
-# its clock, so a fault lands minutes late (seen on the first full run).
-CAFFEINATE := $(shell command -v caffeinate >/dev/null 2>&1 && echo caffeinate -i)
 chaos:
 	@SET=$(CHAOS_SET) SPEED=$(CHAOS_SPEED) DEADLINE=$(call deadline,$(CHAOS_SET),$(CHAOS_SPEED),900) \
 		$(CAFFEINATE) scripts/chaos.sh $(SCENARIO)

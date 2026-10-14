@@ -78,4 +78,48 @@ out=$(make -n check SET=ci SPEED=2.5 2>&1)
 out=$(make -n check SET=ci SPEED=0 2>&1)
 [[ "$out" == *"SPEED must be a positive number"* ]] && ok deadline_zero_speed || bad deadline_zero_speed "$out"
 
+# --- Phase 4.3: fault marks on the dashboard, and #54 items 1, 3, 4 ---
+
+# A fake curl that records its arguments and exits with $CURL_EXIT (default 0).
+fake_curl() {
+  printf '#!/usr/bin/env bash\necho "$*" >> "%s/curl-calls"\nexit ${CURL_EXIT:-0}\n' "$tmp" > "$tmp/bin/curl"
+  chmod +x "$tmp/bin/curl"
+  rm -f "$tmp/curl-calls"
+}
+
+# A mark that cannot be posted is one log line, never a failed scenario.
+fake_kubectl 'exit 0'; fake_curl
+out=$(PATH="$tmp/bin:$PATH" CURL_EXIT=7 bash -c "source '$root/scripts/chaos-lib.sh'; CHAOS_GRAFANA=1; chaos_mark stage1-crash fault" 2>&1)
+rc=$?
+if [ "$rc" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c .)" = 1 ]; then ok mark_failure_is_not_fatal; else bad mark_failure_is_not_fatal "exit $rc, output: $out"; fi
+
+# No observability pod: no port-forward, no marks.
+fake_kubectl 'case "$*" in *"get svc lgtm"*) echo "NotFound" >&2; exit 1 ;; esac'; fake_curl
+out=$(PATH="$tmp/bin:$PATH" bash -c "source '$root/scripts/chaos-lib.sh'; chaos_grafana_start; echo \"grafana=\$CHAOS_GRAFANA\"; chaos_mark stage1-crash fault" 2>&1)
+if [[ "$out" == *"grafana=0"* ]] && [ ! -e "$tmp/curl-calls" ]; then ok no_lgtm_skips_marks; else bad no_lgtm_skips_marks "$out; curl: $(cat "$tmp/curl-calls" 2>/dev/null)"; fi
+
+# #54.1: a pod restarted by an earlier crash scenario was not "restarted during the cut".
+fake_kubectl 'echo 1'
+out=$(PATH="$tmp/bin:$PATH" bash -c "source '$root/scripts/chaos-lib.sh'; chaos_restart_note stage1-worker-a 1")
+[ -z "$out" ] && ok cut_restart_note_uses_count_before || bad cut_restart_note_uses_count_before "got: $out"
+out=$(PATH="$tmp/bin:$PATH" bash -c "source '$root/scripts/chaos-lib.sh'; chaos_restart_note stage1-worker-a 0")
+[[ "$out" == *"restarted during the cut"* ]] && ok cut_restart_note_reports_new_restart || bad cut_restart_note_reports_new_restart "got: $out"
+
+# #54.4: a pod being deleted is not one of the rollout's new pods.
+fake_kubectl 'printf "gateway-new-1 \ngateway-old-2 2026-10-13T10:00:00Z\ngateway-new-3 \n"'
+out=$(PATH="$tmp/bin:$PATH" bash -c "source '$root/scripts/chaos-lib.sh'; chaos_live_pods gateway" | tr '\n' ' ')
+[ "$out" = "gateway-new-1 gateway-new-3 " ] && ok rollout_ignores_terminating || bad rollout_ignores_terminating "got: $out"
+
+# #54.3: a checker that never printed "run started" is stopped and its Job deleted, not waited out.
+fake_kubectl 'echo "$*" >> '"$tmp"'/kubectl-calls'
+rm -f "$tmp/kubectl-calls"
+printf 'job/checker-123-abc (time limit 900 s)\n' > "$tmp/scenario.log"
+start=$SECONDS
+out=$(PATH="$tmp/bin:$PATH" bash -c "source '$root/scripts/chaos-lib.sh'; sleep 60 & pid=\$!; chaos_stop_job \$pid '$tmp/scenario.log'; kill -0 \$pid 2>/dev/null && echo alive || echo stopped")
+if [ "$out" = stopped ] && [ $((SECONDS - start)) -lt 10 ] && grep -q "delete job/checker-123-abc" "$tmp/kubectl-calls" 2>/dev/null; then
+  ok missing_run_started_deletes_job
+else
+  bad missing_run_started_deletes_job "got: $out; kubectl: $(cat "$tmp/kubectl-calls" 2>/dev/null)"
+fi
+
 exit $failed
