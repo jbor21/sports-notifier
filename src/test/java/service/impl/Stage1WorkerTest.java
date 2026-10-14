@@ -1,5 +1,11 @@
 package service.impl;
 
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.context.Context;
+import telemetry.Traces;
+import testsupport.TelemetryTestSupport;
 import alerts.Detector;
 import alerts.Detectors;
 import alerts.GameLabels;
@@ -535,5 +541,71 @@ class Stage1WorkerTest {
         Set<String> users = new HashSet<>();
         for (NotificationMessage m : msgs) users.add(m.getUserId());
         assertEquals(2000, users.size());
+    }
+
+    private void send(GameEvent play, String traceparent) throws Exception {
+        ProducerRecord<String, String> r = new ProducerRecord<>(gameEvents, play.getGameId(), GameEventParser.toJson(play));
+        r.headers().add(Traces.HEADER, traceparent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        playProducer.send(r).get();
+    }
+
+    @Test
+    void fanoutHeadersCarryTheSpan() throws Exception {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            follow("bos-fan", "BOS", "GOAL");
+            follow("bos-fan-2", "BOS", "GOAL");
+            send(play(1, 0, 0));
+            Span produce = Traces.start("produce", SpanKind.PRODUCER, Context.root());
+            produce.end();
+            send(play(2, 0, 1), Traces.traceparent(produce));
+            pollUntilHandled(worker("s1-" + UUID.randomUUID()), 2);
+            var fanout = otel.spans("fanout").stream()
+                .filter(sp -> sp.getParentSpanId().equals(produce.getSpanContext().getSpanId())).findFirst().orElseThrow();
+            assertEquals(SpanKind.CONSUMER, fanout.getKind());
+            assertEquals(produce.getSpanContext().getTraceId(), fanout.getTraceId());
+            List<ConsumerRecord<String, String>> records = KafkaTestSupport.readAll(notifications, Duration.ofSeconds(2));
+            assertEquals(2, records.size());
+            for (ConsumerRecord<String, String> r : records) {
+                var sc = Span.fromContext(Traces.extract(r.headers())).getSpanContext();
+                assertEquals(fanout.getSpanId(), sc.getSpanId(), "every message carries the fanout span");
+            }
+            assertEquals(2L, fanout.getAttributes().get(AttributeKey.longKey("fanout.pushes")));
+            assertTrue(fanout.getAttributes().get(AttributeKey.longKey("fanout.alerts")) >= 1);
+            assertEquals(1, otel.latencyCount("stage1"));
+            assertEquals(2, otel.counter("pushes.produced", null, null));
+        }
+    }
+
+    @Test
+    void skippedPlayRecordsNoLatency() throws Exception {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            follow("bos-fan", "BOS", "GOAL");
+            send(play(1, 0, 0));
+            Span produce = Traces.start("produce", SpanKind.PRODUCER, Context.root());
+            produce.end();
+            send(play(2, 0, 1), Traces.traceparent(produce));
+            send(play(2, 0, 1), Traces.traceparent(produce));   // the retry loop sent it twice
+            pollUntilHandled(worker("s1-" + UUID.randomUUID()), 3);
+            var inTrace = otel.spans("fanout").stream()
+                .filter(sp -> sp.getTraceId().equals(produce.getSpanContext().getTraceId())).toList();
+            assertEquals(2, inTrace.size(), "the redelivery is a second fanout in the same trace");
+            assertEquals(1, inTrace.stream()
+                .filter(sp -> Boolean.TRUE.equals(sp.getAttributes().get(AttributeKey.booleanKey("fanout.skipped")))).count());
+            assertEquals(1, otel.latencyCount("stage1"));
+            assertEquals(1, messages().size());
+        }
+    }
+
+    @Test
+    void playWithoutHeaderIsRoot() throws Exception {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            follow("bos-fan", "BOS", "GOAL");
+            send(play(1, 0, 0));
+            send(play(2, 0, 1));
+            pollUntilHandled(worker("s1-" + UUID.randomUUID()), 2);
+            assertEquals(1, messages().size());
+            assertEquals(2, otel.spans("fanout").size());
+            assertTrue(otel.spans("fanout").stream().noneMatch(sp -> sp.getParentSpanContext().isValid()));
+        }
     }
 }
