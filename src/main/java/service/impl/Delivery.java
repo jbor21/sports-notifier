@@ -6,10 +6,12 @@ import model.NotificationMessage;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.Pipeline;
+import redis.clients.jedis.Response;
 import util.RedisKeys;
 import util.RedisPipelines;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -93,14 +95,18 @@ public class Delivery {
     /**
      * One script per message, pipelined: one round trip, and Redis runs them in this order.
      * Throws on any error reply, so Stage 2 rewinds and retries the batch instead of committing it.
+     *
+     * @return per message, in order: true delivered now, false already delivered
      */
-    public void deliverAll(List<NotificationMessage> batch) {
-        if (batch.isEmpty()) return;
+    public List<Boolean> deliverAll(List<NotificationMessage> batch) {
+        if (batch.isEmpty()) return List.of();
+        List<Response<Object>> replies = new ArrayList<>(batch.size());
         try (Jedis jedis = pool.getResource()) {
             Pipeline p = jedis.pipelined();
-            for (NotificationMessage m : batch) p.eval(DELIVER_SCRIPT, keys(m), args(m));
+            for (NotificationMessage m : batch) replies.add(p.eval(DELIVER_SCRIPT, keys(m), args(m)));
             RedisPipelines.syncChecked(p);
         }
+        return replies.stream().map(r -> Long.valueOf(1L).equals(r.get())).toList();
     }
 
     private static List<String> keys(NotificationMessage m) {
@@ -123,6 +129,8 @@ public class Delivery {
             JsonObject message = new JsonObject();
             message.addProperty("userId", m.getUserId());
             message.add("payload", payload);
+            // The deliver span's context, so the gateway's send joins the play's trace (Phase 4.3).
+            if (m.getTraceparent() != null) message.addProperty("traceparent", m.getTraceparent());
             toGateway = message.toString();
         }
         return List.of(String.valueOf(DEDUP_TTL_SECONDS), toGateway, RedisKeys.GATEWAY_CHANNEL_PREFIX,

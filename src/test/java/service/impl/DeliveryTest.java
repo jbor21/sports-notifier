@@ -225,4 +225,24 @@ class DeliveryTest {
     private static JsonObject payloadOf(String received) {
         return JsonParser.parseString(received.substring(received.indexOf('|') + 1)).getAsJsonObject().getAsJsonObject("payload");
     }
+
+    @Test
+    void deliverAllReportsEachResult() {
+        assertEquals(java.util.List.of(true, false, true),
+            delivery.deliverAll(java.util.List.of(msg("u1", 1), msg("u1", 1), msg("u1", 2))));
+    }
+
+    @Test
+    void gatewayMessageCarriesTraceparent() throws Exception {
+        jedis.zadd("conn:u1", redisNow() + 90, "A");
+        String tp = "00-5b8efff798038103d269b633813fc60c-eee19b7ec3c1b174-01";
+        NotificationMessage traced = msg("u1", 1);
+        traced.setTraceparent(tp);
+        delivery.deliverAll(java.util.List.of(traced, msg("u1", 2)));
+        java.util.List<String> got = receivedOn("gw:A");
+        com.google.gson.JsonObject first = com.google.gson.JsonParser.parseString(got.get(0).substring("gw:A|".length())).getAsJsonObject();
+        assertEquals(tp, first.get("traceparent").getAsString());
+        String second = got.stream().filter(r -> r.contains("\"notification\"")).skip(1).findFirst().orElseThrow();
+        assertFalse(com.google.gson.JsonParser.parseString(second.substring("gw:A|".length())).getAsJsonObject().has("traceparent"));
+    }
 }

@@ -15,7 +15,7 @@ export KUBE_CONTEXT
 # A new tag per build so Kubernetes always rolls pods onto new code. Uncommitted changes get a unique suffix.
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
-.PHONY: test cluster up simulate replay check check-clean check-selftest chaos smoke e2e logs down replay-detectors
+.PHONY: test cluster up simulate replay check check-clean check-selftest chaos smoke e2e logs down replay-detectors grafana trace-check
 
 # Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
 # until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
@@ -84,10 +84,14 @@ replay:
 # USERS, SEED, KEEP and FAULT are passed only when given; otherwise the chart's checker defaults apply.
 # KEEP=1 leaves the run's users in place (it prints one username; password checker-pass) to look at
 # in the UI; make check-clean removes every leftover synthetic user.
+# On a Mac, checks and the chaos suite run under caffeinate: a laptop that sleeps mid-run freezes the
+# cluster and jumps its clock, so a fault lands minutes late (4.2's first full run) and conn: entries
+# look expired on wake, so pushes reach no gateway until the next renewal (4.3, two failed checks).
+CAFFEINATE := $(shell command -v caffeinate >/dev/null 2>&1 && echo caffeinate -i)
 CHECK_OPTS = $(if $(USERS),CHECK_USERS=$(USERS)) $(if $(SEED),CHECK_SEED=$(SEED)) \
              $(if $(KEEP),CHECK_KEEP=$(KEEP)) $(if $(FAULT),CHECK_FAULT=$(FAULT))
 check:
-	@scripts/run-job.sh --deadline $(call deadline,$(SET),$(SPEED),900) checker CHECK_SET=$(SET) CHECK_SPEED=$(SPEED) $(CHECK_OPTS)
+	@$(CAFFEINATE) scripts/run-job.sh --deadline $(call deadline,$(SET),$(SPEED),900) checker CHECK_SET=$(SET) CHECK_SPEED=$(SPEED) $(CHECK_OPTS)
 
 check-clean:
 	@scripts/run-job.sh --deadline 600 checker CHECK_MODE=clean
@@ -108,15 +112,23 @@ check-selftest:
 SCENARIO ?= all
 CHAOS_SET   = $(if $(filter command line,$(origin SET)),$(SET),evening)
 CHAOS_SPEED = $(if $(filter command line,$(origin SPEED)),$(SPEED),60)
-# On a Mac the suite runs under caffeinate: a laptop that sleeps mid-run freezes the cluster and jumps
-# its clock, so a fault lands minutes late (seen on the first full run).
-CAFFEINATE := $(shell command -v caffeinate >/dev/null 2>&1 && echo caffeinate -i)
 chaos:
 	@SET=$(CHAOS_SET) SPEED=$(CHAOS_SPEED) DEADLINE=$(call deadline,$(CHAOS_SET),$(CHAOS_SPEED),900) \
 		$(CAFFEINATE) scripts/chaos.sh $(SCENARIO)
 
 smoke:
 	@scripts/smoke-test.sh
+
+# One trace through every hop, latency at every stage, lag for every group, and an exemplar that opens
+# its trace (Phase 4.3). Run after make check or make simulate.
+trace-check:
+	@scripts/trace-check.sh
+
+# Grafana from the observability pod (Phase 4.3), on localhost:3000 until Ctrl-C. Never exposed
+# through Traefik: anonymous users are Admin in that image.
+grafana:
+	@echo "Grafana: http://localhost:3000/d/pipeline  (Ctrl-C to stop)"
+	@kubectl --context $(KUBE_CONTEXT) port-forward svc/lgtm 3000:3000
 
 # The web UI end to end in a browser against the cluster (web/e2e/cluster.spec.ts): sign up, follow,
 # a live touchdown, a gateway restart mid-game, history, sign out. Run after `make up`.

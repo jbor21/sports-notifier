@@ -49,7 +49,7 @@ class RewindTest {
             consumer.addRecord(new ConsumerRecord<>(TP.topic(), 0, offset, "u1", new Gson().toJson(NotificationMessage.of(play, "u1"))));
         }
         Delivery fails = new Delivery(null) {
-            @Override public void deliverAll(List<NotificationMessage> batch) { throw new IllegalStateException("redis down"); }
+            @Override public List<Boolean> deliverAll(List<NotificationMessage> batch) { throw new IllegalStateException("redis down"); }
         };
         Stage2Worker worker = new Stage2Worker(consumer, fails);
 

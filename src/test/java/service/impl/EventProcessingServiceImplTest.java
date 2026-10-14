@@ -1,5 +1,12 @@
 package service.impl;
 
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
+import telemetry.Traces;
+import testsupport.TelemetryTestSupport;
 import model.GameEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -239,5 +246,45 @@ class EventProcessingServiceImplTest {
     void zeroStartTimeNotIndexed() {
         service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
         assertNull(jedis.zscore("games:start", "g1"));
+    }
+
+    @Test
+    void acceptStoresTraceparentInOutbox() {
+        TestPublisher held = new TestPublisher(false);
+        EventProcessingServiceImpl eps = new EventProcessingServiceImpl(pool, held, System::currentTimeMillis);
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            Span outer = Traces.start("poll", SpanKind.CLIENT, Context.root());
+            try (Scope s = outer.makeCurrent()) {
+                assertEquals(ProcessResult.ACCEPTED, eps.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE")));
+            }
+            outer.end();
+            var accept = otel.spans("accept").get(0);
+            assertEquals(outer.getSpanContext().getSpanId(), accept.getParentSpanId());
+            assertEquals(SpanKind.SERVER, accept.getKind());
+            assertEquals("accepted", accept.getAttributes().get(AttributeKey.stringKey("accept.result")));
+            String stored = jedis.hget("outbox:g1", "traceparent");
+            assertNotNull(stored);
+            assertTrue(stored.contains(accept.getTraceId()) && stored.contains(accept.getSpanId()));
+            assertEquals(1, otel.latencyCount("accepted"));
+            assertEquals(1, otel.counter("plays.accepted", "result", "accepted"));
+        }
+    }
+
+    @Test
+    void telemetryOffStoresNoTraceparent() {
+        TestPublisher held = new TestPublisher(false);
+        new EventProcessingServiceImpl(pool, held, System::currentTimeMillis).processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+        assertFalse(jedis.hexists("outbox:g1", "traceparent"));
+        assertEquals(java.util.Arrays.asList((String) null), held.traceparents());
+    }
+
+    @Test
+    void duplicateCountsButNoLatency() {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+            service.processEvent(ev("e1", 10, 2, 0, "SCORE_UPDATE"));
+            assertEquals(1, otel.counter("plays.accepted", "result", "duplicate"));
+            assertEquals(1, otel.latencyCount("accepted"));
+        }
     }
 }

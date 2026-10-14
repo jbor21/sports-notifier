@@ -110,4 +110,22 @@ class KafkaPlayPublisherTest {
             if (k > 0) assertTrue(plays.get(k).getSeq() > plays.get(k - 1).getSeq());
         }
     }
+
+    @Test
+    void headerCarriesTraceparent() throws Exception {
+        KafkaPlayPublisher direct = new KafkaPlayPublisher(
+            new org.apache.kafka.clients.producer.KafkaProducer<>(KafkaSettings.ingestProducer(KafkaTestSupport.bootstrap())), topic);
+        String tp = "00-5b8efff798038103d269b633813fc60c-eee19b7ec3c1b174-01";
+        direct.publish(OutboxRelayTest.play("g7", 10, 1).withVersion(1), tp).get(10, TimeUnit.SECONDS);
+        direct.publish(OutboxRelayTest.play("g8", 10, 1).withVersion(1), null).get(10, TimeUnit.SECONDS);
+        direct.close();
+        java.util.Map<String, String> byGame = new java.util.HashMap<>();
+        for (ConsumerRecord<String, String> r : KafkaTestSupport.readAll(topic, Duration.ofSeconds(2))) {
+            var h = r.headers().lastHeader("traceparent");
+            byGame.put(r.key(), h == null ? null : new String(h.value(), java.nio.charset.StandardCharsets.UTF_8));
+        }
+        assertEquals(tp, byGame.get("g7"));
+        assertTrue(byGame.containsKey("g8"));
+        assertNull(byGame.get("g8"));
+    }
 }

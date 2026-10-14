@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-10-13 (Phase 4.2 merged, 4.3 next).
+asks. Last updated 2026-10-14 (Phase 4.3 built, PR #55).
 
 ---
 
@@ -86,13 +86,15 @@ Browser ◄── /api/v1/ws ◄── Gateway (8080) ◄── SUBSCRIBE gw:<it
 | History | 8088 | `service.impl.HistoryWriterMain` | notifications → Postgres history, batched |
 | Simulator / ESPN Poller | — | `simulator.*` | Event sources; the ESPN poller also caches the schedule |
 | Replay / Checker | — | `simulator.ReplayMain`, `tools.Checker` | Recorded games through the real poller; the correctness checker (one Job per run) |
+| Observability | 4318, 3000 | `grafana/otel-lgtm` pod (`lgtm`) | OpenTelemetry Collector, Prometheus, Tempo, Grafana; Strimzi's Kafka exporter for lag |
 
 **Stack:** Java 17 · Maven · Javalin 6.1.6 · Jedis 4.4.7 · Gson · jbcrypt ·
 kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · PostgreSQL 17 · HikariCP ·
 Flyway · Testcontainers 2.0.5 · web: Vite 8 · React 19 · TypeScript 5 · React Router ·
-SWR · vite-plugin-pwa (Workbox) · Vitest · Playwright · pnpm 12 · Node 24
-**Size:** ~11,800 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
-design) · 688 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
+SWR · vite-plugin-pwa (Workbox) · Vitest · Playwright · pnpm 12 · Node 24 ·
+OpenTelemetry Java 1.66.0 (manual SDK) · grafana/otel-lgtm 0.35.0
+**Size:** ~12,600 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
+design) · 727 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -170,7 +172,9 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   `make replay SET=evening SPEED=10` plays recorded games; `make check SET=ci SPEED=60`
   runs the correctness checker (`KEEP=1` keeps its users, `FAULT=srem|dup|follow`
   injects one fault), `make check-selftest` proves each fault is caught, and
-  `make check-clean` removes leftover synthetic users. `make chaos [SCENARIO=…]` runs
+  `make check-clean` removes leftover synthetic users. `make grafana` serves the Pipeline
+  dashboard on `localhost:3000`; `make trace-check` proves one trace spans every service.
+  `make chaos [SCENARIO=…]` runs
   the chaos suite (eight checked replays, each with one fault; reports in `target/chaos/`).
   `make down` deletes the cluster but not accounts: Postgres keeps its data in
   `~/.sportsnotifier/postgres` on the Mac, mounted into k3d by `make cluster`
@@ -182,9 +186,10 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   `pnpm format:check`, `pnpm types:check` (types generated from `docs/api/openapi.yaml`;
   never edit `src/api/schema.d.ts` by hand), `pnpm test:pwa`.
 - **CI:** GitHub Actions runs the Java tests and, in parallel, the `web` job (format,
-  types, unit tests, build, PWA update test); then `make cluster up smoke check e2e`
-  (the checker on the `ci` set at 60×) on a throwaway k3d cluster, on every push and
-  pull request. A failed browser run uploads Playwright traces.
+  types, unit tests, build, PWA update test); then `make cluster up smoke check trace-check e2e`
+  (the checker on the `ci` set at 60×, then the trace check) on a throwaway k3d cluster, on
+  every push and pull request, after freeing the runner's disk (the observability image
+  otherwise tips the node into eviction). A failed browser run uploads Playwright traces.
 - **Phase 2 (Correctness and security) is merged** (PR #2, 2026-10-02). Fixes
   from 60 hours of recorded ESPN data are in PR #4. Issue #3 (live-game
   check) closed 2026-10-07 as covered by the recordings and the smoke test's
@@ -219,10 +224,30 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   #48, #49. All eight scenarios passed on the laptop and in the Chaos workflow. A Redis crash
   losing dedup claims (a duplicate push) is #52, after Phase 6; the review's six deferred
   minors are #54.
-- **Next step: Phase 4.3 (traces and metrics).** Must-fix before Phase 5: #36 (the live
-  check). Before the checker runs on AWS: reserve the `ck_` prefix (#51); decide #47
-  (replayed pushes reach real accounts) before Phase 6. Other deferred minors are issues
-  #19–#27, #35, #37–#43, #45, #50, #54.
+- **Phase 4.3 (traces and metrics)** is PR #55: spec
+  `docs/superpowers/specs/2026-10-13-phase-4-3-observability-design.md`, plan
+  `docs/superpowers/plans/2026-10-13-phase-4-3-observability.md`; closes #54. Evidence
+  (dashboards during `stage1-crash` and `broker-crash`, a crash trace) is in
+  `docs/evidence/phase-4-3/`.
+- **Next step: #36 (the live check, must-fix before Phase 5), then Phase 5 (AWS).**
+  Before the checker runs on AWS: reserve the `ck_` prefix (#51); decide #47 (replayed
+  pushes reach real accounts) before Phase 6. Other deferred minors are issues #19–#27,
+  #35, #37–#43, #45, #50, #56.
+- **New in Phase 4.3:** one `grafana/otel-lgtm` pod (`observability.enabled`, on by default;
+  data in the pod, lost on restart) and Strimzi's Kafka exporter (`kafka_consumergroup_lag`,
+  scraped by the collector through the `kafka-exporter` Service). The `telemetry/` package wraps
+  the OpenTelemetry SDK (manual, not the Java agent; off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is
+  set; each process's `service.instance.id` is its pod name). One trace per play: `poll` (root,
+  starts at `detectedAt`) → HTTP header → `accept` → `traceparent` field in `outbox:<gameId>`
+  (so the retry loop's `produce` after a broker outage stays in the trace) → `game-events`
+  header → `fanout` (skipped on redelivery) → a header on every `notifications` message →
+  `deliver` → a `traceparent` field in the `gw:` pub/sub JSON → the gateway's `send`.
+  `pipeline.latency` (s, buckets to 120 s) records now − `detectedAt` at `accepted`, `stage1`
+  (plays that sent pushes), `stage2`, `gateway`, inside the span so exemplars link to Tempo;
+  counters `plays.accepted`, `pushes.produced`, `deliveries`, `socket.sends`. The Pipeline
+  dashboard (uid `pipeline`) is in the chart; `chaos.sh` marks each scenario on it (run started,
+  fault, healed, run ended) and prints a dashboard link per scenario. `make check` runs under
+  `caffeinate`: a Mac that sleeps mid-run jumps Redis's clock and the `conn:` entries look expired.
 - **New in Phase 4.2:** `make chaos` (`scripts/chaos.sh`, primitives in `scripts/chaos-lib.sh`)
   runs eight scenarios, each one checker run on `evening` at 60× with one fault at 40% of the
   replay: crashes of Stage 1, Stage 2, History, a gateway, the broker (SIGKILL through `crictl`

@@ -34,7 +34,7 @@ public final class Report {
         int changed = n(byKind, "follow_changed");
         out.append(changed == 0 ? "follows   frozen ✓\n" : "follows   changed " + changed + "\n");
         out.append(String.format("outside the run: %d messages%n", r.outsideRun()));
-        out.append(String.format("latency detectedAt → socket: p50 %s  p99 %s  max %s  (preview; 4.3 measures it properly)%n",
+        out.append(String.format("latency detectedAt → socket (checker): p50 %s  p99 %s  max %s%n",
                 percentile(r.latenciesMillis(), 50), percentile(r.latenciesMillis(), 99), percentile(r.latenciesMillis(), 100)));
         for (Map.Entry<String, List<Finding>> e : byKind.entrySet()) {
             List<Finding> fs = e.getValue();

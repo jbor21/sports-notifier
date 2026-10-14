@@ -3,10 +3,17 @@ package gateway;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.context.Scope;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPubSub;
+import telemetry.PipelineMetrics;
+import telemetry.Traces;
 import util.RedisKeys;
 
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -109,33 +116,90 @@ public final class GatewayChannel {
         return last[0];
     }
 
+    /** Whether this gateway holds a socket for the user: a lookup, not a copy of every user (#54). */
+    public boolean holds(String userId) {
+        return socketsByUser.containsKey(userId);
+    }
+
     /** Users with at least one socket here, for renewals and for graceful shutdown. */
     public Set<String> users() {
         return Set.copyOf(socketsByUser.keySet());
     }
 
-    /** Messages are {"userId": ..., "payload": {notification}}; the socket gets the payload. */
+    /**
+     * Messages are {"userId": ..., "payload": {notification}, "traceparent": ...}; the socket gets the
+     * payload. A notification is the last hop of its play's trace: a {@code send} span, a child of
+     * Stage 2's deliver, and the headline latency, poller saw it → gateway sent it (Phase 4.3 spec, 4.1),
+     * recorded inside the span so its exemplar opens this play's trace.
+     */
     private void deliverLocally(String message) {
         String userId;
         String payload;
+        JsonObject notification = null;
+        String traceparent = null;
         try {
             JsonObject m = JsonParser.parseString(message).getAsJsonObject();
             userId = m.get("userId").getAsString();
             JsonElement p = m.get("payload");
             payload = p.toString();
+            if (p.isJsonObject() && "notification".equals(stringOrNull(p.getAsJsonObject().get("type")))
+                    && p.getAsJsonObject().get("notification") instanceof JsonObject n) {
+                notification = n;
+                traceparent = stringOrNull(m.get("traceparent"));
+            }
         } catch (RuntimeException e) {
             System.err.println("[GatewayChannel] unreadable message on " + RedisKeys.GATEWAY_CHANNEL_PREFIX + gatewayId);
             return;
         }
+        if (notification == null) {
+            sendTo(userId, payload);
+            return;
+        }
+        Span span = Traces.start("send", SpanKind.CONSUMER, Traces.fromTraceparent(traceparent));
+        try (Scope scope = span.makeCurrent()) {
+            int written = sendTo(userId, payload);
+            span.setAttribute("send.sockets", (long) written);
+            if (written > 0) {
+                PipelineMetrics.socketSend();
+                Long detectedAt = detectedAtMillis(notification);
+                if (detectedAt != null) {
+                    PipelineMetrics.latency(PipelineMetrics.Stage.GATEWAY, detectedAt, System.currentTimeMillis());
+                }
+            }
+        } finally {
+            span.end();
+        }
+    }
+
+    /** @return how many open sockets the payload was written to */
+    private int sendTo(String userId, String payload) {
         // The user may have closed their last tab since Stage 2 looked them up: nothing to do.
         Set<ClientSocket> sockets = socketsByUser.get(userId);
-        if (sockets == null) return;
+        if (sockets == null) return 0;
+        int written = 0;
         for (ClientSocket s : sockets) {
             try {
-                if (s.isOpen()) s.send(payload);
+                if (s.isOpen()) {
+                    s.send(payload);
+                    written++;
+                }
             } catch (RuntimeException e) {
                 System.err.println("[GatewayChannel] send error: " + e.getMessage());
             }
+        }
+        return written;
+    }
+
+    private static String stringOrNull(JsonElement e) {
+        return e != null && e.isJsonPrimitive() ? e.getAsString() : null;
+    }
+
+    private static Long detectedAtMillis(JsonObject notification) {
+        try {
+            String at = stringOrNull(notification.get("detectedAt"));
+            return at == null ? null : Instant.parse(at).toEpochMilli();
+        } catch (DateTimeParseException e) {
+            return null;
         }
     }
 

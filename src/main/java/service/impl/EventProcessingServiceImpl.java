@@ -2,16 +2,24 @@ package service.impl;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import model.GameEvent;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import service.EventProcessingService;
 import service.PlayPublisher;
 import service.ProcessResult;
+import telemetry.PipelineMetrics;
+import telemetry.Traces;
 import util.GameEventParser;
 import util.RedisKeys;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.function.LongSupplier;
 
 public class EventProcessingServiceImpl implements EventProcessingService {
@@ -110,6 +118,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      *                saved with the score for the live game API)
      * ARGV[25] = scheduled start millis (0 = unknown)   ARGV[26] = line score JSON
      * ARGV[27] = live channel (live:<gameId>)   ARGV[28] = games:start window millis
+     * ARGV[29] = the accept span's traceparent, or "" (telemetry off): saved in the outbox slot so the
+     *            retry loop's send, maybe minutes later, stays in the play's trace (Phase 4.3 spec, 3.2)
      *
      * Returns: 0 duplicate | -1 stale | -2 pending | the game's new version when accepted
      *
@@ -162,6 +172,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         "  redis.call('EXPIRE', KEYS[1], ARGV[12])\n" +
         "end\n" +
         "redis.call('HSET', KEYS[4], 'version', version, 'play', ARGV[14])\n" +
+        "if ARGV[29] ~= '' then redis.call('HSET', KEYS[4], 'traceparent', ARGV[29]) end\n" +
         "redis.call('ZADD', KEYS[5], ARGV[13], ARGV[10])\n" +
         "local now = tonumber(redis.call('TIME')[1])\n" +
         "redis.call('ZADD', KEYS[3], now, ARGV[10])\n" +
@@ -189,8 +200,32 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         return processEvent(event);
     }
 
+    /**
+     * One {@code accept} span per call, a child of the caller's context (the poller's, through the
+     * HTTP header). The accepted latency is recorded inside it, so its sample's exemplar names this play.
+     */
     @Override
     public ProcessResult processEvent(GameEvent event) {
+        Span span = Traces.start("accept", SpanKind.SERVER, Context.current());
+        try (Scope scope = span.makeCurrent()) {
+            ProcessResult r = accept(event, Traces.traceparent(span));
+            String name = r.name().toLowerCase(Locale.ROOT);
+            span.setAttribute("accept.result", name);
+            PipelineMetrics.playAccepted(name);
+            if (r == ProcessResult.ACCEPTED) {
+                PipelineMetrics.latency(PipelineMetrics.Stage.ACCEPTED, event.getTimestamp(), nowMillis.getAsLong());
+            }
+            return r;
+        } catch (RuntimeException e) {
+            span.recordException(e);
+            span.setStatus(StatusCode.ERROR);
+            throw e;
+        } finally {
+            span.end();
+        }
+    }
+
+    private ProcessResult accept(GameEvent event, String traceparent) {
         if (event == null || isBlank(event.getGameId()) || isBlank(event.getEventId())
                 || isBlank(event.getEventType()) || isBlank(event.getGameStatus()) || event.getSeq() <= 0) {
             System.err.println("[EventProcessingService] Rejected invalid event: needs gameId, eventId, eventType, gameStatus, seq > 0");
@@ -236,7 +271,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                 String.valueOf(event.getStartTime()),
                 GSON.toJson(event.getLineScore()),
                 RedisKeys.LIVE_CHANNEL_PREFIX + event.getGameId(),
-                String.valueOf(GAMES_START_WINDOW_MILLIS)
+                String.valueOf(GAMES_START_WINDOW_MILLIS),
+                orEmpty(traceparent)
             );
             result = (Long) jedis.eval(PROCESS_EVENT_SCRIPT, keys, args);
         }
@@ -248,7 +284,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                 + event.getEventId() + " for game " + event.getGameId());
             return ProcessResult.STALE;
         }
-        publish(event.withVersion(result));
+        publish(event.withVersion(result), traceparent);
         return ProcessResult.ACCEPTED;
     }
 
@@ -257,8 +293,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      * outbox, and if the send fails the slot stays, so the retry loop sends it again. Every
      * accepted play goes out, GAME_SYNC included.
      */
-    private void publish(GameEvent play) {
-        outbox.send(publisher, play);
+    private void publish(GameEvent play, String traceparent) {
+        outbox.send(publisher, play, traceparent, false);
     }
 
     private static String orEmpty(String s) {

@@ -26,6 +26,7 @@ spec:
             - name: SERVICE
               value: espn-poller
             {{- include "sports-notifier.baseEnv" . | nindent 12 }}
+            {{- include "sports-notifier.otelEnv" (dict "root" . "name" "espn-poller") | nindent 12 }}
             {{- include "sports-notifier.espnEnv" . | nindent 12 }}
             - name: EPS_URL
               value: http://event-processing:8083

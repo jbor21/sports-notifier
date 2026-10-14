@@ -258,4 +258,14 @@ class VerifierTest {
         h.body().getAsJsonObject("game").remove("clock");
         assertEquals(List.of("history_wrong_body"), kinds(verify(List.of(a), List.of(h), List.of())));
     }
+
+    @Test
+    void legacyClaimMessage() {
+        // A claim written as '1' before 4.2 reaches the verifier as no time, like no claim at all (Claims).
+        ExpectedPush a = exp("u1", G1, G1 + ":A");
+        Verifier.Result r = verify(List.of(a), List.of(hist(a, T)), List.of(socket("u1", 0)), Map.of(), 0);
+        String detail = r.findings().get(0).detail();
+        assertTrue(detail.contains("no delivery time in its claim"), detail);
+        assertFalse(detail.contains("never claimed"), detail);
+    }
 }

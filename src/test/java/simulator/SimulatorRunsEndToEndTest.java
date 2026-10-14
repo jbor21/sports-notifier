@@ -99,9 +99,10 @@ class SimulatorRunsEndToEndTest {
             KafkaSettings.consumer(KafkaTestSupport.bootstrap(), "s2-" + UUID.randomUUID()));
         s2.subscribe(List.of(notifications));
         stage2 = new Stage2Worker(s2, new Delivery(pool) {
-            @Override public void deliverAll(List<NotificationMessage> batch) {
-                super.deliverAll(batch);
+            @Override public List<Boolean> deliverAll(List<NotificationMessage> batch) {
+                List<Boolean> results = super.deliverAll(batch);
                 delivered.addAll(batch);
+                return results;
             }
         });
 

@@ -112,6 +112,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      # The runner has about 14 GB of free disk; with the observability image (Phase 4.3) the k3d node fell
+      # below kubelet's eviction threshold and every pod was evicted. These preinstalled SDKs are never used.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
       - name: Install k3d
         run: curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=$K3D_VERSION bash
       - uses: azure/setup-helm@v5
@@ -130,7 +134,8 @@ jobs:
         working-directory: web
         run: pnpm install --frozen-lockfile && pnpm exec playwright install --with-deps chromium
       # check: the correctness checker on the ci replay set at 60x (about 4 minutes); its report is in this log.
-      - run: make cluster up smoke check e2e SET=ci SPEED=60
+      # trace-check: that run's traces and metrics reached the observability pod, one trace through every hop.
+      - run: make cluster up smoke check trace-check e2e SET=ci SPEED=60
       - name: Show pods and logs
         if: failure()
         run: make logs

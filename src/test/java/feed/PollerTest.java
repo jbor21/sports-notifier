@@ -1,5 +1,10 @@
 package feed;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.api.common.AttributeKey;
+import telemetry.Traces;
+import testsupport.TelemetryTestSupport;
 import model.GameEvent;
 import model.GameSnapshot;
 import model.GameSnapshot.Half;
@@ -232,5 +237,27 @@ class PollerTest {
     void emptyScoreboardIsSlow() throws Exception {
         feed.games = List.of();
         assertFalse(poller(new InProcessSink()).pollLeague("NBA"));
+    }
+
+    @Test
+    void pollSpanStartsAtDetectedAt() throws Exception {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            List<String> seen = new CopyOnWriteArrayList<>();
+            InProcessSink inner = new InProcessSink();
+            EventSink sink = event -> {
+                seen.add(Traces.traceparent(Span.current()));
+                return inner.post(event);
+            };
+            feed.games = List.of(live(3000, 50, 48));
+            poller(sink).pollLeague("NBA");
+            assertEquals(1, seen.size());
+            assertNotNull(seen.get(0), "the POST runs inside the poll span");
+            var poll = otel.spans("poll").get(0);
+            assertEquals(SpanKind.CLIENT, poll.getKind());
+            assertFalse(poll.getParentSpanContext().isValid(), "poll is a root span");
+            assertEquals(NOW * 1_000_000L, poll.getStartEpochNanos());
+            assertEquals("accepted", poll.getAttributes().get(AttributeKey.stringKey("poll.result")));
+            assertTrue(seen.get(0).contains(poll.getSpanContext().getSpanId()));
+        }
     }
 }

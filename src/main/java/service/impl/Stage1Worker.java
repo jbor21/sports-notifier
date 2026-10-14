@@ -4,6 +4,10 @@ import alerts.Detectors;
 import alerts.GameMemory;
 import alerts.Play;
 import com.google.gson.Gson;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Scope;
 import model.GameEvent;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -17,6 +21,8 @@ import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.errors.SerializationException;
 import redis.clients.jedis.exceptions.JedisDataException;
 import redis.clients.jedis.exceptions.JedisException;
+import telemetry.PipelineMetrics;
+import telemetry.Traces;
 import util.GameEventParser;
 
 import util.LoopHealth;
@@ -171,7 +177,25 @@ public final class Stage1Worker implements AutoCloseable {
         return handled;
     }
 
+    /**
+     * One {@code fanout} span per play, a child of the context in the record's header. Every
+     * notifications message carries this span's context, so Stage 2's delivery joins the play's
+     * trace. A redelivered play (after a crash or rebalance) shows as a second fanout, skipped.
+     */
     private void handle(ConsumerRecord<String, String> r) {
+        Span span = Traces.start("fanout", SpanKind.CONSUMER, Traces.extract(r.headers()));
+        try (Scope scope = span.makeCurrent()) {
+            fanout(r, span);
+        } catch (RuntimeException | StackOverflowError e) {
+            span.recordException(e);
+            span.setStatus(StatusCode.ERROR);
+            throw e;
+        } finally {
+            span.end();
+        }
+    }
+
+    private void fanout(ConsumerRecord<String, String> r, Span span) {
         GameEvent play;
         try {
             play = GameEventParser.parse(r.value());
@@ -184,17 +208,31 @@ public final class Stage1Worker implements AutoCloseable {
             return;
         }
         DetectorMemory.Stored stored = memory.read(play.getGameId());
-        if (play.getVersion() <= stored.version()) return;
+        if (play.getVersion() <= stored.version()) {
+            span.setAttribute("fanout.skipped", true);
+            return;
+        }
 
         Play p = Play.of(play);
         Detectors.Result result = detectors.run(stored.memory(), p);
+        span.setAttribute("fanout.alerts", (long) result.moment().size() + (result.finalAlert() != null ? 1 : 0));
         if (!result.moment().isEmpty() || result.finalAlert() != null) {
             AtomicReference<Exception> failed = new AtomicReference<>();
-            fanout.send(p, result, (userId, message) ->
-                producer.send(new ProducerRecord<>(notificationsTopic, userId, GSON.toJson(message)),
-                    (meta, err) -> { if (err != null) failed.compareAndSet(null, err); }));
+            AtomicLong pushes = new AtomicLong();
+            fanout.send(p, result, (userId, message) -> {
+                ProducerRecord<String, String> record = new ProducerRecord<>(notificationsTopic, userId, GSON.toJson(message));
+                Traces.inject(span, record.headers());
+                producer.send(record, (meta, err) -> { if (err != null) failed.compareAndSet(null, err); });
+                pushes.incrementAndGet();
+                PipelineMetrics.pushProduced();
+            });
             producer.flush();
+            span.setAttribute("fanout.pushes", pushes.get());
             if (failed.get() != null) throw new IllegalStateException("notifications not all confirmed", failed.get());
+            // Only plays that sent pushes: stage2 and gateway only ever see pushes, so the lines compare.
+            if (pushes.get() > 0) {
+                PipelineMetrics.latency(PipelineMetrics.Stage.STAGE1, play.getTimestamp(), System.currentTimeMillis());
+            }
         }
         memory.writeIfHigher(play.getGameId(), play.getVersion(), result.after());
     }

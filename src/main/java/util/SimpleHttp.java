@@ -31,12 +31,16 @@ public final class SimpleHttp {
     }
 
     public static HttpResponse<String> postJson(String url, String json) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+        return postJson(url, json, Map.of());
+    }
+
+    public static HttpResponse<String> postJson(String url, String json, Map<String, String> headers) throws Exception {
+        HttpRequest.Builder req = HttpRequest.newBuilder(URI.create(url))
             .timeout(Duration.ofSeconds(5))
             .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(json))
-            .build();
-        return CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
+            .POST(HttpRequest.BodyPublishers.ofString(json));
+        headers.forEach(req::header);
+        return CLIENT.send(req.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     public static HttpResponse<String> putJson(String url, String json) throws Exception {

@@ -35,6 +35,8 @@ out="target/chaos/$(date -u +%Y%m%dT%H%MZ)"
 mkdir -p "$out"
 summary="$out/summary.txt"
 echo "chaos  set $SET  speed ${SPEED}x  $(date -u +%Y-%m-%dT%H:%MZ)" | tee "$summary"
+# Fault marks on the Pipeline dashboard, through our own port-forward (none without the observability pod).
+chaos_grafana_start
 
 job_pid="" loop_pid="" log=""
 # Whatever happens (a failure, Ctrl-C), leave nothing cut and no request loop running. A checker Job
@@ -47,11 +49,9 @@ cleanup() {
     echo "  kubectl --context $KUBE_CONTEXT delete networkpolicy chaos-cut; kubectl --context $KUBE_CONTEXT label pods -l chaos chaos-" >&2
   fi
   if [ -n "$job_pid" ] && kill -0 "$job_pid" 2>/dev/null; then
-    kill "$job_pid" 2>/dev/null || true
-    job=$(grep -oE '^job/checker-[0-9a-z-]+' "$log" | head -1 || true)
-    [ -z "$job" ] || _k delete "$job" --ignore-not-found >/dev/null 2>&1 || true
-    echo "chaos: stopped $job mid-run; run make check-clean to remove its users" >&2
+    chaos_stop_job "$job_pid" "$log"
   fi
+  chaos_grafana_stop
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
@@ -97,9 +97,10 @@ rollout() {
     kill "$loop_pid" 2>/dev/null; loop_pid=""
     proof="the rollout did not finish"; return 1
   fi
+  chaos_mark "$1" healed
   nap 10
   kill "$loop_pid" 2>/dev/null || true; wait "$loop_pid" 2>/dev/null || true; loop_pid=""
-  new=$(_k get pods -l app.kubernetes.io/name=gateway --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}')
+  new=$(chaos_live_pods gateway | tr '\n' ' ')
   total=$(wc -l < "$codes" | tr -d ' ')
   failed=$(grep -cvE '^[234][0-9][0-9]$' "$codes" || true)
   for p in $old; do [[ " $new " != *" $p "* ]] || { fault_ok=0; proof="fault did not land: $p was not replaced"; return; }; done
@@ -109,11 +110,12 @@ rollout() {
 
 # A worker cut off from Kafka for 60 s while it keeps Redis; at 50 s its IP must have left the group.
 cut() {
-  local pod ip group left back
+  local pod ip group left back before note
   local members
   pod=$(chaos_first_pod "$(deployment_of "$1")") && [ -n "$pod" ] || { proof="no running pod to cut"; return 1; }
   ip=$(chaos_pod_ip "$pod") || return 1
   group=${1%%-*}
+  before=$(chaos_restarts "$pod") || before=0
   say "cut $pod ($ip) from Kafka"
   chaos_cut "$pod" || { chaos_heal "$pod"; proof="could not apply the cut to $pod"; return 1; }
   nap 50
@@ -125,17 +127,19 @@ cut() {
   elif [ -z "$members" ]; then
     fault_ok=0; proof="group $group was empty at 50 s: the other copy is gone too"
   fi
-  left=$((SECONDS - t0))
+  left=$((SECONDS - t_run))
   nap 10
   chaos_heal "$pod"
+  chaos_mark "$1" healed
   say "healed $pod"
   back=""
   for _ in $(seq 1 30); do
-    if chaos_members "$group" | grep -qx "$ip"; then back=$((SECONDS - t0)); break; fi
+    if chaos_members "$group" | grep -qx "$ip"; then back=$((SECONDS - t_run)); break; fi
     sleep 2
   done
   [ "$fault_ok" = 0 ] && return
-  [ "$(chaos_restarts "$pod")" = 0 ] || say "$pod was restarted during the cut (liveness): allowed"
+  note=$(chaos_restart_note "$pod" "$before")
+  [ -z "$note" ] || say "$note"
   if [ -n "$back" ]; then
     proof="$pod left $group by +$left s, back at +$back s"
   else
@@ -159,22 +163,26 @@ for name in "${run[@]}"; do
   job_pid=$!
 
   started=""
-  for _ in $(seq 1 300); do
+  for _ in $(seq 1 "${CHAOS_START_WAIT:-300}"); do
     started=$(grep -m1 '\[Checker\] run started' "$log" || true)
     [ -z "$started" ] && kill -0 "$job_pid" 2>/dev/null || break
     sleep 1
   done
   rc=0
   if [ -z "$started" ]; then
-    wait "$job_pid" || rc=$?
+    # Still running without its run: stop it now rather than wait out the Job's time limit (#54).
+    if kill -0 "$job_pid" 2>/dev/null; then chaos_stop_job "$job_pid" "$log"; rc=1; else wait "$job_pid" || rc=$?; fi
     job_pid=""
     printf '%-16s FAIL  the checker never started its run (exit %s; see %s)\n' "$name" "$rc" "$log" | tee -a "$summary"
     continue
   fi
   replay=$(echo "$started" | sed -E 's/.*replay ([0-9]+) s at.*/\1/')
   t_run=$SECONDS
+  run_ms=$(chaos_now_ms)
+  chaos_mark "$name" "run started" "$run_ms"
   nap $((replay * 40 / 100))
   fault_at=$((SECONDS - t_run))
+  chaos_mark "$name" fault
   say "fault at +$fault_at s into a $replay s replay"
   # A fault step that cannot run fails this scenario, never the suite (spec 4.2).
   if ! case $name in
@@ -188,6 +196,8 @@ for name in "${run[@]}"; do
 
   wait "$job_pid" || rc=$?
   job_pid=""
+  end_ms=$(chaos_now_ms)
+  chaos_mark "$name" "run ended" "$end_ms"
   pushes=$(grep -oE 'expected pushes [0-9,]+' "$log" | awk '{print $3}' || true)
   excused=$(grep -oE 'allowed in disconnects: [0-9]+' "$log" | awk '{print $4}' || true)
   worst=$(grep -oE 'max ([0-9]+ ms|-)' "$log" | tail -1 | awk '{ if ($2 == "-") print "-"; else printf "%.1f s", $2 / 1000 }' || true)
@@ -200,6 +210,8 @@ for name in "${run[@]}"; do
   fi
   printf '%-16s %s  pushes %s  socket misses excused %s  worst delay %s  %s\n' \
     "$name" "$verdict" "${pushes:--}" "${excused:--}" "${worst:--}" "$proof" | tee -a "$summary"
+  # The scenario's window on the dashboard, for a screenshot (make grafana serves localhost:3000).
+  [ "$CHAOS_GRAFANA" != 1 ] || echo "  dashboard: http://localhost:3000/d/pipeline?from=$((run_ms - 30000))&to=$((end_ms + 30000))" | tee -a "$summary"
 done
 
 echo "${passed} of ${#run[@]} passed" | tee -a "$summary"

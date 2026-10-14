@@ -1,9 +1,15 @@
 package feed;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import model.GameEvent;
 import model.GameSnapshot;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
+import telemetry.Traces;
 import util.RedisKeys;
 
 import java.io.IOException;
@@ -91,8 +97,23 @@ public final class Poller {
         return LogLevel.RETRY;
     }
 
+    /**
+     * Each POST is the root span of the play's trace, {@code poll}, starting when the poller saw the
+     * play ({@code detectedAt}, the event's timestamp), the same instant pipeline.latency counts from.
+     */
     private void send(GameEvent event) throws Exception {
-        EventSink.PostResult r = sink.post(event);
+        Span span = Traces.startAt("poll", SpanKind.CLIENT, Context.root(), event.getTimestamp());
+        EventSink.PostResult r;
+        try (Scope scope = span.makeCurrent()) {
+            r = sink.post(event);
+            if (r.result() != null) span.setAttribute("poll.result", r.result());
+        } catch (Exception e) {
+            span.recordException(e);
+            span.setStatus(StatusCode.ERROR);
+            throw e;
+        } finally {
+            span.end();
+        }
         String what = event.getEventType() + " " + event.getEventId() + " :: " + event.getDescription();
         switch (levelFor(event.getEventType(), r)) {
             case DEBUG -> { if (DEBUG) System.out.println("[Poller] " + r.result() + " " + what); }

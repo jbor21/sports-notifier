@@ -1,5 +1,6 @@
 package app;
 
+
 import gateway.GatewayMain;
 import service.impl.EventProcessingServiceMain;
 import service.impl.GameStateServiceMain;
@@ -11,6 +12,7 @@ import service.impl.UserPreferenceServiceMain;
 import simulator.EspnPollerMain;
 import simulator.EventSimulatorMain;
 import simulator.ReplayMain;
+import telemetry.Telemetry;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -65,6 +67,11 @@ public final class Launcher {
             System.exit(1);
             return;
         }
+        // Telemetry is off unless the chart set OTEL_EXPORTER_OTLP_ENDPOINT (Phase 4.3). Its hook runs
+        // alongside the service's own, so at most the spans of the last instant are lost.
+        String service = System.getenv("SERVICE");
+        Telemetry.init(service);
+        Runtime.getRuntime().addShutdownHook(new Thread(Telemetry::close, "telemetry-shutdown"));
         main.run(args);
     }
 }

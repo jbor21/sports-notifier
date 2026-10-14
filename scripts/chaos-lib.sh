@@ -134,3 +134,69 @@ chaos_steady() {
     sleep 3
   done
 }
+
+# Running pods of a Deployment that are not being deleted. `status.phase=Running` alone still lists a
+# terminating pod during its preStop and shutdown, which a rollout check must not count as new (#54).
+chaos_live_pods() {
+  _k get pods -l "app.kubernetes.io/name=$1" --field-selector=status.phase=Running \
+    -o jsonpath='{range .items[*]}{.metadata.name} {.metadata.deletionTimestamp}{"\n"}{end}' \
+    | awk 'NF == 1 { print $1 }'
+}
+
+# A note when a pod restarted after `before` (its restart count when the cut began). Compared with the
+# count before, not with 0: an earlier crash scenario leaves the count above 0 (#54).
+chaos_restart_note() {
+  local now
+  now=$(chaos_restarts "$1") || return 0
+  [ "${now:-0}" -gt "$2" ] && echo "$1 was restarted during the cut (liveness): allowed"
+  return 0
+}
+
+# Stops a scenario's checker: the run-job.sh process and the Job it started (named in the log), so
+# nothing keeps running until the Job's time limit (#54). Its synthetic users are left to check-clean.
+chaos_stop_job() {
+  local pid=$1 log=$2 job
+  kill "$pid" 2>/dev/null || true
+  job=$(grep -oE '^job/checker-[0-9a-z-]+' "$log" | head -1 || true)
+  [ -z "$job" ] || _k delete "$job" --ignore-not-found >/dev/null 2>&1 || true
+  wait "$pid" 2>/dev/null || true
+  [ -z "$job" ] || echo "chaos: stopped $job mid-run; run make check-clean to remove its users" >&2
+}
+
+# --- Fault marks on the Pipeline dashboard (Phase 4.3 spec, section 6) ---
+# Grafana annotations through a port-forward this script opens. A mark that cannot be posted is a log
+# line, never a failed scenario; with no observability pod there are no marks and no links.
+CHAOS_GRAFANA=${CHAOS_GRAFANA:-0}
+CHAOS_GRAFANA_PORT=${CHAOS_GRAFANA_PORT:-3300}
+CHAOS_GRAFANA_PID=""
+
+chaos_now_ms() { echo $(( $(date +%s) * 1000 )); }
+
+chaos_grafana_start() {
+  CHAOS_GRAFANA=0
+  _k get svc lgtm >/dev/null 2>&1 || return 0
+  _k port-forward svc/lgtm "$CHAOS_GRAFANA_PORT:3000" >/dev/null 2>&1 &
+  CHAOS_GRAFANA_PID=$!
+  for _ in $(seq 1 20); do
+    if curl -sf -o /dev/null "http://localhost:$CHAOS_GRAFANA_PORT/api/health"; then CHAOS_GRAFANA=1; return 0; fi
+    sleep 0.5
+  done
+  echo "chaos: Grafana did not answer on :$CHAOS_GRAFANA_PORT; running without fault marks" >&2
+  chaos_grafana_stop
+}
+
+chaos_grafana_stop() {
+  [ -z "$CHAOS_GRAFANA_PID" ] || kill "$CHAOS_GRAFANA_PID" 2>/dev/null || true
+  CHAOS_GRAFANA_PID=""
+}
+
+# chaos_mark <scenario> <text> [<epoch ms>]
+chaos_mark() {
+  [ "$CHAOS_GRAFANA" = 1 ] || return 0
+  local at=${3:-$(chaos_now_ms)}
+  curl -sf -o /dev/null -X POST "http://localhost:$CHAOS_GRAFANA_PORT/api/annotations" \
+    -H 'Content-Type: application/json' \
+    -d "{\"time\": $at, \"tags\": [\"chaos\", \"$1\"], \"text\": \"$1: $2\"}" \
+    || echo "chaos: could not mark '$1: $2' on the dashboard" >&2
+  return 0
+}

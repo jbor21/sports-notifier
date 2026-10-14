@@ -1,0 +1,143 @@
+{{- /*
+Traces and metrics (Phase 4.3 spec, section 1). One grafana/otel-lgtm pod: the OpenTelemetry Collector
+receives our services' spans and metrics on 4318 and scrapes the Kafka exporter; Prometheus stores the
+metrics (with exemplars), Tempo the traces, and Grafana shows both. Reached only by port-forward
+(make grafana), never through Traefik.
+*/}}
+{{- if .Values.observability.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lgtm-collector
+  labels:
+    {{- include "sports-notifier.labels" "lgtm" | nindent 4 }}
+data:
+  otelcol-config.yaml: |
+    {{- .Files.Get "files/otelcol-config.yaml" | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lgtm-dashboards
+  labels:
+    {{- include "sports-notifier.labels" "lgtm" | nindent 4 }}
+data:
+  provider.yaml: |
+    {{- .Files.Get "files/grafana-provider.yaml" | nindent 4 }}
+  pipeline.json: |
+    {{- .Files.Get "files/pipeline.json" | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lgtm
+  labels:
+    {{- include "sports-notifier.labels" "lgtm" | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: lgtm
+  ports:
+    - { name: otlp-http, port: 4318, targetPort: 4318 }
+    - { name: grafana, port: 3000, targetPort: 3000 }
+    - { name: tempo, port: 3200, targetPort: 3200 }
+    - { name: prometheus, port: 9090, targetPort: 9090 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lgtm
+  labels:
+    {{- include "sports-notifier.labels" "lgtm" | nindent 4 }}
+spec:
+  replicas: 1
+  # Two pods would be two unrelated stores; Recreate avoids running both during an upgrade.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lgtm
+  template:
+    metadata:
+      labels:
+        {{- include "sports-notifier.labels" "lgtm" | nindent 8 }}
+      annotations:
+        # A changed config or dashboard restarts the pod, so `make up` applies it.
+        checksum/config: {{ printf "%s%s%s" (.Files.Get "files/otelcol-config.yaml") (.Files.Get "files/grafana-provider.yaml") (.Files.Get "files/pipeline.json") | sha256sum }}
+    spec:
+      containers:
+        - name: lgtm
+          image: {{ .Values.observability.image }}
+          ports:
+            - containerPort: 4318
+            - containerPort: 3000
+            - containerPort: 3200
+            - containerPort: 9090
+          resources:
+            {{- toYaml .Values.observability.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: collector, mountPath: /otel-lgtm/otelcol-config.yaml, subPath: otelcol-config.yaml }
+            - { name: dashboards, mountPath: /otel-lgtm/grafana/conf/provisioning/dashboards/sports-notifier.yaml, subPath: provider.yaml }
+            - { name: dashboards, mountPath: /otel-lgtm/sports-notifier/pipeline.json, subPath: pipeline.json }
+          readinessProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            periodSeconds: 10
+            failureThreshold: 30
+      volumes:
+        # Lost on restart: a run's graphs are screenshots, not history (spec 1.1).
+        - name: data
+          emptyDir: {}
+        - name: collector
+          configMap: { name: lgtm-collector }
+        - name: dashboards
+          configMap: { name: lgtm-dashboards }
+---
+# Strimzi runs the exporter but creates no Service for it (it expects a PodMonitor, which needs the
+# Prometheus Operator). The collector scrapes it through this one.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-exporter
+  labels:
+    {{- include "sports-notifier.labels" "kafka-exporter" | nindent 4 }}
+spec:
+  selector:
+    strimzi.io/name: {{ .Release.Name }}-kafka-exporter
+  ports:
+    - { name: metrics, port: 9404, targetPort: 9404 }
+---
+# default-deny-ingress covers these pods too. Our workloads send telemetry to the collector...
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lgtm-from-app
+  labels:
+    app.kubernetes.io/part-of: sports-notifier
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: lgtm }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/part-of: sports-notifier }
+      ports:
+        - port: 4318
+---
+# ...and only the collector reads the exporter.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka-exporter-from-lgtm
+  labels:
+    app.kubernetes.io/part-of: sports-notifier
+spec:
+  podSelector:
+    matchLabels: { strimzi.io/name: {{ .Release.Name }}-kafka-exporter }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: lgtm }
+      ports:
+        - port: 9404
+{{- end }}
