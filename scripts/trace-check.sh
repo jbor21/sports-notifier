@@ -85,4 +85,14 @@ for i in $(seq 1 "$TRIES"); do
   [ "$i" = "$TRIES" ] || sleep 5
 done
 echo "trace-check: FAIL$last_missing" >&2
+
+# Where it broke: did anything reach the collector, and did it get passed on? (otelcol_* are the
+# collector's own metrics, which the image scrapes into the same Prometheus.)
+sum_of() { curl -s --get "$prom/api/v1/query" --data-urlencode "query=sum({__name__=~\"$1\"})" | jq -r '.data.result[0].value[1] // "none"'; }
+echo "  collector: spans accepted $(sum_of 'otelcol_receiver_accepted_spans.*') refused $(sum_of 'otelcol_receiver_refused_spans.*')," \
+     "metric points accepted $(sum_of 'otelcol_receiver_accepted_metric_points.*') refused $(sum_of 'otelcol_receiver_refused_metric_points.*')," \
+     "export failures spans $(sum_of 'otelcol_exporter_send_failed_spans.*') points $(sum_of 'otelcol_exporter_send_failed_metric_points.*')" >&2
+echo "  gateway env: $(kubectl --context "$KUBE_CONTEXT" exec deploy/gateway -- sh -c 'env | grep ^OTEL_ | sort | tr "\n" " "' 2>&1)" >&2
+echo "  gateway OpenTelemetry log lines:" >&2
+kubectl --context "$KUBE_CONTEXT" logs deploy/gateway 2>&1 | grep -iE -A2 'opentelemetry|otlp|export' | head -12 | sed 's/^/    /' >&2
 exit 1
