@@ -29,7 +29,7 @@ class WorkerLoopHealthTest {
         consumer.assign(List.of(TP));
         consumer.updateBeginningOffsets(Map.of(TP, 0L));
         Delivery dies = new Delivery(null) {
-            @Override public void deliverAll(List<NotificationMessage> batch) { throw new AssertionError("loop-killing error"); }
+            @Override public List<Boolean> deliverAll(List<NotificationMessage> batch) { throw new AssertionError("loop-killing error"); }
         };
         Stage2Worker worker = new Stage2Worker(consumer, dies);
         LoopHealth health = new LoopHealth(System::currentTimeMillis, 60_000);

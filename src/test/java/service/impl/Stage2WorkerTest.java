@@ -1,5 +1,11 @@
 package service.impl;
 
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.context.Context;
+import telemetry.Traces;
+import testsupport.TelemetryTestSupport;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -134,7 +140,7 @@ class Stage2WorkerTest {
         }
         String group = "s2-" + UUID.randomUUID();
         Delivery diesHalfway = new Delivery(pool) {
-            @Override public void deliverAll(List<NotificationMessage> batch) {
+            @Override public List<Boolean> deliverAll(List<NotificationMessage> batch) {
                 super.deliverAll(batch.subList(0, batch.size() / 2));
                 throw new IllegalStateException("crash");
             }
@@ -167,5 +173,52 @@ class Stage2WorkerTest {
         send(msg("u1", 1));
         pollUntilHandled(worker("s2-" + UUID.randomUUID(), new Delivery(pool)), 1);
         assertEquals(List.of("play 1"), pushedTo("u1"));
+    }
+
+    private void send(NotificationMessage m, Span parent) throws Exception {
+        ProducerRecord<String, String> r = new ProducerRecord<>(topic, m.getUserId(), GSON.toJson(m));
+        Traces.inject(parent, r.headers());
+        producer.send(r).get();
+    }
+
+    @Test
+    void deliverSpanPerMessage() throws Exception {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            connect("u1", "u2");
+            Span a = Traces.start("fanout", SpanKind.CONSUMER, Context.root());
+            Span b = Traces.start("fanout", SpanKind.CONSUMER, Context.root());
+            a.end();
+            b.end();
+            send(msg("u1", 1), a);
+            send(msg("u2", 1), b);
+            pollUntilHandled(worker("s2-" + UUID.randomUUID(), new Delivery(pool)), 2);
+            var delivers = otel.spans("deliver");
+            assertEquals(2, delivers.size());
+            for (Span parent : List.of(a, b)) {
+                var d = delivers.stream().filter(sp -> sp.getParentSpanId().equals(parent.getSpanContext().getSpanId())).findFirst().orElseThrow();
+                assertEquals(SpanKind.CONSUMER, d.getKind());
+                assertEquals("delivered", d.getAttributes().get(AttributeKey.stringKey("deliver.result")));
+                Thread.sleep(300);
+                assertTrue(pushes.stream().anyMatch(p -> p.contains(d.getSpanId())), "the push carries its deliver span");
+            }
+            assertEquals(2, otel.latencyCount("stage2"));
+            assertEquals(2, otel.counter("deliveries", "result", "delivered"));
+        }
+    }
+
+    @Test
+    void redeliveryIsDuplicate() throws Exception {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            connect("u1");
+            Span a = Traces.start("fanout", SpanKind.CONSUMER, Context.root());
+            a.end();
+            send(msg("u1", 1), a);
+            send(msg("u1", 1), a);   // Stage 1 sent it twice
+            pollUntilHandled(worker("s2-" + UUID.randomUUID(), new Delivery(pool)), 2);
+            var results = otel.spans("deliver").stream()
+                .map(sp -> sp.getAttributes().get(AttributeKey.stringKey("deliver.result"))).sorted().toList();
+            assertEquals(List.of("delivered", "duplicate"), results);
+            assertEquals(1, otel.latencyCount("stage2"));
+        }
     }
 }

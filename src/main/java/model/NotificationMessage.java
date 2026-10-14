@@ -35,6 +35,11 @@ public class NotificationMessage {
     private String status;
     /** When the poller saw the play (epoch millis), for measuring delay end to end. */
     private long detectedAt;
+    /**
+     * The deliver span's trace context, set by Stage 2 for the gateway message; never serialized
+     * (transient), because on Kafka the context travels in the record's headers (Phase 4.3).
+     */
+    private transient String traceparent;
     /** The API's {@code Notification} (see {@link NotificationBody}): what history stores and the new UI reads. */
     private JsonObject notification;
     /**
@@ -104,4 +109,6 @@ public class NotificationMessage {
     public JsonObject getNotification() { return notification; }
     public long getCreatedAt() { return createdAt; }
     public void setCreatedAt(long createdAt) { this.createdAt = createdAt; }
+    public String getTraceparent() { return traceparent; }
+    public void setTraceparent(String traceparent) { this.traceparent = traceparent; }
 }

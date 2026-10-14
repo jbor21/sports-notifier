@@ -2,12 +2,18 @@ package service.impl;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Scope;
 import model.NotificationMessage;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.common.errors.WakeupException;
 
+import telemetry.PipelineMetrics;
+import telemetry.Traces;
 import util.LoopHealth;
 
 import java.time.Duration;
@@ -42,6 +48,7 @@ public final class Stage2Worker implements AutoCloseable {
     public int pollOnce(Duration timeout) {
         ConsumerRecords<String, String> records = consumer.poll(timeout);
         List<NotificationMessage> batch = new ArrayList<>();
+        List<Span> spans = new ArrayList<>();
         for (ConsumerRecord<String, String> r : records) {
             NotificationMessage m = parse(r.value());
             if (m == null || m.getMessageId() == null || m.getUserId() == null) {
@@ -50,13 +57,36 @@ public final class Stage2Worker implements AutoCloseable {
                 continue;
             }
             m.setCreatedAt(r.timestamp());
+            // One deliver span per message, a child of Stage 1's fanout. The batch's scripts run as one
+            // pipeline, so every span of a batch lasts the pipeline's round trip, not one script's.
+            Span span = Traces.start("deliver", SpanKind.CONSUMER, Traces.extract(r.headers()));
+            m.setTraceparent(Traces.traceparent(span));
+            spans.add(span);
             batch.add(m);
         }
+        List<Boolean> delivered;
         try {
-            delivery.deliverAll(batch);
+            delivered = delivery.deliverAll(batch);
         } catch (RuntimeException e) {
+            for (Span span : spans) {
+                span.recordException(e);
+                span.setStatus(StatusCode.ERROR);
+                span.end();
+            }
             Offsets.rewindTo(consumer, records);
             throw e;
+        }
+        long now = System.currentTimeMillis();
+        for (int i = 0; i < batch.size(); i++) {
+            Span span = spans.get(i);
+            String result = delivered.get(i) ? "delivered" : "duplicate";
+            span.setAttribute("deliver.result", result);
+            // Recorded with the span current, so the sample's exemplar names this push's trace.
+            try (Scope scope = span.makeCurrent()) {
+                PipelineMetrics.delivery(result);
+                if (delivered.get(i)) PipelineMetrics.latency(PipelineMetrics.Stage.STAGE2, batch.get(i).getDetectedAt(), now);
+            }
+            span.end();
         }
         if (!records.isEmpty()) consumer.commitSync();
         return records.count();

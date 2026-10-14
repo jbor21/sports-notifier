@@ -1,5 +1,11 @@
 package gateway;
 
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.context.Context;
+import telemetry.Traces;
+import testsupport.TelemetryTestSupport;
 import model.GameEvent;
 import model.NotificationMessage;
 import org.junit.jupiter.api.AfterEach;
@@ -189,6 +195,88 @@ class GatewayChannelTest {
             assertEquals(1013, stalled.closedWith, "a tab too far behind is closed, so it reconnects and refetches");
         } finally {
             stalled.release.countDown();
+        }
+    }
+
+    /** What Stage 2 publishes for one push: the API notification, detected 250 ms before now. */
+    private static String pushJson(String userId, String traceparent) {
+        com.google.gson.JsonObject n = new com.google.gson.JsonObject();
+        n.addProperty("id", "nba-1:SCORE:1");
+        n.addProperty("detectedAt", java.time.Instant.ofEpochMilli(System.currentTimeMillis() - 250).toString());
+        com.google.gson.JsonObject payload = new com.google.gson.JsonObject();
+        payload.addProperty("type", "notification");
+        payload.add("notification", n);
+        com.google.gson.JsonObject m = new com.google.gson.JsonObject();
+        m.addProperty("userId", userId);
+        m.add("payload", payload);
+        if (traceparent != null) m.addProperty("traceparent", traceparent);
+        return m.toString();
+    }
+
+    @Test
+    void sendSpanAndLatency() throws Exception {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            GatewayChannel a = gateway();
+            FakeSocket socket = new FakeSocket();
+            a.register("u1", socket);
+            Span deliver = Traces.start("deliver", SpanKind.CONSUMER, Context.root());
+            deliver.end();
+            jedis.publish("gw:" + a.gatewayId(), pushJson("u1", Traces.traceparent(deliver)));
+            settle();
+            assertEquals(1, socket.sent.size());
+            assertFalse(socket.sent.get(0).contains("traceparent"), "the tab gets the payload only");
+            var send = otel.spans("send").get(0);
+            assertEquals(deliver.getSpanContext().getSpanId(), send.getParentSpanId());
+            assertEquals(1L, send.getAttributes().get(AttributeKey.longKey("send.sockets")));
+            var point = otel.latency("gateway").orElseThrow();
+            assertEquals(1, point.getCount());
+            assertTrue(point.getSum() >= 0.25, "about 250 ms since detectedAt, got " + point.getSum());
+            assertEquals(deliver.getSpanContext().getTraceId(), point.getExemplars().get(0).getSpanContext().getTraceId());
+            assertEquals(1, otel.counter("socket.sends", null, null));
+        }
+    }
+
+    @Test
+    void garbageTraceparentStillSends() throws Exception {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            GatewayChannel a = gateway();
+            FakeSocket socket = new FakeSocket();
+            a.register("u1", socket);
+            jedis.publish("gw:" + a.gatewayId(), pushJson("u1", "abc"));
+            settle();
+            assertEquals(1, socket.sent.size());
+            assertFalse(otel.spans("send").get(0).getParentSpanContext().isValid());
+            assertEquals(1, otel.latencyCount("gateway"));
+        }
+    }
+
+    @Test
+    void unreadCountHasNoSpan() throws Exception {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            GatewayChannel a = gateway();
+            FakeSocket socket = new FakeSocket();
+            a.register("u1", socket);
+            jedis.publish("gw:" + a.gatewayId(), "{\"userId\":\"u1\",\"payload\":{\"type\":\"unread_count\",\"count\":3}}");
+            settle();
+            assertEquals(1, socket.sent.size());
+            assertTrue(otel.spans("send").isEmpty());
+            assertEquals(0, otel.latencyCount("gateway"));
+            assertEquals(0, otel.counter("socket.sends", null, null));
+        }
+    }
+
+    @Test
+    void noOpenSocketNoLatency() throws Exception {
+        try (TelemetryTestSupport otel = TelemetryTestSupport.install()) {
+            GatewayChannel a = gateway();
+            FakeSocket socket = new FakeSocket();
+            a.register("u1", socket);
+            socket.close(1000, "tab closed");
+            jedis.publish("gw:" + a.gatewayId(), pushJson("u1", null));
+            settle();
+            assertTrue(socket.sent.isEmpty());
+            assertEquals(0, otel.latencyCount("gateway"));
+            assertEquals(0, otel.counter("socket.sends", null, null));
         }
     }
 }
