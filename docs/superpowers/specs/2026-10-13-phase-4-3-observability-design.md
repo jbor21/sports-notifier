@@ -92,7 +92,7 @@ The image loads Grafana dashboard providers from `/otel-lgtm/grafana/conf/provis
 A small package, `telemetry/`, owns OpenTelemetry for every process:
 
 - **`Telemetry.init(serviceName)`**, called once by `app.Launcher` before the service's `main`. It builds the SDK from the standard OpenTelemetry environment variables (the SDK's autoconfigure module), so all settings come from the chart. **Telemetry is off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set**: tests and `make test` export nothing and log nothing. Off means the no-op implementation: spans and metrics cost nothing, and no `traceparent` is written anywhere.
-- **`Telemetry.close()`**, called last in every `*Main`'s shutdown hook: flush what is queued, at most 5 s.
+- **`Telemetry.close()`**, from one shutdown hook that `app.Launcher` registers: flush what is queued, at most 5 s. (Shutdown hooks run concurrently, so the spans of the last instant before exit may be lost; nothing on the push path depends on them.)
 - **`Traces`**: the W3C trace-context propagator and three carriers, each a pair of "write the context in" and "read it out": an HTTP request's headers, a Kafka record's headers, and a plain string (`traceparent`, about 55 characters, for the outbox and the pub/sub JSON).
 
 **Dependencies** (Maven, through `opentelemetry-bom` 1.66.0): `opentelemetry-api`, `-sdk`, `-sdk-extension-autoconfigure`, `-exporter-otlp` with the JDK HTTP sender (`opentelemetry-exporter-sender-jdk`) instead of the default OkHttp one, which would pull Kotlin into the JAR; `opentelemetry-sdk-testing` for tests.
