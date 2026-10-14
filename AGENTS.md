@@ -232,7 +232,7 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
 - **Next step: #36 (the live check, must-fix before Phase 5), then Phase 5 (AWS).**
   Before the checker runs on AWS: reserve the `ck_` prefix (#51); decide #47 (replayed
   pushes reach real accounts) before Phase 6. Other deferred minors are issues #19–#27,
-  #35, #37–#43, #45, #50.
+  #35, #37–#43, #45, #50, #56.
 - **New in Phase 4.3:** one `grafana/otel-lgtm` pod (`observability.enabled`, on by default;
   data in the pod, lost on restart) and Strimzi's Kafka exporter (`kafka_consumergroup_lag`,
   scraped by the collector through the `kafka-exporter` Service). The `telemetry/` package wraps
