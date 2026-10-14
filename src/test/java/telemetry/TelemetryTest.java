@@ -52,29 +52,46 @@ class TelemetryTest {
         assertTrue(System.nanoTime() - closing < 6_000_000_000L, "close took over 6 s");
     }
 
+    private static final io.opentelemetry.api.common.AttributeKey<String> INSTANCE =
+        io.opentelemetry.api.common.AttributeKey.stringKey("service.instance.id");
+
     @Test
     void eachProcessIsItsOwnInstance() {
         // Two copies of a service must not share a metric series: Prometheus would read every
         // alternation between their counters as a reset.
-        Map<String, String> props = Telemetry.properties("gateway", Map.of("HOSTNAME", "gateway-7c9-x2k"));
-        assertEquals("service.instance.id=gateway-7c9-x2k", props.get("otel.resource.attributes"));
-        assertEquals("gateway", props.get("otel.service.name"));
+        var r = Telemetry.withInstanceId(io.opentelemetry.sdk.resources.Resource.empty(), Map.of("HOSTNAME", "gateway-7c9-x2k"));
+        assertEquals("gateway-7c9-x2k", r.getAttribute(INSTANCE));
     }
 
     @Test
-    void givenResourceAttributesKeepTheirOwnInstance() {
-        Map<String, String> props = Telemetry.properties("gateway",
-            Map.of("HOSTNAME", "h", "OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=laptop"));
-        assertEquals("deployment.environment=laptop,service.instance.id=h", props.get("otel.resource.attributes"));
-        props = Telemetry.properties("gateway", Map.of("OTEL_RESOURCE_ATTRIBUTES", "service.instance.id=mine"));
-        assertEquals("service.instance.id=mine", props.get("otel.resource.attributes"));
+    void givenInstanceIdIsKept() {
+        var given = io.opentelemetry.sdk.resources.Resource.create(io.opentelemetry.api.common.Attributes.of(INSTANCE, "mine"));
+        assertEquals("mine", Telemetry.withInstanceId(given, Map.of("HOSTNAME", "h")).getAttribute(INSTANCE));
     }
 
     @Test
     void noHostnameStillUnique() {
-        String a = Telemetry.properties("x", Map.of()).get("otel.resource.attributes");
-        String b = Telemetry.properties("x", Map.of()).get("otel.resource.attributes");
-        assertTrue(a.startsWith("service.instance.id="), a);
+        var empty = io.opentelemetry.sdk.resources.Resource.empty();
+        String a = Telemetry.withInstanceId(empty, Map.of()).getAttribute(INSTANCE);
+        String b = Telemetry.withInstanceId(empty, Map.of()).getAttribute(INSTANCE);
+        assertNotNull(a);
         assertNotEquals(a, b);
+    }
+
+    @Test
+    void instanceIdSurvivesResourceAttributesSetOutside() {
+        // A system property (like an env var) outranks the SDK's properties supplier: the instance id
+        // must still be on the resource of the SDK that gets built, not only in our map.
+        System.setProperty("otel.resource.attributes", "deployment.environment=laptop");
+        try {
+            Telemetry.init("gateway", Map.of("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9", "HOSTNAME", "gateway-7c9-x2k"));
+            Span span = Traces.start("s", SpanKind.INTERNAL, Context.root());
+            span.end();
+            var resource = ((io.opentelemetry.sdk.trace.ReadableSpan) span).toSpanData().getResource();
+            assertEquals("gateway-7c9-x2k", resource.getAttribute(io.opentelemetry.api.common.AttributeKey.stringKey("service.instance.id")));
+            assertEquals("laptop", resource.getAttribute(io.opentelemetry.api.common.AttributeKey.stringKey("deployment.environment")));
+        } finally {
+            System.clearProperty("otel.resource.attributes");
+        }
     }
 }

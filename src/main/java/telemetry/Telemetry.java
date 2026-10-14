@@ -1,9 +1,12 @@
 package telemetry;
 
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdk;
+import io.opentelemetry.sdk.resources.Resource;
 
 import java.util.HashMap;
 import java.util.Locale;
@@ -23,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 public final class Telemetry {
 
     static final String SCOPE = "sports-notifier";
+    private static final AttributeKey<String> INSTANCE_ID = AttributeKey.stringKey("service.instance.id");
 
     private static volatile OpenTelemetry otel = OpenTelemetry.noop();
     private static volatile Tracer tracer = otel.getTracer(SCOPE);
@@ -40,6 +44,9 @@ public final class Telemetry {
         Map<String, String> props = properties(serviceName, env);
         OpenTelemetrySdk built = AutoConfiguredOpenTelemetrySdk.builder()
             .addPropertiesSupplier(() -> props)
+            // On the final resource, after every config source: a supplier ranks below env vars and
+            // system properties, so an OTEL_RESOURCE_ATTRIBUTES set outside would drop an id put there.
+            .addResourceCustomizer((resource, config) -> withInstanceId(resource, env))
             .disableShutdownHook()          // Launcher's hook calls close()
             .build()
             .getOpenTelemetrySdk();
@@ -50,11 +57,6 @@ public final class Telemetry {
     /**
      * The SDK's settings: our defaults first, then every OTEL_* variable given. Only the HTTP sender is
      * in the JAR, so the protocol defaults to http/protobuf, and logs stay in stdout.
-     *
-     * Each process is its own {@code service.instance.id} (the pod name, which Kubernetes puts in
-     * HOSTNAME). Without one, Prometheus files the two gateways' metrics, or the two Stage 1s', under
-     * one series, and every alternation between their counters reads as a reset: rates in the
-     * hundreds while idle, and a p99 that never comes down after a spike (seen in the first chaos run).
      */
     static Map<String, String> properties(String serviceName, Map<String, String> env) {
         Map<String, String> props = new HashMap<>();
@@ -64,13 +66,21 @@ public final class Telemetry {
         env.forEach((k, v) -> {
             if (k.startsWith("OTEL_")) props.put(k.toLowerCase(Locale.ROOT).replace('_', '.'), v);
         });
-        String attrs = props.getOrDefault("otel.resource.attributes", "");
-        if (!attrs.contains("service.instance.id=")) {
-            String host = env.get("HOSTNAME");
-            String id = "service.instance.id=" + (host == null || host.isBlank() ? UUID.randomUUID() : host);
-            props.put("otel.resource.attributes", attrs.isBlank() ? id : attrs + "," + id);
-        }
         return props;
+    }
+
+    /**
+     * Each process is its own {@code service.instance.id} (the pod name, which Kubernetes puts in
+     * HOSTNAME). Without one, Prometheus files the two gateways' metrics, or the two Stage 1s', under
+     * one series, and every alternation between their counters reads as a reset: rates in the
+     * hundreds while idle, and a p99 that never comes down after a spike (seen in the first chaos run).
+     * An id already on the resource (set in OTEL_RESOURCE_ATTRIBUTES) is kept.
+     */
+    static Resource withInstanceId(Resource resource, Map<String, String> env) {
+        if (resource.getAttribute(INSTANCE_ID) != null) return resource;
+        String host = env.get("HOSTNAME");
+        String id = host == null || host.isBlank() ? UUID.randomUUID().toString() : host;
+        return resource.merge(Resource.create(Attributes.of(INSTANCE_ID, id)));
     }
 
     /** Makes {@code o} the implementation every span and metric uses from now on (tests install their own). */

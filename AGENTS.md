@@ -94,7 +94,7 @@ Flyway · Testcontainers 2.0.5 · web: Vite 8 · React 19 · TypeScript 5 · Rea
 SWR · vite-plugin-pwa (Workbox) · Vitest · Playwright · pnpm 12 · Node 24 ·
 OpenTelemetry Java 1.66.0 (manual SDK) · grafana/otel-lgtm 0.35.0
 **Size:** ~12,600 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
-design) · 726 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
+design) · 727 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
