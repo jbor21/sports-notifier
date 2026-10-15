@@ -24,6 +24,7 @@ export function workerTicker(
   createWorker: () => WorkerLike | null = createPingWorker,
 ): () => void {
   let timer: ReturnType<typeof setInterval> | undefined
+  let stopped = false
   const usePageTimer = () => (timer = setInterval(fn, ms))
   let worker: WorkerLike | null = null
   try {
@@ -33,8 +34,12 @@ export function workerTicker(
   }
   if (worker) {
     const w = worker
-    w.onmessage = fn
+    // A tick or an error can already be queued when stop() terminates the worker.
+    w.onmessage = () => {
+      if (!stopped) fn()
+    }
     w.onerror = () => {
+      if (stopped || timer !== undefined) return
       w.terminate()
       usePageTimer()
     }
@@ -43,6 +48,7 @@ export function workerTicker(
     usePageTimer()
   }
   return () => {
+    stopped = true
     worker?.terminate()
     clearInterval(timer)
   }

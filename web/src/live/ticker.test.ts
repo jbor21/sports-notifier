@@ -53,6 +53,32 @@ describe('workerTicker', () => {
     expect(fn).toHaveBeenCalledTimes(1)
   })
 
+  it('ignores a tick or an error the worker had queued when it was stopped', () => {
+    const worker = fakeWorker()
+    const fn = vi.fn()
+    const stop = workerTicker(25000, fn, () => worker)
+    const { onmessage, onerror } = worker
+    stop()
+    onmessage!()
+    onerror!()
+    vi.advanceTimersByTime(60000)
+    expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('starts one page timer however many errors the worker reports', () => {
+    const worker = fakeWorker()
+    const fn = vi.fn()
+    const stop = workerTicker(25000, fn, () => worker)
+    const onerror = worker.onerror!
+    onerror()
+    onerror()
+    vi.advanceTimersByTime(25000)
+    expect(fn).toHaveBeenCalledTimes(1)
+    stop()
+    vi.advanceTimersByTime(25000)
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
   it('switches to a page timer when the worker fails to load', () => {
     const worker = fakeWorker()
     const fn = vi.fn()

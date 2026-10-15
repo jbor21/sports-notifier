@@ -307,9 +307,9 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   because a hidden tab's own timers made the socket cycle, #36), `src/live/games.ts`
   (highest version wins, HTTP included), pushed notifications merged into history by
   id. Every screen needs sign-in. PWA: `src/sw.ts` precaches the app; a waiting worker
-  shows "New version", and an unanswered one is applied on the next in-app navigation. A gateway rollout
-  answered 504 for a few seconds (no drain delay before shutdown) until Phase 4.2's 5 s
-  preStop (#31); the UI tolerates it either way.
+  shows "New version", and an unanswered one is applied on the next in-app navigation.
+  A gateway rollout answered 504 for a few seconds (no drain delay before shutdown) until
+  Phase 4.2's 5 s preStop (#31); the UI tolerates it either way.
 - **New in Phase 3.4:** `/api/v1/ws` (`gateway/LiveSocket`): `hello` with the unread
   count, 4401 without a session, ping/pong, idle close after 60 s, notifications in the
   API shape, `unread_count`, `game_update`. The accept script saves start time and line

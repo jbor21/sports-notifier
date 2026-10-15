@@ -64,7 +64,7 @@ test('sign up, follow, live touchdown, gateway restart, history, sign out', asyn
     )
     .toBeTruthy()
   const pingWorker = page.workers().find((w) => w.url().includes('pingWorker'))!
-  expect(await pingWorker.evaluate(() => typeof self.postMessage)).toBe('function')
+  expect(await pingWorker.evaluate(() => typeof self.onmessage)).toBe('function') // set by pingWorker.ts
 
   // 4. One wave of games, 5 s per step: the NFL game lasts about 4 minutes, so a gateway restart
   //    (20–40 s) can't outlast it. Nothing reloads the page from here on, so no toast is lost.

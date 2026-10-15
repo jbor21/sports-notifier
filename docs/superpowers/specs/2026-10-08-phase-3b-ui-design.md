@@ -329,4 +329,4 @@ Then the final review, one fix pass, and the PR; merge when CI is green and the 
 - **Logos load from ESPN's image host,** because that is what the API returns.
 - **Phone install** is untested until Phase 5.
 - **#24, #25, and the badge's off-by-one** are tolerated, not fixed.
-- **A hidden tab's ping can be throttled.** Chrome runs a hidden tab's timers about once a minute after 5 minutes, so the 25 s ping may miss the server's 60 s idle close and the socket may close and reconnect in the background. The ping on return to visible covers the user-visible case; if the live check shows the socket cycling, the ping moves into a Web Worker.
+- **A hidden tab's ping can be throttled.** Chrome runs a hidden tab's timers about once a minute after 5 minutes, so the 25 s ping may miss the server's 60 s idle close and the socket may close and reconnect in the background. The ping on return to visible covers the user-visible case; if the live check shows the socket cycling, the ping moves into a Web Worker. (It did cycle, in #36's live check; the ping's clock now runs in a worker, `web/src/live/ticker.ts`, PR #57.)

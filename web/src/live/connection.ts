@@ -217,8 +217,8 @@ export class LiveConnection {
   private readonly onVisibility = () => {
     if (document.visibilityState !== 'visible') return
     if (this._state === 'waiting') this.retryNow()
-    // Chrome runs timers in a tab hidden over 5 minutes about once a minute, which can stretch the
-    // 25 s ping past the server's 60 s idle close; a ping on return lets the server hear from us now.
+    // The ping clock runs in a worker (live/ticker.ts), but where that falls back to a page timer,
+    // a hidden tab's ping can be late; a ping on return lets the server hear from us now.
     else if (this._state === 'open') this.send({ type: 'ping' })
   }
 }
