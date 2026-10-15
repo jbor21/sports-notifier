@@ -1,4 +1,5 @@
 import type { Game, Notice } from '../api/types'
+import { workerTicker, type Ticker } from './ticker'
 
 /** The live socket's rules from docs/api/websocket.md: pings, close codes, backoff, re-subscribe. */
 
@@ -45,20 +46,26 @@ export class LiveConnection {
   private retryAt: number | null = null
   private retryTimer: ReturnType<typeof setTimeout> | undefined
   private resetTimer: ReturnType<typeof setTimeout> | undefined
-  private pingTimer: ReturnType<typeof setInterval> | undefined
+  private stopPings: (() => void) | undefined
   private connectTimer: ReturnType<typeof setTimeout> | undefined
   private readonly createSocket: (url: string) => SocketLike
   private readonly random: () => number
+  private readonly ticker: Ticker
   private _state: ConnectionState = 'stopped'
   private _connects = 0
 
   constructor(
     private readonly url: string,
     private readonly events: Partial<ConnectionEvents>,
-    deps: { createSocket?: (url: string) => SocketLike; random?: () => number } = {},
+    deps: {
+      createSocket?: (url: string) => SocketLike
+      random?: () => number
+      ticker?: Ticker
+    } = {},
   ) {
     this.createSocket = deps.createSocket ?? ((u) => new WebSocket(u) as unknown as SocketLike)
     this.random = deps.random ?? Math.random
+    this.ticker = deps.ticker ?? workerTicker
   }
 
   get state(): ConnectionState {
@@ -125,7 +132,7 @@ export class LiveConnection {
     this._connects++
     this.setState('open')
     this.sendGames(true)
-    this.pingTimer = setInterval(() => this.send({ type: 'ping' }), PING_MS)
+    this.stopPings = this.ticker(PING_MS, () => this.send({ type: 'ping' }))
     // Only a connection that stays up resets the backoff; one that drops right away keeps growing it.
     this.resetTimer = setTimeout(() => (this.attempt = 0), RESET_AFTER_MS)
     if (this._connects > 1) {
@@ -200,7 +207,8 @@ export class LiveConnection {
 
   private clearTimers(): void {
     clearTimeout(this.connectTimer)
-    clearInterval(this.pingTimer)
+    this.stopPings?.()
+    this.stopPings = undefined
     clearTimeout(this.resetTimer)
   }
 

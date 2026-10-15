@@ -303,10 +303,11 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   course `index.html` and `/ui` are gone. Client core: `src/api/client.ts` (every error
   one `ApiError`, bare 500s included), `src/live/connection.ts` (websocket.md's close
   codes, backoff with jitter, ping every 25 s and on return to visible, re-subscribe
-  and refetch after a reconnect), `src/live/games.ts` (highest version wins, HTTP
-  included), pushed notifications merged into history by id. Every screen needs
-  sign-in. PWA: `src/sw.ts` precaches the app; a waiting worker shows "New version",
-  and an unanswered one is applied on the next in-app navigation. A gateway rollout
+  and refetch after a reconnect; the ping's clock runs in a Web Worker, `live/ticker.ts`,
+  because a hidden tab's own timers made the socket cycle, #36), `src/live/games.ts`
+  (highest version wins, HTTP included), pushed notifications merged into history by
+  id. Every screen needs sign-in. PWA: `src/sw.ts` precaches the app; a waiting worker
+  shows "New version", and an unanswered one is applied on the next in-app navigation. A gateway rollout
   answered 504 for a few seconds (no drain delay before shutdown) until Phase 4.2's 5 s
   preStop (#31); the UI tolerates it either way.
 - **New in Phase 3.4:** `/api/v1/ws` (`gateway/LiveSocket`): `hello` with the unread

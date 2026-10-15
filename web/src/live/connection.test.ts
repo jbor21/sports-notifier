@@ -21,6 +21,20 @@ function setVisibility(state: 'visible' | 'hidden') {
 
 const pings = (sent: string[]) => sent.filter((s) => JSON.parse(s).type === 'ping').length
 
+/** A ticker the test fires by hand; running() lists the intervals of the ones not yet stopped. */
+function fakeTicker() {
+  const live: { ms: number; fn: () => void }[] = []
+  return {
+    ticker: (ms: number, fn: () => void) => {
+      const t = { ms, fn }
+      live.push(t)
+      return () => live.splice(live.indexOf(t), 1)
+    },
+    running: () => live.map((t) => t.ms),
+    tick: () => live.forEach((t) => t.fn()),
+  }
+}
+
 let conn: LiveConnection | undefined
 
 beforeEach(() => {
@@ -75,6 +89,46 @@ describe('LiveConnection', () => {
     expect(pings(s.sockets.last().sent)).toBe(1)
     vi.advanceTimersByTime(25000)
     expect(pings(s.sockets.last().sent)).toBe(2)
+  })
+
+  it('pings on the ticker it was given, not on the page timers Chrome slows in a hidden tab', () => {
+    const ticks = fakeTicker()
+    const sockets = fakeSockets()
+    conn = new LiveConnection(
+      'ws://test/api/v1/ws',
+      {},
+      { createSocket: sockets.create, ticker: ticks.ticker },
+    )
+    conn.start()
+    sockets.last().open()
+    expect(ticks.running()).toEqual([25000])
+    vi.advanceTimersByTime(60000)
+    expect(pings(sockets.last().sent)).toBe(0)
+    ticks.tick()
+    expect(pings(sockets.last().sent)).toBe(1)
+  })
+
+  it('stops the ticker when the socket closes and starts one per open', () => {
+    const ticks = fakeTicker()
+    const sockets = fakeSockets()
+    conn = new LiveConnection(
+      'ws://test/api/v1/ws',
+      {},
+      {
+        createSocket: sockets.create,
+        random: half,
+        ticker: ticks.ticker,
+      },
+    )
+    conn.start()
+    sockets.last().open()
+    sockets.last().serverClose(1006)
+    expect(ticks.running()).toEqual([])
+    vi.advanceTimersByTime(1500)
+    sockets.last().open()
+    expect(ticks.running()).toEqual([25000])
+    conn.stop()
+    expect(ticks.running()).toEqual([])
   })
 
   it('pings at once when the tab becomes visible while open', () => {

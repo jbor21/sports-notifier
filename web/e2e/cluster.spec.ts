@@ -49,6 +49,22 @@ test('sign up, follow, live touchdown, gateway restart, history, sign out', asyn
   // 3. Game day, with the socket open before any play is sent.
   await page.getByRole('link', { name: 'Game day' }).first().click()
   await expect(page.locator('.app')).toHaveAttribute('data-connection', 'open', { timeout: 30_000 })
+  //    The ping clock runs in a worker (#36: a hidden tab's own timers are too slow for the
+  //    server's 60 s idle close). It must load from the gateway under its CSP, and run.
+  await expect
+    .poll(
+      () =>
+        page
+          .workers()
+          .find((w) => w.url().includes('pingWorker'))
+          ?.url(),
+      {
+        timeout: 10_000,
+      },
+    )
+    .toBeTruthy()
+  const pingWorker = page.workers().find((w) => w.url().includes('pingWorker'))!
+  expect(await pingWorker.evaluate(() => typeof self.postMessage)).toBe('function')
 
   // 4. One wave of games, 5 s per step: the NFL game lasts about 4 minutes, so a gateway restart
   //    (20–40 s) can't outlast it. Nothing reloads the page from here on, so no toast is lost.
