@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-10-14 (Phase 4 complete, 4.3 merged; #36 next).
+asks. Last updated 2026-10-21 (#36 live check passed and closed; Phase 5 next).
 
 ---
 
@@ -94,7 +94,7 @@ Flyway · Testcontainers 2.0.5 · web: Vite 8 · React 19 · TypeScript 5 · Rea
 SWR · vite-plugin-pwa (Workbox) · Vitest · Playwright · pnpm 12 · Node 24 ·
 OpenTelemetry Java 1.66.0 (manual SDK) · grafana/otel-lgtm 0.35.0
 **Size:** ~12,600 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
-design) · 727 Java tests · 180 web unit tests · 2 PWA and 1 end-to-end browser tests
+design) · 727 Java tests · 189 web unit tests · 2 PWA and 1 end-to-end browser tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -230,9 +230,11 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   `docs/superpowers/plans/2026-10-13-phase-4-3-observability.md`; closed #54. Evidence
   (dashboards during `stage1-crash` and `broker-crash`, a crash trace) is in
   `docs/evidence/phase-4-3/`. The review's six deferred minors are #56.
-- **Next step: issue #36, the live check** (the UI against a real game with real ESPN data,
-  waived at the 3b merge; must be done before Phase 5). Then Phase 5 (AWS).
-  Before the checker runs on AWS: reserve the `ck_` prefix (#51); decide #47 (replayed
+- **Issue #36, the live check, passed and is closed** (2026-10-21; results in the issue):
+  the UI against a real NHL game with real ESPN data, and the remaining by-hand steps
+  (switch-off, sleep, live look) on simulated games. It found the hidden-tab socket
+  cycling, fixed by PR #57 (the ping clock in a Web Worker).
+- **Next step: Phase 5 (AWS).** Before the checker runs on AWS: reserve the `ck_` prefix (#51); decide #47 (replayed
   pushes reach real accounts) before Phase 6. Other deferred minors are issues #19–#27,
   #35, #37–#43, #45, #50, #56.
 - **New in Phase 4.3:** one `grafana/otel-lgtm` pod (`observability.enabled`, on by default;
