@@ -245,7 +245,7 @@ With `earliest`, a group whose committed offsets are lost (renamed, or idle past
 
 The Java client is Apache Kafka's `kafka-clients`. Kafka tests start a broker with Testcontainers (`apache/kafka-native`, about a second to start), which also lets the outage test pause it. `make test` keeps its Redis container.
 
-**Not in 3.1:** TLS and authentication on Kafka. Inside the cluster the network policy is the protection; Phase 5 adds TLS when traffic crosses machines.
+**Not in 3.1:** TLS and authentication on Kafka. Inside the cluster the network policy is the protection. (Superseded by the Phase 5 spec: no TLS between pods on AWS either, for Kafka, Redis, or Postgres; the policies, enforced on EKS, stay the protection.)
 
 ---
 
