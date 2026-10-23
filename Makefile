@@ -15,7 +15,8 @@ export KUBE_CONTEXT
 # A new tag per build so Kubernetes always rolls pods onto new code. Uncommitted changes get a unique suffix.
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
-.PHONY: test cluster up simulate replay check check-clean check-selftest chaos smoke e2e logs down replay-detectors grafana trace-check
+.PHONY: test cluster up simulate replay check check-clean check-selftest chaos smoke e2e logs down replay-detectors grafana trace-check \
+        aws-bootstrap
 
 # Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
 # until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
@@ -163,3 +164,9 @@ test:
 replay-detectors:
 	mvn -q -DskipTests package
 	java -cp target/sports-notifier.jar tools.ReplayDetectors
+
+# AWS (Phase 5; docs/aws-setup.md first). Every target uses the SSO profile "sports" and the kubectl
+# context sports-notifier-aws, never the k3d one.
+# Once per account: the S3 bucket Terraform keeps its state in.
+aws-bootstrap:
+	@scripts/aws-bootstrap.sh
