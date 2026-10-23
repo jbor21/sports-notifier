@@ -182,6 +182,7 @@ That is about 10 GiB of requests. Real use is higher, because JVMs grow toward t
 1. **Dump.**
    - In the Postgres pod, `pg_dump -Fc` writes `/tmp/sportsnotifier.dump`.
    - `pg_restore --list` must parse it, and it must list `TABLE DATA` for `users`, `follows`, and `flyway_schema_history`.
+   - `users` must have at least one row. An empty dump would replace the real one as `latest.dump`; `ALLOW_EMPTY_DUMP=1` overrides this check on purpose.
    - It is streamed to `s3://<dump bucket>/dumps/latest.dump`.
    - The object's size in S3 must equal the file's size.
 2. **Uninstall.** `helm uninstall` of our release and Traefik. Then delete every PersistentVolumeClaim in the namespace (Kafka's claims are kept on purpose by `deleteClaim: false`, and Postgres's and Redis's outlive a release). Wait until their EBS volumes are gone.
@@ -197,7 +198,11 @@ That is about 10 GiB of requests. Real use is higher, because JVMs grow toward t
 - **Fix:** restore before Postgres accepts outside connections. The official Postgres image runs the scripts in `/docker-entrypoint-initdb.d/` exactly once, when it creates an empty data folder, while it listens only on its local socket.
   - An **init container** (pinned `amazon/aws-cli`) copies `dumps/latest.dump` into a shared `emptyDir`. It has read-only access through Pod Identity (section 1.2). If there is no dump (the first apply ever), it writes nothing.
   - A **startup script** from a ConfigMap runs `pg_restore --no-owner --role=sportsnotifier` if the file is there.
-  - The init container runs on every pod start, but the script runs only on an empty disk. So a Postgres restart while the cluster is up never restores over live data.
+  - A finished first boot (restored, or started empty when there was no dump) leaves a marker file at the volume's root, outside Postgres's data folder.
+    - With the marker there, the init container does nothing. So a Postgres restart while the cluster is up never refetches or restores over live data.
+    - Without it, the init container deletes whatever data folder is there, because it comes from an attempt that never finished, and starts again.
+    - A restore that fails partway therefore never leaves an empty, initialized database that would later start as if it were fine.
+  - Only "no such object" (404) means "start empty". Any other S3 error fails the init container, and the pod retries rather than starting empty.
 - A dump made by an older version of the app is migrated forward by Flyway when the services start. The dump has no role passwords in it, so the newly generated Postgres password just works.
 - **Redis** rebuilds `sub:*` from Postgres (decision 8). Sessions are gone, so everyone logs in again. **Kafka** starts empty. Both are decision 9 as written.
 
