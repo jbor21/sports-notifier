@@ -32,3 +32,50 @@ different region.
 **Billing and Cost Management** is what it costs.
 - **Bills**: this month so far, by service. **Budgets**: empty until Task 3. **Cost allocation
   tags**: the `project` tag, active after Task 3 (`docs/aws-setup.md`, step 8).
+
+## 1. The kept stack (`infra/base`)
+
+One `terraform apply` made 14 things. Find each one; this is the part of AWS that stays up forever,
+for under a dollar a month.
+
+**S3 → `sports-notifier-dumps-…`** is where your accounts survive a teardown.
+- **Properties → Bucket Versioning: Enabled**, and **Default encryption: SSE-S3**.
+- **Management → Lifecycle rules → `expire-old-dumps`**: an old dump is deleted 30 days after a newer
+  one replaces it. The newest is never deleted.
+- **Permissions → Block public access: all On.** A dump holds password hashes.
+- Empty until your first `make aws-down`.
+
+**ECR → Private registry → Repositories → `sports-notifier`** is where the app's image lives.
+- The **URI** (`250758375664.dkr.ecr.us-east-2.amazonaws.com/sports-notifier`) is the image's
+  address. EKS pulls from it; CI pushes to it.
+- **Lifecycle policy**: keep the last 20 images. **Scan on push**: each image is checked for known
+  vulnerabilities in its packages.
+- Empty until CI's first push (Task 4).
+
+**Certificate Manager (ACM) → the `sports.expense-app.uk` certificate** is the padlock in the
+browser.
+- **Status: Issued.** **Validation: DNS.** Open it and look at **Domains**: the CNAME name and value
+  ACM asked for.
+- Now open **Cloudflare → expense-app.uk → DNS → Records** and find that same CNAME, with the
+  comment Terraform wrote. That record is how ACM knows you own the domain. Leave it there: ACM
+  checks it again to renew the certificate each year.
+- **In use? No** for now. In Task 5 the load balancer will use it.
+
+**IAM → Identity providers → `token.actions.githubusercontent.com`** is AWS trusting GitHub's
+signature.
+- **IAM → Roles → `sports-notifier-github` → Trust relationships.** Read it line by line:
+  - `Federated`: only tokens signed by GitHub's identity provider.
+  - `aud = sts.amazonaws.com`: tokens meant for AWS, not for another service.
+  - `sub` is your repository's `main` branch or its `pull_request` runs. A workflow in someone
+    else's repository, or on another branch, gets nothing.
+- **Permissions** tab → `push-sports-notifier-image`: it can log in to ECR and push to the one
+  repository, and nothing else. If GitHub were compromised, the damage is limited to pushing an image.
+- Compare it with your own `AWSReservedSSO_AdministratorAccess-SportsApp_…` role: that one can do
+  everything, and only you, with your passkey, can use it.
+
+**Billing and Cost Management → Budgets → `sports-notifier-monthly`**: $25 a month, emailing you
+at 40% and 100% of actual spend and at 100% of the forecast. Spend data updates a few times a day,
+so this is a backstop; `make aws-status` is how you check right now.
+
+**Billing → Cost allocation tags**: within 24 hours `project` appears here. Activate it
+(`docs/aws-setup.md`, step 8).
