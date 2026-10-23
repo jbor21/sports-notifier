@@ -69,4 +69,55 @@ if TAG=pr58 run bash scripts/aws-up.sh && grep -q "^WARNING: ESPN refused reques
    && grep "helm upgrade --install sports-notifier" "$tmp/calls" | grep -q "espnPoller.enabled=false"; then ok up_espn_refused
 else bad up_espn_refused "expected exit 0, the warning, and the app installed with the poller off: $(cat "$tmp/out")"; fi
 
+# aws-down. A healthy Postgres pod and S3 by default; each test breaks one thing. Whatever breaks
+# before the destroy, terraform destroy must never run: a failed dump means no teardown.
+down_fakes() {  # down_fakes <users> <local size> <s3 size> <pg_dump exit> <restore list> <s3 cp exit>
+  reset
+  fake aws "case \"\$*\" in *get-caller-identity*) echo 250758375664;; *'s3 cp'*) cat >/dev/null; exit $6;; *head-object*) echo $3;; esac; exit 0"
+  fake terraform 'case "$*" in *"output -raw dump_bucket"*) echo dumps-bucket;; esac; exit 0'
+  fake kubectl "case \"\$*\" in *pg_dump*) exit $4;; *'pg_restore --list'*) printf '%b' '$5';; *'count(*)'*) echo $1;; *'stat -c'*) echo $2;; *' cat '*) printf dumpbytes;; *'get pv'*) echo '';; esac; exit 0"
+}
+full_list='215; 0 1 TABLE DATA public users x\n216; 0 1 TABLE DATA public follows x\n217; 0 1 TABLE DATA public flyway_schema_history x\n'
+destroyed() { called "terraform.*destroy"; }
+
+down_fakes 3 9 9 1 "$full_list" 0
+if ! run bash scripts/aws-down.sh && ! destroyed; then ok down_dump_fails
+else bad down_dump_fails "pg_dump failed but: $(cat "$tmp/out")"; fi
+
+down_fakes 3 9 9 0 "" 0
+if ! run bash scripts/aws-down.sh && ! destroyed; then ok down_dump_unparseable
+else bad down_dump_unparseable "an empty pg_restore --list passed: $(cat "$tmp/out")"; fi
+
+down_fakes 0 9 9 0 "$full_list" 0
+if ! run bash scripts/aws-down.sh && ! destroyed && grep -q ALLOW_EMPTY_DUMP "$tmp/out"; then ok down_zero_users
+else bad down_zero_users "a dump with no users passed: $(cat "$tmp/out")"; fi
+
+down_fakes 3 1000 999 0 "$full_list" 0
+if ! run bash scripts/aws-down.sh && ! destroyed; then ok down_size_mismatch
+else bad down_size_mismatch "S3 size 999 vs 1000 passed: $(cat "$tmp/out")"; fi
+
+down_fakes 3 9 9 0 "$full_list" 1
+if ! run bash scripts/aws-down.sh && ! destroyed; then ok down_upload_fails
+else bad down_upload_fails "a failed upload passed: $(cat "$tmp/out")"; fi
+
+# Everything works: dump, uninstall the app and Traefik, delete the claims, destroy, sweep; in that order.
+down_fakes 3 9 9 0 "$full_list" 0
+fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; *"s3 cp"*) cat >/dev/null;; *head-object*) echo 9;; esac; exit 0'
+order_ok() {
+  local last=0 n
+  for step in "pg_dump" "helm uninstall sports-notifier" "helm uninstall traefik" "delete pvc" "terraform.*destroy" "describe-instances"; do
+    n=$(grep -n "$step" "$tmp/calls" | head -1 | cut -d: -f1)
+    [[ -n "$n" && "$n" -gt "$last" ]] || return 1
+    last=$n
+  done
+}
+if run bash scripts/aws-down.sh && order_ok; then ok down_happy
+else bad down_happy "expected dump → uninstalls → delete pvc → destroy → sweep: $(cat "$tmp/out"; cat "$tmp/calls")"; fi
+
+# The escape hatch for a cluster with no Postgres (an aws-up that failed early): no dump, and it says so.
+down_fakes 3 9 9 1 "" 1
+fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; esac; exit 0'
+if SKIP_DUMP=1 run bash scripts/aws-down.sh && ! called pg_dump && destroyed && grep -q "latest.dump is unchanged" "$tmp/out"; then ok down_skip_dump
+else bad down_skip_dump "$(cat "$tmp/out")"; fi
+
 exit $failed

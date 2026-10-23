@@ -16,7 +16,7 @@ export KUBE_CONTEXT
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
 .PHONY: test cluster up simulate replay check check-clean check-selftest chaos smoke e2e logs down replay-detectors grafana trace-check \
-        aws-bootstrap aws-up aws-status
+        aws-bootstrap aws-up aws-status aws-down aws-backup
 
 # Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
 # until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
@@ -181,3 +181,12 @@ aws-up:
 # What is still billing by the hour; exit 0 only when nothing is.
 aws-status:
 	@scripts/aws-leftovers.sh
+
+# Save Postgres to S3 (checked), then remove everything that bills by the hour; nothing is destroyed
+# unless the dump passed. SKIP_DUMP=1 only for a cluster that never got Postgres.
+aws-down:
+	@scripts/aws-down.sh
+
+# The dump alone, without a teardown.
+aws-backup:
+	@scripts/aws-backup.sh
