@@ -40,6 +40,7 @@ spec:
                 {{- include "sports-notifier.otelEnv" (dict "root" . "name" "checker") | nindent 16 }}
                 {{- include "sports-notifier.postgresEnv" . | nindent 16 }}
                 {{- include "sports-notifier.kafkaEnv" . | nindent 16 }}
+                {{- include "sports-notifier.checkerKeyEnv" . | nindent 16 }}
                 - name: GATEWAY_URL
                   value: http://gateway:{{ .Values.services.gateway.port }}
                 - name: EPS_URL

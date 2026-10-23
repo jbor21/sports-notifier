@@ -101,7 +101,7 @@ public final class Checker {
     private Checker(DataSource db, JedisPool pool) {
         this.db = db;
         this.pool = pool;
-        this.api = new Api(URI.create(gateway));
+        this.api = new Api(URI.create(gateway), env("CHECKER_KEY", ""));
     }
 
     public static void main(String[] args) throws Exception {

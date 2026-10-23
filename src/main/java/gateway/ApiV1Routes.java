@@ -24,8 +24,18 @@ public final class ApiV1Routes {
 
     private ApiV1Routes() {}
 
-    public static void register(Javalin app, JedisPool pool, LoginThrottle throttle, String userPrefUrl, String notificationUrl) {
+    private static final ApiError INVALID_USERNAME =
+            ApiError.validation("username", "invalid", "Username must be 3 to 20 characters: a-z, 0-9, or _.");
+
+    /** {@code checkerKey}: who may sign up a {@code ck_} name (#51, {@link CheckerNames}); empty means no one. */
+    public static void register(Javalin app, JedisPool pool, LoginThrottle throttle, String userPrefUrl, String notificationUrl,
+                                String checkerKey) {
         app.post("/api/v1/auth/signup", ctx -> {
+            // The same answer as any invalid name, so it reveals nothing about the prefix.
+            if (!CheckerNames.allowed(usernameIn(ctx.body()), ctx.header("X-Checker-Key"), checkerKey)) {
+                write(ctx, INVALID_USERNAME);
+                return;
+            }
             HttpResponse<String> r = SimpleHttp.postJson(userPrefUrl + "/users", ctx.body());
             if (r.statusCode() == 201) SessionAuth.createSession(pool, ctx, idIn(r.body()));
             forward(ctx, r);

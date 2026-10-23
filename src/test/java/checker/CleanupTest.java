@@ -114,7 +114,7 @@ class CleanupTest {
         user("ck_abc123_0");
         user("ck_abc123_1");
         FollowSets.markBuilt(jedis, "r");
-        Api unreachable = new Api(java.net.URI.create("http://localhost:1"), 1, java.time.Duration.ZERO);
+        Api unreachable = new Api(java.net.URI.create("http://localhost:1"), "", 1, java.time.Duration.ZERO);
         assertEquals(2, Cleanup.run(unreachable, List.of(), java.util.Map.of(), PostgresTestSupport.dataSource(), pool, "abc123"));
         assertFalse(jedis.exists(RedisKeys.SUB_BUILT), "the sets are rebuilt from Postgres without them");
     }
@@ -122,7 +122,7 @@ class CleanupTest {
     @Test
     void cleanRunKeepsTheMarker() throws Exception {
         FollowSets.markBuilt(jedis, "r");
-        Api unreachable = new Api(java.net.URI.create("http://localhost:1"), 1, java.time.Duration.ZERO);
+        Api unreachable = new Api(java.net.URI.create("http://localhost:1"), "", 1, java.time.Duration.ZERO);
         assertEquals(0, Cleanup.run(unreachable, List.of(), java.util.Map.of(), PostgresTestSupport.dataSource(), pool, "abc123"));
         assertTrue(jedis.exists(RedisKeys.SUB_BUILT));
     }

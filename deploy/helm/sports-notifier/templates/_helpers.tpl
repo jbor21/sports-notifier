@@ -84,6 +84,13 @@ livenessProbe:
     secretKeyRef: { name: postgres, key: password }
 {{- end }}
 
+{{/* The key that lets the checker sign up ck_ users (#51; templates/checker-key.yaml). */}}
+{{- define "sports-notifier.checkerKeyEnv" -}}
+- name: CHECKER_KEY
+  valueFrom:
+    secretKeyRef: { name: checker-key, key: key }
+{{- end }}
+
 {{/* The Kafka bootstrap address (a Service Strimzi creates), for every workload that uses Kafka. Arg: root context. */}}
 {{- define "sports-notifier.kafkaEnv" -}}
 - name: KAFKA_BOOTSTRAP
