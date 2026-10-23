@@ -1,0 +1,52 @@
+# Traefik on EKS: the same ingress controller k3d bundles, so the chart's Ingress, its network policy
+# and the gateway's ClientAddress work unchanged (Phase 5 spec, section 3, step 4). Installed by
+# make aws-up into namespace "traefik", chart traefik/traefik (version pinned in the Makefile).
+#
+# The Network Load Balancer (infra/cluster/nlb.tf) ends TLS and forwards to two fixed node ports:
+#   :80  (TCP) → web       (30080), which only redirects to https
+#   :443 (TLS) → websecure (30443), plain HTTP from here on: the load balancer already decrypted it
+# Both carry proxy protocol v2: the client's real address in a header Traefik reads, so login
+# throttling sees each user's own address, not the load balancer's.
+
+deployment:
+  replicas: 2   # a node can die without taking the front door with it
+
+service:
+  spec:
+    type: NodePort   # no cloud load balancer from Kubernetes: Terraform owns the NLB
+
+ports:
+  web:
+    nodePort: 30080
+    proxyProtocol:
+      trustedIPs: ["10.40.0.0/16"]   # the VPC: only the load balancer's addresses may send the header
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    nodePort: 30443
+    proxyProtocol:
+      trustedIPs: ["10.40.0.0/16"]
+    http:
+      tls:
+        enabled: false   # TLS ended at the load balancer (ACM's certificate)
+      middlewares:
+        - traefik-hsts@kubernetescrd
+
+# One line per request, with the client's address: how you check proxy protocol works.
+accessLog:
+  enabled: true
+
+# HSTS: browsers that saw the site once refuse plain http to it for a year.
+extraObjects:
+  - apiVersion: traefik.io/v1alpha1
+    kind: Middleware
+    metadata:
+      name: hsts
+      namespace: traefik
+    spec:
+      headers:
+        stsSeconds: 31536000

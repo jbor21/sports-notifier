@@ -58,4 +58,15 @@ reset; fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; *descri
 if ! TAG=nosuchtag run bash scripts/aws-up.sh && grep -q "nosuchtag" "$tmp/out" && ! called "terraform.*apply"; then ok up_missing_tag
 else bad up_missing_tag "expected exit 1 naming the tag, no apply: $(cat "$tmp/out")"; fi
 
+# ESPN refuses the cluster: the app still goes in, with the poller off and a loud warning (a half-built
+# cluster still bills, so aws-up never stops halfway for this).
+reset
+fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; *describe-images*) echo ok;; esac; exit 0'
+fake terraform 'case "$*" in *"output -raw ecr_url"*) echo 1.dkr.ecr/x;; *"output -raw fqdn"*) echo sports.example.uk;; *"output -raw dump_bucket"*) echo dumps;; esac; exit 0'
+fake kubectl 'case "$*" in *"condition=complete"*) exit 1;; *"condition=failed"*) exit 0;; esac; exit 0'
+fake curl 'case "$*" in *checkip*) echo 203.0.113.7;; esac; exit 0'
+if TAG=pr58 run bash scripts/aws-up.sh && grep -q "^WARNING: ESPN refused requests from AWS" "$tmp/out" \
+   && grep "helm upgrade --install sports-notifier" "$tmp/calls" | grep -q "espnPoller.enabled=false"; then ok up_espn_refused
+else bad up_espn_refused "expected exit 0, the warning, and the app installed with the poller off: $(cat "$tmp/out")"; fi
+
 exit $failed

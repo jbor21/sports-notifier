@@ -1,0 +1,24 @@
+# Does ESPN answer from inside the cluster, from an AWS address (DESIGN.md decision 10)? make aws-up
+# runs this before installing the app; if it fails, the app goes in with the poller off and a warning.
+# scripts/espn-check.sh comes from the ConfigMap espn-check, which aws-up creates from the repo.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: espn-check
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 180
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: espn-check
+          image: alpine:3.22
+          command: ["sh", "-c", "apk add --no-cache bash curl jq >/dev/null && bash /check/espn-check.sh"]
+          volumeMounts:
+            - name: check
+              mountPath: /check
+      volumes:
+        - name: check
+          configMap:
+            name: espn-check

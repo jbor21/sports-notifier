@@ -173,8 +173,10 @@ aws-bootstrap:
 
 # The cluster and the app, from nothing or as an update (Terraform asks before changing anything).
 # TAG defaults to main's latest image in ECR; e.g. make aws-up TAG=pr58.
+TRAEFIK_VERSION := 42.1.3
 aws-up:
-	@TAG=$(if $(filter command line,$(origin TAG)),$(TAG),) scripts/aws-up.sh
+	@TAG=$(if $(filter command line,$(origin TAG)),$(TAG),) STRIMZI_CHART=$(STRIMZI_CHART) \
+		STRIMZI_VERSION=$(STRIMZI_VERSION) TRAEFIK_VERSION=$(TRAEFIK_VERSION) scripts/aws-up.sh
 
 # What is still billing by the hour; exit 0 only when nothing is.
 aws-status:
