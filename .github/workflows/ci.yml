@@ -196,6 +196,8 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
+          # A value pasted into GitHub's variable form can carry a trailing newline (seen on PR #58).
+          ECR_URL=$(printf '%s' "$ECR_URL" | tr -d '[:space:]')
           # make up tagged the image with the checked-out commit (a PR run checks out GitHub's merge commit).
           local_image="sports-notifier:$(git rev-parse --short HEAD)"
           docker image inspect "$local_image" >/dev/null
