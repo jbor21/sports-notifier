@@ -104,7 +104,22 @@ is built.
 
 ### ESPN from AWS
 
-(not run yet)
+2026-10-23, CloudShell in us-east-2, from `77.113.248.56` (in AWS's published `77.112.0.0/14`, us-east-2, EC2):
+
+```
+site.web.api.espn.com  basketball/nba     200
+site.web.api.espn.com  football/nfl       200
+site.web.api.espn.com  baseball/mlb       200
+site.web.api.espn.com  hockey/nhl         200
+site.api.espn.com      basketball/nba     200
+site.api.espn.com      football/nfl       200
+site.api.espn.com      baseball/mlb       200
+site.api.espn.com      hockey/nhl         200
+```
+
+**Pass.** Both hosts answer an AWS address with the app's honest User-Agent. Unlike 2026-10-01, when
+`site.api` refused a cloud fetch (DESIGN.md decision 10). The in-cluster check in `make aws-up`
+repeats this every time.
 
 ## 8. After `infra/base` exists (Task 3)
 
