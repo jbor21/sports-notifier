@@ -1,0 +1,30 @@
+# AWS settings (EKS, Phase 5). make aws-up adds image.repository (the ECR URL) and image.tag.
+# The templates are the same as on the laptop.
+
+image:
+  pullPolicy: IfNotPresent
+
+# Three Kafka nodes, one per availability zone, each partition copied to all three, and a write
+# confirmed only once two copies have it (DESIGN.md decision 6). Disks are gp3 EBS volumes, created
+# in the zone where each broker lands.
+kafka:
+  replicas: 3
+  storage: 10Gi
+  heap: 512m
+  replicationFactor: 3
+  minInsyncReplicas: 2
+  zoneSpread: true
+
+postgres:
+  storage: 10Gi     # a volume claim (no hostPath on AWS); the password is generated and kept
+
+redis:
+  storage: 1Gi
+
+# Real games, from ESPN (it answers AWS addresses: docs/aws-setup.md, "ESPN from AWS").
+espnPoller:
+  enabled: true
+
+# make aws-up installs Traefik in its own namespace, behind the load balancer.
+ingress:
+  controllerNamespace: traefik

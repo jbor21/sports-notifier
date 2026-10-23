@@ -90,10 +90,15 @@ kafka:
   heap: 512m
   replicationFactor: 1
   minInsyncReplicas: 1
+  zoneSpread: false         # AWS: one broker per zone, and rack awareness (values-aws.yaml)
   topics:
     game-events:     { partitions: 12, retentionMs: 604800000 }    # 7 days; key = game id
     notifications:   { partitions: 48, retentionMs: 86400000 }     # 1 day; key = user id
     game-events-dlq: { partitions: 1, retentionMs: 2592000000 }    # 30 days; plays Stage 1 gave up on (#15)
+
+# Where the ingress controller (Traefik) runs: the gateway's network policy admits only its pods.
+ingress:
+  controllerNamespace: kube-system
 
 # The ESPN poller. Polls a league every liveMs while it has a live game or one starting within
 # 10 minutes, otherwise every idleMs.
