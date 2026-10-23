@@ -16,7 +16,7 @@ export KUBE_CONTEXT
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
 .PHONY: test cluster up simulate replay check check-clean check-selftest chaos smoke e2e logs down replay-detectors grafana trace-check \
-        aws-bootstrap
+        aws-bootstrap aws-up aws-status
 
 # Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
 # until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
@@ -170,3 +170,12 @@ replay-detectors:
 # Once per account: the S3 bucket Terraform keeps its state in.
 aws-bootstrap:
 	@scripts/aws-bootstrap.sh
+
+# The cluster and the app, from nothing or as an update (Terraform asks before changing anything).
+# TAG defaults to main's latest image in ECR; e.g. make aws-up TAG=pr58.
+aws-up:
+	@TAG=$(if $(filter command line,$(origin TAG)),$(TAG),) scripts/aws-up.sh
+
+# What is still billing by the hour; exit 0 only when nothing is.
+aws-status:
+	@scripts/aws-leftovers.sh
