@@ -73,7 +73,7 @@ else bad up_espn_refused "expected exit 0, the warning, and the app installed wi
 # before the destroy, terraform destroy must never run: a failed dump means no teardown.
 down_fakes() {  # down_fakes <users> <local size> <s3 size> <pg_dump exit> <restore list> <s3 cp exit>
   reset
-  fake aws "case \"\$*\" in *get-caller-identity*) echo 250758375664;; *'s3 cp'*) cat >/dev/null; exit $6;; *head-object*) echo $3;; esac; exit 0"
+  fake aws "case \"\$*\" in *get-caller-identity*) echo 250758375664;; *describe-cluster*) echo ACTIVE;; *'s3 cp'*) cat >/dev/null; exit $6;; *head-object*) echo $3;; esac; exit 0"
   fake terraform 'case "$*" in *"output -raw dump_bucket"*) echo dumps-bucket;; esac; exit 0'
   fake kubectl "case \"\$*\" in *pg_dump*) exit $4;; *'pg_restore --list'*) printf '%b' '$5';; *'count(*)'*) echo $1;; *'stat -c'*) echo $2;; *' cat '*) printf dumpbytes;; *'get pv'*) echo '';; esac; exit 0"
 }
@@ -102,7 +102,7 @@ else bad down_upload_fails "a failed upload passed: $(cat "$tmp/out")"; fi
 
 # Everything works: dump, uninstall the app and Traefik, delete the claims, destroy, sweep; in that order.
 down_fakes 3 9 9 0 "$full_list" 0
-fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; *"s3 cp"*) cat >/dev/null;; *head-object*) echo 9;; esac; exit 0'
+fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; *describe-cluster*) echo ACTIVE;; *"s3 cp"*) cat >/dev/null;; *head-object*) echo 9;; esac; exit 0'
 order_ok() {
   local last=0 n
   for step in "pg_dump" "helm uninstall sports-notifier" "helm uninstall traefik" "delete pvc" "terraform.*destroy" "describe-instances"; do
@@ -116,8 +116,37 @@ else bad down_happy "expected dump → uninstalls → delete pvc → destroy →
 
 # The escape hatch for a cluster with no Postgres (an aws-up that failed early): no dump, and it says so.
 down_fakes 3 9 9 1 "" 1
-fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; esac; exit 0'
+fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; *describe-cluster*) echo ACTIVE;; esac; exit 0'
 if SKIP_DUMP=1 run bash scripts/aws-down.sh && ! called pg_dump && destroyed && grep -q "latest.dump is unchanged" "$tmp/out"; then ok down_skip_dump
 else bad down_skip_dump "$(cat "$tmp/out")"; fi
+
+# An aws-up cancelled during the apply leaves EKS still CREATING (AWS finishes it anyway) and no kubectl
+# context. aws-down waits for the cluster (AWS can't delete one mid-create), skips the Kubernetes
+# cleanup there is nothing to clean in, and destroys.
+down_fakes 3 9 9 1 "" 1
+fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; *describe-cluster*) echo CREATING;; *update-kubeconfig*) exit 1;; esac; exit 0'
+fake kubectl 'exit 1'
+if SKIP_DUMP=1 run bash scripts/aws-down.sh && called "eks wait cluster-active" && ! called "delete pvc" && destroyed; then ok down_cluster_creating
+else bad down_cluster_creating "$(cat "$tmp/out"; cat "$tmp/calls")"; fi
+
+# No cluster at all (gone, or the apply stopped before EKS): straight to destroy for whatever is left.
+down_fakes 3 9 9 1 "" 1
+fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; *describe-cluster*) echo "ResourceNotFoundException" >&2; exit 254;; esac; exit 0'
+if SKIP_DUMP=1 run bash scripts/aws-down.sh && ! called "delete pvc" && destroyed; then ok down_no_cluster
+else bad down_no_cluster "$(cat "$tmp/out")"; fi
+
+# A running cluster this Mac can't reach (its address changed since aws-up): volumes might exist, so
+# don't destroy blind; say how to get access back.
+down_fakes 3 9 9 1 "" 1
+fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; *describe-cluster*) echo ACTIVE;; esac; exit 0'
+fake kubectl 'case "$*" in *"get namespaces"*) exit 1;; esac; exit 0'
+if ! SKIP_DUMP=1 run bash scripts/aws-down.sh && ! destroyed && grep -q "make aws-up" "$tmp/out"; then ok down_api_unreachable
+else bad down_api_unreachable "$(cat "$tmp/out")"; fi
+
+# A failed backup on a cluster that never got the app says how to get out.
+down_fakes 3 9 9 1 "" 1
+fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; *describe-cluster*) echo ACTIVE;; esac; exit 0'
+if ! run bash scripts/aws-down.sh && grep -q "SKIP_DUMP=1 make aws-down" "$tmp/out" && ! destroyed; then ok down_backup_fail_hint
+else bad down_backup_fail_hint "$(cat "$tmp/out")"; fi
 
 exit $failed
