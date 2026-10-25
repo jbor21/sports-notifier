@@ -109,14 +109,14 @@ down_fakes 3 9 9 0 "$full_list" 0
 fake aws 'case "$*" in *get-caller-identity*) echo 250758375664;; *describe-cluster*) echo ACTIVE;; *"s3 cp"*) cat >/dev/null;; *head-object*) echo 9;; esac; exit 0'
 order_ok() {
   local last=0 n
-  for step in "pg_dump" "helm uninstall sports-notifier" "helm uninstall traefik" "delete pvc" "terraform.*destroy" "describe-instances"; do
+  for step in "pg_dump" "delete kafkatopic" "helm uninstall sports-notifier" "helm uninstall traefik" "delete pvc" "terraform.*destroy" "describe-instances"; do
     n=$(grep -n "$step" "$tmp/calls" | head -1 | cut -d: -f1)
     [[ -n "$n" && "$n" -gt "$last" ]] || return 1
     last=$n
   done
 }
 if run bash scripts/aws-down.sh && order_ok; then ok down_happy
-else bad down_happy "expected dump → uninstalls → delete pvc → destroy → sweep: $(cat "$tmp/out"; cat "$tmp/calls")"; fi
+else bad down_happy "expected dump → delete topics → uninstalls → delete pvc → destroy → sweep: $(cat "$tmp/out"; cat "$tmp/calls")"; fi
 
 # The escape hatch for a cluster with no Postgres (an aws-up that failed early): no dump, and it says so.
 down_fakes 3 9 9 1 "" 1

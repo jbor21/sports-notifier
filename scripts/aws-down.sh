@@ -38,6 +38,12 @@ if [[ "$status" == ACTIVE ]] && aws eks update-kubeconfig --name sports-notifier
     exit 1
   fi
   echo "== uninstall the app and Traefik, delete the volume claims"
+  # Topics first, while the topic operator (inside the Kafka cluster) can still clear their
+  # finalizers; after the uninstall removes Kafka, nothing would, and the uninstall waits forever.
+  kc delete kafkatopic --all --wait=true --timeout=2m || true
+  for t in $(kc get kafkatopic -o name 2>/dev/null); do
+    kc patch "$t" --type=merge -p '{"metadata":{"finalizers":null}}' || true
+  done
   helm uninstall sports-notifier --kube-context "$AWS_CONTEXT" --wait 2>/dev/null || true
   helm uninstall traefik --kube-context "$AWS_CONTEXT" -n traefik --wait 2>/dev/null || true
   kc delete pvc --all --wait=true --timeout=5m
