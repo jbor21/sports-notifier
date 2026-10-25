@@ -50,3 +50,5 @@ extraObjects:
     spec:
       headers:
         stsSeconds: 31536000
+        # Traefik adds the header only to requests it decrypted itself; here the load balancer did.
+        forceSTSHeader: true

@@ -28,7 +28,9 @@ trap 'fail "command failed on line $LINENO"' ERR
 trap 'rm -f "$jar" "$bob_jar" "$alice_jar" "$carol_jar" "$dave_jar" "$empty_jar"' EXIT
 
 # 1. Wait for the cluster and the route through Traefik.
-k -n kube-system rollout status deployment/traefik --timeout=180s
+# k3s ships Traefik in kube-system; aws-up installs its own in traefik.
+if [[ "$KUBE_CONTEXT" == sports-notifier-aws ]]; then traefik_ns=traefik; else traefik_ns=kube-system; fi
+k -n "$traefik_ns" rollout status deployment/traefik --timeout=180s
 k wait --for=condition=available deployment -l app.kubernetes.io/part-of=sports-notifier --timeout=180s
 k rollout status statefulset/redis --timeout=180s
 for _ in $(seq 1 60); do
