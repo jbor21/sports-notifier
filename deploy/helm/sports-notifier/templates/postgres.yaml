@@ -57,9 +57,39 @@ spec:
       labels:
         {{- include "sports-notifier.labels" "postgres" | nindent 8 }}
     spec:
+      {{- with .Values.postgres.restore }}
+      {{- if .enabled }}
+      serviceAccountName: postgres
+      securityContext:
+        # The volume's root belongs to root; the group lets Postgres write the marker there.
+        fsGroup: 999
+        # Only when the root doesn't match yet: not a walk over the whole database on every start.
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        # Fetches the last dump into /restore unless the marker says this volume already finished
+        # its first boot (files/postgres-restore/fetch-dump.sh).
+        - name: fetch-dump
+          image: {{ .image }}
+          command: ["sh", "/scripts/fetch-dump.sh"]
+          env:
+            - name: BUCKET
+              value: {{ required "postgres.restore.bucket: aws-up passes the dump bucket" .bucket | quote }}
+            - name: KEY
+              value: {{ .key | quote }}
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: restore, mountPath: /restore }
+            - { name: restore-scripts, mountPath: /scripts }
+      {{- end }}
+      {{- end }}
       containers:
         - name: postgres
           image: {{ .Values.postgres.image }}
+          {{- if .Values.postgres.restore.enabled }}
+          # Wipes a data folder whose first boot never finished (no restore-done marker), then runs
+          # the image's usual entrypoint (files/postgres-restore/start.sh).
+          command: ["bash", "/scripts/start.sh"]
+          {{- end }}
           env:
             # initdb wants an empty folder it owns; the mount point may hold lost+found or be root-owned.
             - name: PGDATA
@@ -76,21 +106,43 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            {{- if .Values.postgres.restore.enabled }}
+            - { name: restore, mountPath: /restore, readOnly: true }
+            - { name: restore-scripts, mountPath: /scripts }
+            - name: restore-scripts
+              mountPath: /docker-entrypoint-initdb.d/10-restore.sh
+              subPath: 10-restore.sh
+            {{- end }}
+          # Over TCP: while the image sets up a new database (and restores into it) Postgres listens
+          # only on its socket, so a socket check would call a half-restored database Ready.
           readinessProbe:
-            exec: { command: ["pg_isready", "-U", "sportsnotifier"] }
+            exec: { command: ["pg_isready", "-h", "127.0.0.1", "-U", "sportsnotifier"] }
             periodSeconds: 10
           livenessProbe:
             exec: { command: ["pg_isready", "-U", "sportsnotifier"] }
             periodSeconds: 20
             failureThreshold: 6
-      {{- if .Values.postgres.hostPath }}
-      # Laptop: a folder on the Mac (mounted into the k3d node by `make cluster`), so the data
-      # survives `make down`.
+      {{- if or .Values.postgres.hostPath .Values.postgres.restore.enabled }}
       volumes:
+        {{- if .Values.postgres.hostPath }}
+        # Laptop: a folder on the Mac (mounted into the k3d node by `make cluster`), so the data
+        # survives `make down`.
         - name: data
           hostPath:
             path: {{ .Values.postgres.hostPath }}
             type: DirectoryOrCreate
+        {{- end }}
+        {{- if .Values.postgres.restore.enabled }}
+        # The dump, from the init container to 10-restore.sh. It lives as long as the pod, so a
+        # restarted Postgres container finds it again.
+        - name: restore
+          emptyDir: {}
+        - name: restore-scripts
+          configMap:
+            name: postgres-restore
+            # Executable, so the image runs 10-restore.sh as its own process instead of sourcing it.
+            defaultMode: 0555
+        {{- end }}
       {{- end }}
   {{- if not .Values.postgres.hostPath }}
   volumeClaimTemplates:

@@ -28,7 +28,9 @@ doc() {  # doc <file> <kind> <name>
 }
 
 render "$tmp/local.yaml" -f "$chart/values-local.yaml" || { echo "FAIL local render"; exit 1; }
-render "$tmp/aws.yaml" -f "$chart/values-aws.yaml" --set image.repository=x || { echo "FAIL aws render"; exit 1; }
+# aws-up always passes the repository and the dump bucket.
+render "$tmp/aws.yaml" -f "$chart/values-aws.yaml" --set image.repository=x --set postgres.restore.bucket=b \
+  || { echo "FAIL aws render"; exit 1; }
 
 # The laptop: one broker, no zones, Traefik in kube-system.
 if ! grep -q "rack:" "$tmp/local.yaml" && ! grep -q "topologySpreadConstraints" "$tmp/local.yaml" \
@@ -60,5 +62,38 @@ if doc "$tmp/aws.yaml" Deployment espn-poller | grep -q "kind: Deployment" \
    && ! doc "$tmp/aws.yaml" Deployment gateway | grep -q 'COOKIE_SECURE'; then
   ok aws_poller_and_cookies
 else bad aws_poller_and_cookies "expected the ESPN poller on and no COOKIE_SECURE override on AWS"; fi
+
+# The laptop keeps its data in a folder on the Mac: nothing to restore, Postgres starts as before.
+if ! grep -q "fetch-dump" "$tmp/local.yaml" && ! grep -q "postgres-restore" "$tmp/local.yaml" \
+   && ! doc "$tmp/local.yaml" StatefulSet postgres | grep -q "restore-done"; then
+  ok local_no_restore
+else bad local_no_restore "the laptop rendered the restore"; fi
+
+# AWS: the init container fetches the bucket's dump, the startup script is mounted where the image
+# runs it once, the pod uses the service account Pod Identity is tied to, the volume root is writable
+# by Postgres (the marker), and a container restart without the marker starts over.
+pg=$(doc "$tmp/aws.yaml" StatefulSet postgres)
+if grep -q "name: fetch-dump" <<< "$pg" \
+   && grep -A1 "name: BUCKET" <<< "$pg" | grep -q 'value: "b"' \
+   && grep -A1 "name: KEY" <<< "$pg" | grep -q 'value: "dumps/latest.dump"' \
+   && grep -q "serviceAccountName: postgres" <<< "$pg" \
+   && grep -q "mountPath: /docker-entrypoint-initdb.d" <<< "$pg" \
+   && grep -q "fsGroup: 999" <<< "$pg" \
+   && grep -q "restore-done" <<< "$pg" \
+   && doc "$tmp/aws.yaml" ServiceAccount postgres | grep -q "kind: ServiceAccount" \
+   && doc "$tmp/aws.yaml" ConfigMap postgres-restore | grep -q "10-restore.sh:"; then
+  ok aws_restore
+else bad aws_restore "expected fetch-dump (BUCKET=b, KEY=dumps/latest.dump), SA postgres, initdb mount, fsGroup, marker check"; fi
+
+# AWS without a bucket is a mistake (aws-up always passes one): fail the render, don't start empty.
+if ! helm template t "$chart" -f "$chart/values-aws.yaml" --set image.repository=x > /dev/null 2>&1; then
+  ok aws_restore_needs_bucket
+else bad aws_restore_needs_bucket "values-aws rendered without postgres.restore.bucket"; fi
+
+# Ready means "takes TCP connections". During a restore the image's temporary server listens only on
+# its socket, so a socket check would call a half-restored database Ready.
+if doc "$tmp/aws.yaml" StatefulSet postgres | grep -A1 "readinessProbe:" | grep -q '"-h", "127.0.0.1"'; then
+  ok ready_means_tcp
+else bad ready_means_tcp "the readiness probe must use -h 127.0.0.1"; fi
 
 exit $failed

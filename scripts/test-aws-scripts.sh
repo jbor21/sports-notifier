@@ -68,6 +68,10 @@ fake curl 'case "$*" in *checkip*) echo 203.0.113.7;; esac; exit 0'
 if TAG=pr58 run bash scripts/aws-up.sh && grep -q "^WARNING: ESPN refused requests from AWS" "$tmp/out" \
    && grep "helm upgrade --install sports-notifier" "$tmp/calls" | grep -q "espnPoller.enabled=false"; then ok up_espn_refused
 else bad up_espn_refused "expected exit 0, the warning, and the app installed with the poller off: $(cat "$tmp/out")"; fi
+# The same run hands the chart the dump bucket, so Postgres restores the last dump on its new volume.
+if grep "helm upgrade --install sports-notifier" "$tmp/calls" | grep -q "postgres.restore.bucket=dumps"; then
+  ok up_passes_dump_bucket
+else bad up_passes_dump_bucket "the app's helm install lacks --set postgres.restore.bucket=dumps"; fi
 
 # aws-down. A healthy Postgres pod and S3 by default; each test breaks one thing. Whatever breaks
 # before the destroy, terraform destroy must never run: a failed dump means no teardown.

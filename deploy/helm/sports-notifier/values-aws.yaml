@@ -17,6 +17,8 @@ kafka:
 
 postgres:
   storage: 10Gi     # a volume claim (no hostPath on AWS); the password is generated and kept
+  restore:
+    enabled: true   # the bucket comes from aws-up (infra/base's dump_bucket output)
 
 redis:
   storage: 1Gi

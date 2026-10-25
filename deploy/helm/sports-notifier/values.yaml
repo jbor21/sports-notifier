@@ -79,6 +79,13 @@ postgres:
   storage: 2Gi
   hostPath: ""
   password: ""
+  # AWS only (values-aws.yaml): on a new volume, restore the dump `make aws-down` left in S3 before
+  # Postgres takes connections (Phase 5 spec, section 5.2). aws-up passes the bucket.
+  restore:
+    enabled: false
+    bucket: ""
+    key: dumps/latest.dump
+    image: amazon/aws-cli:2.37.10
 
 # Kafka, run by the Strimzi operator that `make cluster` installs. The broker is named after the Helm
 # release; services reach it at <release>-kafka-bootstrap:9092. These are the laptop's sizes; Phase 5's

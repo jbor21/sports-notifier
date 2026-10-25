@@ -31,6 +31,7 @@ kc get nodes -L topology.kubernetes.io/zone
 terraform -chdir=infra/base init -input=false -backend-config="bucket=$(state_bucket)" >/dev/null
 ecr_url=$(terraform -chdir=infra/base output -raw ecr_url)
 fqdn=$(terraform -chdir=infra/base output -raw fqdn)
+dump_bucket=$(terraform -chdir=infra/base output -raw dump_bucket)
 
 # Disks: gp3, made in the zone where each pod lands, and the only default class.
 echo "== storage class gp3"
@@ -70,7 +71,8 @@ fi
 echo "== the app, image $TAG"
 helm upgrade --install sports-notifier deploy/helm/sports-notifier --kube-context "$AWS_CONTEXT" \
   -f deploy/helm/sports-notifier/values-aws.yaml \
-  --set "image.repository=$ecr_url" --set "image.tag=$TAG" ${poller[@]+"${poller[@]}"} --wait --timeout 15m
+  --set "image.repository=$ecr_url" --set "image.tag=$TAG" --set "postgres.restore.bucket=$dump_bucket" \
+  ${poller[@]+"${poller[@]}"} --wait --timeout 15m
 kc wait kafka/sports-notifier --for=condition=Ready --timeout=10m
 
 # Through the load balancer, the certificate and Cloudflare's record: what a browser does.

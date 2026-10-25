@@ -131,6 +131,8 @@ jobs:
         run: '[ ! -f scripts/test-aws-scripts.sh ] || bash scripts/test-aws-scripts.sh'
       - name: Chart render tests
         run: '[ ! -f scripts/test-chart.sh ] || bash scripts/test-chart.sh'
+      - name: Postgres restore scripts (fake S3, real postgres:17)
+        run: bash scripts/test-restore.sh
 
   # Deploy to a throwaway k3d cluster with the same make targets used on the laptop.
   deploy-check:
