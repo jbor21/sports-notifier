@@ -12,11 +12,15 @@ cf_token
 
 # The image: main's latest by default (CI pushes <7-char sha> for main, pr<N> for a pull request).
 TAG=${TAG:-$(git rev-parse --short=7 origin/main)}
-if ! aws ecr describe-images --repository-name sports-notifier --image-ids "imageTag=$TAG" >/dev/null 2>&1; then
+# Pinned to the digest the tag points at now: a moving tag (pr58) then changes the pod spec when CI
+# pushes again, so a re-run rolls out, and no node keeps running an older image cached under the tag.
+digest=$(aws ecr describe-images --repository-name sports-notifier --image-ids "imageTag=$TAG" \
+  --query 'imageDetails[0].imageDigest' --output text 2>/dev/null | tr -d '[:space:]') || digest=""
+if [[ "$digest" != sha256:* ]]; then
   echo "Image tag $TAG is not in ECR. CI pushes one per green run (main: <sha>, a PR: pr<N>); pass TAG=<tag>." >&2
   exit 1
 fi
-echo "== image sports-notifier:$TAG is in ECR"
+echo "== image sports-notifier:$TAG is in ECR ($digest)"
 
 # The Kubernetes API answers only this Mac's current address.
 ip=$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')
@@ -71,7 +75,7 @@ fi
 echo "== the app, image $TAG"
 helm upgrade --install sports-notifier deploy/helm/sports-notifier --kube-context "$AWS_CONTEXT" \
   -f deploy/helm/sports-notifier/values-aws.yaml \
-  --set "image.repository=$ecr_url" --set "image.tag=$TAG" --set "postgres.restore.bucket=$dump_bucket" \
+  --set "image.repository=$ecr_url" --set "image.tag=$TAG@$digest" --set "postgres.restore.bucket=$dump_bucket" \
   ${poller[@]+"${poller[@]}"} --wait --timeout 15m
 kc wait kafka/sports-notifier --for=condition=Ready --timeout=10m
 

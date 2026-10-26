@@ -251,15 +251,18 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   client address to Traefik (NodePorts 30080/30443) by proxy protocol, and the Cloudflare DNS
   record (DNS only). No load-balancer controller, so `destroy` removes the NLB. `make aws-up`
   (`scripts/aws-up.sh`): checks the SSO session and that the image tag is in ECR *before*
-  `terraform apply`, then the gp3 storage class, Strimzi, Traefik (`deploy/aws/`), an ESPN check
+  `terraform apply` (the tag is pinned to its ECR digest, so a re-run after a new push rolls out),
+  then the gp3 storage class, Strimzi, Traefik (`deploy/aws/`), an ESPN check
   Job from inside the cluster (refused → the poller is turned off with a WARNING), and the chart
   with `values-aws.yaml`; safe to re-run (`No changes`). `make aws-down`: `pg_dump` in the pod,
-  upload, and a check (size, user count) before anything is destroyed; delete the Kafka topics
+  checks (parses, has users), upload to `dumps/incoming/`, size check, then a copy over
+  `latest.dump`, all before anything is destroyed (`SKIP_DUMP=1` is refused while
+  `data-postgres-0` exists); delete the Kafka topics
   while their operator lives, uninstall, delete the claims, `terraform destroy`, then the leftover
   sweep (`make aws-status`, `scripts/aws-leftovers.sh`: exit 0 only on "nothing billing"). Postgres
   restores on first boot: init container `fetch-dump` (Pod Identity, S3 read) and
   `10-restore.sh`; the marker `restore-done` at the volume root means "done, never refetch"; no
-  marker wipes PGDATA and retries; only a 404 starts empty. The vpc-cni policy engine is on, so EKS
+  marker wipes PGDATA and retries; only a 404 starts empty (an empty dump file fails). The vpc-cni policy engine is on, so EKS
   enforces the network policies. `ck_` names need the checker's key (#51; Secret `checker-key`).
   CI pushes `pr<N>`, `pr<N>-<sha7>` and `<sha7>` on main to ECR through OIDC (no stored keys).
   kubectl context `sports-notifier-aws`; scripts pass it explicitly. `make smoke` and `make check`

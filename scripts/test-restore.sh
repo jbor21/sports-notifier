@@ -82,7 +82,8 @@ postgres_tests() {
   until docker exec $n-src pg_isready -h 127.0.0.1 -U sportsnotifier >/dev/null 2>&1; do sleep 1; done
   docker exec $n-src psql -q -U sportsnotifier -d sportsnotifier \
     -c "create table users(id int primary key, username text); insert into users values (1, 'kept');"
-  mkdir -p "$tmp/good" "$tmp/corrupt" "$tmp/none"
+  mkdir -p "$tmp/good" "$tmp/corrupt" "$tmp/none" "$tmp/empty"
+  : > "$tmp/empty/latest.dump"
   docker exec $n-src pg_dump -Fc -U sportsnotifier sportsnotifier > "$tmp/good/latest.dump"
   docker rm -f $n-src >/dev/null
   head -c 1000 /dev/urandom > "$tmp/corrupt/latest.dump"
@@ -141,6 +142,13 @@ postgres_tests() {
   st=$(wait_pg)
   if [[ $st == exited:* && $st != exited:0 ]]; then ok pg_corrupt_restart_fails
   else bad pg_corrupt_restart_fails "state $st: a half-restored database started"; fi
+
+  # An empty dump file: fetch-dump writes the file only when S3 had the object, so 0 bytes means a bad
+  # dump, never "no dump". It must fail like a corrupt one, not start empty with the marker set.
+  fresh_volume; start_pg "$tmp/empty"
+  st=$(wait_pg)
+  if [[ $st == exited:* && $st != exited:0 ]]; then ok pg_empty_dump_fails
+  else bad pg_empty_dump_fails "state $st, marker $(marker): an empty dump started an empty database"; fi
 
   # No dump (the first apply ever): starts empty and leaves the marker.
   fresh_volume; start_pg "$tmp/none"
