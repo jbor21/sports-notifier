@@ -2,7 +2,7 @@
 
 This is the map of the project: what it does today, what we are changing it into, and every decision we made on the way. It is written so you can explain the system without reading the code line by line.
 
-Last updated 2026-10-21. Phases 1, 2, 3.1–3.4, 3b, and 4 (4.1–4.3) are merged (see "Build order"), and the live check (issue #36) passed; next is Phase 5 (AWS). "What exists today" describes the course version as it was before the redesign.
+Last updated 2026-10-26. Phases 1, 2, 3.1–3.4, 3b, and 4 (4.1–4.3) are merged (see "Build order"), the live check (issue #36) passed, and Phase 5 (AWS) is built and checked live on EKS (PR #58); next is Phase 6 (evidence). "What exists today" describes the course version as it was before the redesign.
 
 Revised 2026-09-28: hosting moved from one always-on Hetzner VM to Kubernetes, run on your laptop (k3d) and on AWS (EKS) only when you want it up. Kafka gets three brokers in the cloud. The evidence step became a correctness checker plus a chaos suite. Decisions 2, 6, 7, and 9 changed; 12 through 14 are new.
 
@@ -149,12 +149,12 @@ Postgres is written by the user service and by the history writers. The user ser
 | | Laptop | Cloud |
 |---|---|---|
 | Cluster | k3d (Kubernetes inside Docker) | EKS, nodes in three AWS availability zones |
-| Created by | `k3d cluster create` | `terraform apply` |
+| Created by | `make cluster` (`k3d cluster create`) | `make aws-up` (`terraform apply`, then Helm) |
 | Kafka | Strimzi, one broker | Strimzi, three brokers, one per zone |
 | Postgres, Redis | One pod each | One pod each |
-| Java services | One copy each | Several copies; workers scaled by KEDA on Kafka lag |
-| Cost | Nothing | Hourly, only while it is up |
-| Torn down by | `k3d cluster delete` | `terraform destroy`, after a Postgres dump to S3 |
+| Java services | Two copies of the gateway, Stage 1, and Stage 2; one of the rest | The same, fixed until Phase 6 scales the workers with KEDA on Kafka lag |
+| Cost | Nothing | About $0.45 an hour while up; under a dollar a month while down |
+| Torn down by | `make down` (`k3d cluster delete`) | `make aws-down`: a checked Postgres dump to S3, then `terraform destroy` |
 
 The tools, one line each:
 
@@ -600,6 +600,11 @@ These were the known bugs in the course code. Phase 2 fixed the ones that surviv
 - An early "final" from ESPN still becomes the bar for the rest of the game. Never observed; the clock heals below cover only the same period.
 - Clock-based alerts (close game late at 5:00) could fire early during a clock glitch. 3.3's detectors.
 
+**Fixed in Phase 5** (details in `docs/superpowers/specs/2026-10-22-phase-5-aws-design.md`):
+
+- **Network policies on EKS.** EKS ignores NetworkPolicies unless a policy engine runs. The VPC CNI's engine is on (`enableNetworkPolicy`), and the smoke test's stranger pod is refused on EKS as on k3d.
+- **Anyone could sign up a `ck_` name** and have the checker's cleanup delete it, or pollute a run (#51). Only a request carrying the checker's key may create one; any other gets the invalid-name answer.
+
 **Fixed in Phase 3.2** (details in `docs/superpowers/specs/2026-10-07-phase-3-2-postgres-design.md`):
 
 - **Team ids were bare abbreviations.** `sub:team:BOS` was the Celtics, the Red Sox, and the Bruins at once. Team ids are league-qualified (`nba-bos`), and so are the Redis sets (`sub:team:nba-bos:GAME_START`). The smoke test proves an `nhl-bos` follower hears nothing from two Boston games in other leagues.
@@ -643,7 +648,7 @@ We implement in this order. The system runs at the end of each step. Everything 
    - **4.1 Replay and checker.** Recorded games replayed through the real poller at 1× to 60×, synthetic users on real sockets, the checker of decision 14, and the versioned `sub:built` marker (#16, #18). Spec `2026-10-09-phase-4-1-replay-checker`. **Merged** (PR #46, 2026-10-09): the `evening` set (10 games) passed with 6,573 expected pushes, none missing or duplicated; the self-test caught all three faults.
    - **4.2 Chaos suite on k3d.** Spec `2026-10-11-phase-4-2-chaos`. Eight scenarios, each one checked replay (`evening` at 60×) with one fault at 40% of the way: a crash (SIGKILL from the k3d node, not a polite `kubectl delete`) of a Stage 1 worker, a Stage 2 worker, the History writer, a gateway, and the broker; a rolling restart of the gateways; and a Stage 1 or Stage 2 worker cut off from Kafka for 60 s, while it keeps Redis. The cut is a network policy plus deleting the pod's tracked Kafka connections on the node, because k3s lets connections that are already open through a new policy (measured). Two copies of Stage 1, Stage 2, and the gateway become the chart's default. `make chaos` on the laptop, and a manual GitHub workflow, not every push. Fixes for what it trips over (#9, #10, #17, #31, #44; #12 closes), and the checker's own gaps that chaos exposes: a missing push is excused only if its socket was down within 2 s of when Stage 2 delivered it, timed by Redis's clock (#48), and a time limit on the checker Job (#49). **Merged** (PR #53, 2026-10-13): all eight pass on the laptop and in the Chaos workflow.
    - **4.3 Traces and metrics.** Spec `2026-10-13-phase-4-3-observability`. One `grafana/otel-lgtm` pod, on by default and in CI; manual OpenTelemetry instrumentation (not the Java agent), so every hop is code in the repo. One trace per play: the poller's HTTP header, a `traceparent` field in the outbox (so a play the retry loop sends after a broker outage stays one trace), Kafka headers on both topics, and a field in the pub/sub body. One latency histogram, "time since the poller saw it", at four stages, with exemplars; Kafka lag from Strimzi's exporter; a "Pipeline" dashboard whose screenshot during `make chaos` (each fault marked by an annotation) shows the spike and the recovery. `make trace-check` proves one trace spans every service, in CI (after freeing the runner's disk, which the observability image filled). Also #54 (4.2's six deferred minors). **Merged** (PR #55, 2026-10-14): all eight chaos scenarios pass with telemetry on; screenshots in `docs/evidence/phase-4-3/` show a Stage 1 crash (p99 44 s, Stage 1 lag climbing to about 500 and draining) and a broker crash (p99 about 30 s). Two lessons: each process needs its own `service.instance.id`, or two copies of a service share one Prometheus series and every alternation reads as a counter reset; and a laptop that sleeps mid-run jumps Redis's clock, so checks run under `caffeinate`.
-5. **AWS.** Terraform for the network, EKS, ECR, and S3. The Postgres dump and restore. Three Kafka brokers. GitHub Actions pushes the image to ECR. Issue #51 (reserve the checker's `ck_` names). Spec `2026-10-22-phase-5-aws`. KEDA moved to step 6, where the load test is what proves it.
+5. **AWS.** Terraform for the network, EKS, ECR, and S3. The Postgres dump and restore. Three Kafka brokers. GitHub Actions pushes the image to ECR. Issue #51 (reserve the checker's `ck_` names). Spec `2026-10-22-phase-5-aws`. KEDA moved to step 6, where the load test is what proves it. **Built and checked live** (PR #58, 2026-10-26): from nothing to HTTPS in about 25 minutes, and down to nothing billing in about 15; the smoke test (network policies enforced), the round trip (an account, its password, follow, and history back after a teardown), a corrupt dump that crash-loops and never starts empty, and the checker on the `ci` set at 60× (5,128 pushes, none missing or duplicated) all pass on EKS. The app installs on a phone over HTTPS. Watching a live game on AWS moved to Phase 6's first EKS session.
 6. **Evidence.** The chaos suite with the checker, on EKS (built and first run on k3d in 4.2). KEDA on lag (moved from step 5), and a load test that makes it scale out and back in. The numbers, a trace screenshot, and the scaling graph go in the README. A public demo build of the UI (fake data, static hosting), so the UI can be shown while AWS is off.
 7. **Push.** Web Push for a closed browser, quiet hours, rate caps. Alert waves 2 and 3 (decision 15), each detector tested against recorded games. Then play-by-play and box scores for followed games: player alerts and the rest of decision 15's "later" list.
 8. **Maybe.** Hybrid fan-out, only if step 6 says the extra hop matters. Kafka transactions for Stage 1, only if the checker finds duplicates.
@@ -662,4 +667,5 @@ We implement in this order. The system runs at the end of each step. Everything 
 - A UI with its own backend. Generator tools that add a database or login system are used for the frontend only (phase 3b).
 - Kafka as a replacement for Redis pub/sub on the last hop to the browser. Open sockets stay a gateway concern. Redis pub/sub is how the right gateway hears a notification.
 - The AI layer, inside this redesign. It is the next phase.
+- TLS between pods, for now. Kafka, Redis, and Postgres traffic is plain inside the VPC, behind network policies; only the load balancer speaks TLS, to browsers.
 - "Designed for millions of users" as an unmeasured claim. The measured claim is: lanes by game, delivery by user, a dead worker loses nothing, here are the timings.
