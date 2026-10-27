@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-10-26 (Phase 5 built and checked live on EKS, PR #58; Phase 6 next).
+asks. Last updated 2026-10-26 (Phase 6.1, chaos on EKS, built; its EKS run is next).
 
 ---
 
@@ -47,7 +47,7 @@ by one Helm chart on k3d (laptop) and on EKS (AWS, up only on demand: `make aws-
 with two copies each of the gateway, Stage 1, and Stage 2.
 **Kafka** (Strimzi, one broker locally, three on AWS, one per zone) is the event log; **Postgres** (one pod)
 holds accounts, follows, and notification history; **Redis** holds the live score,
-the outbox, sessions, the `sub:*` sets (rebuilt from Postgres), the schedule cache
+the outbox, sessions, the `sub:*` sets and `synthetic:users` (rebuilt from Postgres), the schedule cache
 (`sched:`), the unread badge cache, and pub/sub to gateways.
 
 ```
@@ -176,7 +176,8 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   `make check-clean` removes leftover synthetic users. `make grafana` serves the Pipeline
   dashboard on `localhost:3000`; `make trace-check` proves one trace spans every service.
   `make chaos [SCENARIO=…]` runs
-  the chaos suite (eight checked replays, each with one fault; reports in `target/chaos/`).
+  the chaos suite (eight checked replays, each with one fault; nine on EKS with `node-loss`; reports in
+  `target/chaos/`). On EKS: `make chaos KUBE_CONTEXT=sports-notifier-aws BASE_URL=https://sports.<domain>`.
   `make aws-up TAG=pr<N>`, `make aws-down`, `make aws-status`, `make aws-backup`: the same app on
   AWS (Phase 5; `aws sso login --profile sports` first; run aws-up/aws-down under `caffeinate -i`).
   `make down` deletes the cluster but not accounts: Postgres keeps its data in
@@ -240,10 +241,28 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
 - **Phase 5 (AWS) is built and checked live on EKS** (PR #58, 2026-10-26): spec
   `docs/superpowers/specs/2026-10-22-phase-5-aws-design.md`, plan
   `docs/superpowers/plans/2026-10-23-phase-5-aws.md`; closes #51.
-- **Next step: Phase 6 (evidence):** the chaos suite on EKS, KEDA on lag, a load test. Its first
-  EKS session also watches a live game through the poller on AWS (moved from Phase 5). Decide
-  #47 (replayed pushes reach real accounts) first. Other deferred minors are issues #19–#27,
-  #35, #37–#43, #45, #50, #56.
+- **Phase 6 is split into 6.1–6.3** (`DESIGN.md` build order). **6.1 (chaos on EKS) is built**
+  on branch `phase-6-1-chaos-eks`: spec `docs/superpowers/specs/2026-10-26-phase-6-1-chaos-eks-design.md`,
+  plan `docs/superpowers/plans/2026-10-26-phase-6-1-chaos-eks.md`; fixes #47. Its EKS session (the
+  user runs aws-up, chaos, aws-down) also watches a live game through the poller on AWS if one is on.
+  Then 6.2 (KEDA on lag, a load test) and 6.3 (README evidence, static UI demo). Other deferred
+  minors are issues #19–#27, #35, #37–#43, #45, #50, #56.
+- **New in Phase 6.1:** #47: `GameIds.isReplay` (`-rp` ids); Stage 1's `AlertAudience` intersects a
+  replayed game's audience with `synthetic:users` (filled by user-pref on a `ck_` signup
+  (`SyntheticUsers`), refilled by the rebuild, `FollowSets.SHAPE_VERSION` 3, emptied by the
+  checker's cleanup; missing = a replay reaches nobody), and `/games` leaves replays out. So a plain
+  `make replay` pushes to nobody; `make simulate` (`-sim` ids) still reaches real accounts. Silent
+  sockets: the checker's `SocketClient` pings every 5 s and aborts a socket whose ping got nothing back by
+  the next one; that gap starts at the last frame and is `silent` (`SocketLog.Gap`), and the report's
+  sockets line reads `(allowed in disconnects: A, silent: S)` (chaos summary: `silent S`). The UI's
+  `connection.ts` closes and reconnects on the same rule (websocket.md). Chaos on EKS
+  (`CHAOS_PLATFORM` from the context): crash = `crictl stop` through `kubectl debug node`
+  (`chaos_node_run`, image busybox:1.37.0; leftover `node-debugger-*` pods deleted on exit); cut = the
+  same policy plus `ss -K` in the pod's network namespace (`CHAOS_CUT_KILL`); Kafka admin commands run on
+  a Ready broker that is not at fault (`chaos_kafka`); steady needs every broker and no under-replicated
+  partitions; `broker-crash` kills the broker leading the most partitions and needs new leaders within
+  30 s; `node-loss` (EKS only, last) terminates a machine without Redis, Postgres, or the checker
+  (`run-job.sh --near redis-0`) and needs a same-zone replacement with its broker back within 15 min.
 - **New in Phase 5:** two Terraform stacks. `infra/base` is never destroyed: ECR, the dump bucket,
   the ACM certificate for `sports.<domain>`, the GitHub OIDC role, a $25 budget. `infra/cluster`
   is what `make aws-up` / `make aws-down` cycle: a VPC with three public subnets and no NAT, EKS
