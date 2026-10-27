@@ -199,7 +199,6 @@ for name in "${run[@]}"; do
   end_ms=$(chaos_now_ms)
   chaos_mark "$name" "run ended" "$end_ms"
   pushes=$(grep -oE 'expected pushes [0-9,]+' "$log" | awk '{print $3}' || true)
-  excused=$(grep -oE 'allowed in disconnects: [0-9]+' "$log" | awk '{print $4}' || true)
   worst=$(grep -oE 'max ([0-9]+ ms|-)' "$log" | tail -1 | awk '{ if ($2 == "-") print "-"; else printf "%.1f s", $2 / 1000 }' || true)
   if [ "$rc" = 0 ] && [ "$fault_ok" = 1 ] && [ "$http_ok" = 1 ]; then
     verdict=PASS; passed=$((passed + 1))
@@ -208,8 +207,8 @@ for name in "${run[@]}"; do
     [ "$rc" = 0 ] || proof="checker exit $rc; $proof"
     { make -s logs; } > "$out/$name.cluster.log" 2>&1 || true
   fi
-  printf '%-16s %s  pushes %s  socket misses excused %s  worst delay %s  %s\n' \
-    "$name" "$verdict" "${pushes:--}" "${excused:--}" "${worst:--}" "$proof" | tee -a "$summary"
+  printf '%-16s %s  pushes %s  socket misses %s  worst delay %s  %s\n' \
+    "$name" "$verdict" "${pushes:--}" "$(chaos_counts "$log")" "${worst:--}" "$proof" | tee -a "$summary"
   # The scenario's window on the dashboard, for a screenshot (make grafana serves localhost:3000).
   [ "$CHAOS_GRAFANA" != 1 ] || echo "  dashboard: http://localhost:3000/d/pipeline?from=$((run_ms - 30000))&to=$((end_ms + 30000))" | tee -a "$summary"
 done

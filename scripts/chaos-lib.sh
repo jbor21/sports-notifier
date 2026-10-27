@@ -152,6 +152,16 @@ chaos_restart_note() {
   return 0
 }
 
+# What the checker's report says about excused socket misses: "excused N  silent S" ("-" when the log
+# has no report). Silent ones were excused only because an unanswered ping found the socket dead.
+chaos_counts() {
+  local line excused silent
+  line=$(grep -m1 -oE 'allowed in disconnects: [0-9]+, silent: [0-9]+' "$1" || true)
+  excused=$(sed -nE 's/.*disconnects: ([0-9]+),.*/\1/p' <<< "$line")
+  silent=$(sed -nE 's/.*silent: ([0-9]+).*/\1/p' <<< "$line")
+  echo "excused ${excused:--}  silent ${silent:--}"
+}
+
 # Stops a scenario's checker: the run-job.sh process and the Job it started (named in the log), so
 # nothing keeps running until the Job's time limit (#54). Its synthetic users are left to check-clean.
 chaos_stop_job() {

@@ -122,4 +122,14 @@ else
   bad missing_run_started_deletes_job "got: $out; kubectl: $(cat "$tmp/kubectl-calls" 2>/dev/null)"
 fi
 
+# --- Phase 6.1 ---
+
+# The summary line counts the pushes the silent-socket rule excused, apart from the others.
+printf 'sockets   missing 0 (allowed in disconnects: 3, silent: 2)   duplicate 0\n' > "$tmp/report.log"
+out=$(bash -c "source '$root/scripts/chaos-lib.sh'; chaos_counts '$tmp/report.log'")
+[ "$out" = "excused 3  silent 2" ] && ok summary_shows_silent || bad summary_shows_silent "got: $out"
+printf 'no report here\n' > "$tmp/report.log"
+out=$(bash -c "source '$root/scripts/chaos-lib.sh'; chaos_counts '$tmp/report.log'")
+[ "$out" = "excused -  silent -" ] && ok summary_counts_missing_report || bad summary_counts_missing_report "got: $out"
+
 exit $failed
