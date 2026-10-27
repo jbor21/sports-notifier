@@ -134,6 +134,11 @@ public final class FollowService {
         });
     }
 
+    /** Asks user-pref to rebuild the sets from Postgres; for writers outside this class (synthetic users). */
+    public void requestRebuild() {
+        askForRebuild();
+    }
+
     public boolean rebuildOwed() {
         return rebuildOwed.get();
     }

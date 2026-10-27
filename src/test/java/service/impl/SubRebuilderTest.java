@@ -77,6 +77,23 @@ class SubRebuilderTest {
     }
 
     @Test
+    void rebuildRefillsSyntheticUsers() {
+        String ck = new AccountService(PostgresTestSupport.dataSource()).signup("ck_r_1", "password-123", null).body().id();
+        jedis.sadd(RedisKeys.SYNTHETIC_USERS, "gone");
+
+        assertTrue(rebuilder().rebuildNow(true));
+        assertEquals(Set.of(ck), jedis.smembers(RedisKeys.SYNTHETIC_USERS));
+        assertTrue(jedis.keys(RedisKeys.SUB_TMP_PREFIX + "*").isEmpty());
+    }
+
+    @Test
+    void rebuildWithNoSyntheticUsersDeletesTheSet() {
+        jedis.sadd(RedisKeys.SYNTHETIC_USERS, "gone");
+        assertTrue(rebuilder().rebuildNow(true));
+        assertFalse(jedis.exists(RedisKeys.SYNTHETIC_USERS));
+    }
+
+    @Test
     void markerPresentNoRebuild() {
         FollowSets.markBuilt(jedis, SubRebuilder.redisRunId(jedis));
         follows.create(bob, "team", "mlb-chw");

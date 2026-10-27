@@ -112,6 +112,7 @@ public final class SubRebuilder {
                     long started = System.currentTimeMillis();
                     String buildId = UUID.randomUUID().toString();
                     Set<String> produced = buildAll(conn, jedis, buildId);
+                    buildSynthetic(conn, jedis, buildId);
                     int removed = cleanup(jedis, produced);
                     FollowSets.markBuilt(jedis, runId.apply(jedis));
                     System.out.println("[SubRebuilder] rebuilt " + produced.size() + " sets, removed " + removed
@@ -179,6 +180,26 @@ public final class SubRebuilder {
             conn.setAutoCommit(true);
         }
         return produced;
+    }
+
+    /** {@code synthetic:users} from the {@code ck_} names in Postgres, renamed into place like the sub sets. */
+    private static void buildSynthetic(Connection conn, Jedis jedis, String buildId) throws Exception {
+        List<String> ids = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement("SELECT id FROM users WHERE username LIKE 'ck\\_%'");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) ids.add(rs.getString(1));
+        }
+        if (ids.isEmpty()) {
+            jedis.del(RedisKeys.SYNTHETIC_USERS);
+            return;
+        }
+        String tmp = RedisKeys.SUB_TMP_PREFIX + buildId + ":" + RedisKeys.SYNTHETIC_USERS;
+        Pipeline p = jedis.pipelined();
+        for (int i = 0; i < ids.size(); i += BATCH) {
+            p.sadd(tmp, ids.subList(i, Math.min(ids.size(), i + BATCH)).toArray(new String[0]));
+        }
+        p.rename(tmp, RedisKeys.SYNTHETIC_USERS);
+        RedisPipelines.syncChecked(p);
     }
 
     private static void write(Jedis jedis, String buildId, String targetPrefix, Map<String, List<String>> members,

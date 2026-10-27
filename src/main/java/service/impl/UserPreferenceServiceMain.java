@@ -52,6 +52,7 @@ public final class UserPreferenceServiceMain {
                 Long.parseLong(System.getenv().getOrDefault("SUB_CHECK_MS", "30000")),
                 Long.parseLong(System.getenv().getOrDefault("SUB_FULL_REBUILD_HOURS", "24")));
         new GameFollowExpiry(db, pool, follows).start(jobs);
+        SyntheticUsers synthetic = new SyntheticUsers(pool, follows::requestRebuild);
 
         Javalin app = Javalin.create(cfg -> cfg.jsonMapper(new GsonJsonMapper())).start(port);
 
@@ -60,7 +61,9 @@ public final class UserPreferenceServiceMain {
         app.post("/users", ctx -> {
             JsonObject body = jsonBody(ctx);
             if (body == null) return;
-            ApiJson.write(ctx, accounts.signup(field(body, "username"), field(body, "password"), field(body, "timezone")));
+            var r = accounts.signup(field(body, "username"), field(body, "password"), field(body, "timezone"));
+            if (r.isOk()) synthetic.created(r.body().id(), r.body().username());
+            ApiJson.write(ctx, r);
         });
         app.post("/users/login", ctx -> {
             JsonObject body = jsonBody(ctx);
