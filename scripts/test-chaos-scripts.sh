@@ -172,6 +172,40 @@ else
   bad eks_crash_uses_ctr_in_chroot "exit $rc, debug call: $debug, docker: $(cat "$tmp/docker-calls" 2>/dev/null)"
 fi
 
+# On EKS the crash also waits on the machine until the killed task is no longer RUNNING.
+if [[ "$debug" == *"task ls"*"RUNNING"* ]]; then
+  ok eks_crash_waits_for_task_to_stop
+else
+  bad eks_crash_waits_for_task_to_stop "debug call: $debug"
+fi
+
+# EKS 1.35 left lastState empty after a ctr kill (first AWS session): on EKS an empty exit code passes,
+# because chaos_crash proved the SIGKILL on the machine; a reported code must still be 137. k3d keeps 137.
+restarted_fake() {
+  fake_kubectl 'case "$*" in
+  *"restartCount"*) echo 1 ;;
+  *"exitCode"*) echo "'"$1"'" ;;
+esac'
+}
+restarted_fake ""
+if PATH="$tmp/bin:$PATH" KUBE_CONTEXT=eks bash -c "source '$root/scripts/chaos-lib.sh'; chaos_wait_restarted p 0" >/dev/null 2>&1; then
+  ok eks_restart_without_exit_code
+else
+  bad eks_restart_without_exit_code "an empty exit code failed on EKS"
+fi
+restarted_fake 143
+if PATH="$tmp/bin:$PATH" KUBE_CONTEXT=eks bash -c "source '$root/scripts/chaos-lib.sh'; chaos_wait_restarted p 0" >/dev/null 2>&1; then
+  bad eks_restart_sigterm_fails "exit 143 passed on EKS"
+else
+  ok eks_restart_sigterm_fails
+fi
+restarted_fake ""
+if PATH="$tmp/bin:$PATH" KUBE_CONTEXT=k3d-x bash -c "source '$root/scripts/chaos-lib.sh'; chaos_wait_restarted p 0" >/dev/null 2>&1; then
+  bad k3d_restart_needs_137 "an empty exit code passed on k3d"
+else
+  ok k3d_restart_needs_137
+fi
+
 # Whatever happens, chaos.sh on EKS deletes leftover debug pods on the way out (they run privileged).
 fake_kubectl 'echo "$*" >> '"$tmp"'/kubectl-calls
 case "$*" in

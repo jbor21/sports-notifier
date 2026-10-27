@@ -153,7 +153,10 @@ chaos_crash() {
   id=${id#containerd://}
   [ -n "$id" ] || { echo "chaos_crash: $1 has no running container" >&2; return 1; }
   if [ "$CHAOS_PLATFORM" = eks ]; then
-    chaos_node_run "$(chaos_node_of "$1")" "$CHAOS_CTR task kill --signal SIGKILL $id" >/dev/null
+    # Kubernetes on EKS may not report the exit code afterwards (chaos_wait_restarted), so the proof
+    # is taken here: the SIGKILL was sent, and the task stopped running within 10 s.
+    chaos_node_run "$(chaos_node_of "$1")" \
+      "$CHAOS_CTR task kill --signal SIGKILL $id && for i in 1 2 3 4 5 6 7 8 9 10; do $CHAOS_CTR task ls 2>/dev/null | grep '^$id ' | grep -q RUNNING || exit 0; sleep 1; done; echo 'task $id still RUNNING 10 s after SIGKILL'; exit 1" >/dev/null
   else
     docker exec "$CHAOS_NODE" crictl stop --timeout 0 "$id" >/dev/null
   fi
@@ -161,6 +164,9 @@ chaos_crash() {
 
 # Waits up to 60 s for the pod's restart count to pass <before> with a last exit of 137 (SIGKILL).
 # A SIGTERM shutdown exits 143: that would be a polite stop, not the crash the scenario wants.
+# On EKS (1.35, containerd 2.3) the restarted pod's lastState came back empty after a ctr kill, though
+# k3s records 137 for the same kill; there an empty code passes, because chaos_crash saw the task stop
+# after its SIGKILL. A code that is reported must still be 137.
 chaos_wait_restarted() {
   local pod=$1 before=$2 r code
   for _ in $(seq 1 60); do
@@ -168,6 +174,10 @@ chaos_wait_restarted() {
     if [ "${r:-0}" -gt "$before" ]; then
       code=$(chaos_last_exit "$pod")
       [ "$code" = 137 ] && return 0
+      if [ -z "$code" ] && [ "$CHAOS_PLATFORM" = eks ]; then
+        echo "chaos_wait_restarted: $pod restarted; no exit code reported (EKS), the SIGKILL was seen on the machine" >&2
+        return 0
+      fi
       echo "chaos_wait_restarted: $pod restarted with exit $code, not 137" >&2
       return 1
     fi

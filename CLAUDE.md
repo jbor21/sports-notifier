@@ -97,7 +97,7 @@ OpenTelemetry Java 1.66.0 (manual SDK) · grafana/otel-lgtm 0.35.0 · AWS: Terra
 aws 6.70.0, cloudflare 5.28.1; modules vpc 6.7.3, eks 21.29.0, eks-pod-identity 2.10.0) · EKS 1.35 ·
 Traefik chart 42.1.3 · amazon/aws-cli 2.37.10 (restore) · AWS CLI v2 with SSO on the Mac
 **Size:** ~12,600 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
-design) · 757 Java tests · 192 web unit tests · 2 PWA and 1 end-to-end browser tests · 43 chaos-script cases
+design) · 757 Java tests · 192 web unit tests · 2 PWA and 1 end-to-end browser tests · 47 chaos-script cases
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -256,10 +256,13 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   the next one; that gap starts at the last frame and is `silent` (`SocketLog.Gap`), and the report's
   sockets line reads `(allowed in disconnects: A, silent: S)` (chaos summary: `silent S`). The UI's
   `connection.ts` closes and reconnects on the same rule (websocket.md). Chaos on EKS
-  (`CHAOS_PLATFORM` from the context): crash = `crictl stop` through `kubectl debug node`
+  (`CHAOS_PLATFORM` from the context): crash = `ctr task kill --signal SIGKILL` (EKS's Amazon Linux 2023 has
+  no `crictl`), then a wait until the task stops, through `kubectl debug node`
   (`chaos_node_run`, image busybox:1.37.0; leftover `node-debugger-*` pods deleted on exit); cut = the
   same policy plus `ss -K` in the pod's network namespace (`CHAOS_CUT_KILL`); Kafka admin commands run on
-  a Ready broker that is not at fault (`chaos_kafka`); steady needs every broker and no under-replicated
+  a Ready broker that is not at fault (`chaos_kafka`; the Kafka listener's policy admits the brokers
+  themselves, which three brokers on EKS need); EKS 1.35 may not report a restarted pod's exit code, so
+  there an empty one passes (a reported one must be 137); steady needs every broker and no under-replicated
   partitions; `broker-crash` kills the broker leading the most partitions and needs new leaders within
   30 s of the kill; `node-loss` (EKS only, last; the AWS login is checked when the suite starts)
   terminates a machine without Redis, Postgres, or the checker (`run-job.sh --near redis-0`; a lookup
