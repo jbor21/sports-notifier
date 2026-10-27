@@ -51,6 +51,7 @@ cleanup() {
   if [ -n "$job_pid" ] && kill -0 "$job_pid" 2>/dev/null; then
     chaos_stop_job "$job_pid" "$log"
   fi
+  [ "$CHAOS_PLATFORM" != eks ] || chaos_debug_cleanup
   chaos_grafana_stop
 }
 trap cleanup EXIT

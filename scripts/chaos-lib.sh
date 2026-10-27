@@ -1,15 +1,58 @@
 # Fault primitives for the chaos suite (Phase 4.2 spec, section 2). Sourced by scripts/chaos.sh, or by
 # hand: `source scripts/chaos-lib.sh; chaos_first_pod stage2-worker`.
 #
-# The crash and the cut reach into the k3d node (a Docker container on the Mac) for crictl and
-# conntrack. On EKS (Phase 6) those two functions are replaced; the scenarios stay the same.
+# The crash and the cut reach into the machine for crictl. On k3d the machine is a Docker container on
+# the Mac (docker exec); on EKS it is an EC2 instance, reached through a privileged debug pod on it
+# (Phase 6.1 spec, 3). The scenarios stay the same.
 
 KUBE_CONTEXT=${KUBE_CONTEXT:-k3d-sports-notifier}
 CLUSTER=${CLUSTER:-sports-notifier}
 RELEASE=${RELEASE:-sports-notifier}
 CHAOS_NODE=${CHAOS_NODE:-k3d-$CLUSTER-server-0}
+if [[ "$KUBE_CONTEXT" == k3d-* ]]; then CHAOS_PLATFORM=k3d; else CHAOS_PLATFORM=eks; fi
+CHAOS_DEBUG_IMAGE=${CHAOS_DEBUG_IMAGE:-busybox:1.37.0}
+CHAOS_NODE_RUN_SECONDS=${CHAOS_NODE_RUN_SECONDS:-60}
+# EKS only: after the cut's policy, also kill the pod's open Kafka connections (spec 3.2; measured in
+# the first AWS session whether the policy alone cuts them).
+CHAOS_CUT_KILL=${CHAOS_CUT_KILL:-1}
+CHAOS_CRICTL="crictl --runtime-endpoint unix:///run/containerd/containerd.sock"
 
 _k() { kubectl --context "$KUBE_CONTEXT" "$@"; }
+
+chaos_node_of() { _k get pod "$1" -o jsonpath='{.spec.nodeName}'; }
+
+# chaos_node_run <node> <shell command>: runs the command as root in the machine's own filesystem
+# (chroot /host) through `kubectl debug node`, whose sysadmin profile is privileged and shares the
+# machine's processes and network. Prints its output, deletes the pod, returns the command's exit code.
+chaos_node_run() {
+  local node=$1 cmd=$2 out pod phase="" code
+  out=$(_k debug "node/$node" --profile=sysadmin --image="$CHAOS_DEBUG_IMAGE" -- chroot /host sh -c "$cmd" 2>&1) \
+    || { echo "chaos_node_run: could not start a debug pod on $node: $out" >&2; return 1; }
+  pod=$(grep -oE 'node-debugger-[a-z0-9.-]+[a-z0-9]' <<< "$out" | head -1)
+  [ -n "$pod" ] || { echo "chaos_node_run: no debug pod named in: $out" >&2; return 1; }
+  for _ in $(seq 1 "$CHAOS_NODE_RUN_SECONDS"); do
+    phase=$(_k get pod "$pod" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+    [ "$phase" = Succeeded ] || [ "$phase" = Failed ] && break
+    sleep 1
+  done
+  if [ "$phase" != Succeeded ] && [ "$phase" != Failed ]; then
+    echo "chaos_node_run: debug pod $pod did not finish within $CHAOS_NODE_RUN_SECONDS s (phase ${phase:-unknown})" >&2
+    _k delete pod "$pod" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+    return 1
+  fi
+  _k logs "$pod" 2>/dev/null || true
+  code=$(_k get pod "$pod" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || true)
+  _k delete pod "$pod" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  return "${code:-1}"
+}
+
+# Deletes every debug pod a run left behind (an interrupt mid-command): they run privileged.
+chaos_debug_cleanup() {
+  local p
+  for p in $(_k get pods -o name 2>/dev/null | grep '^pod/node-debugger-' || true); do
+    _k delete "$p" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  done
+}
 
 # The first pod of a Deployment, in name order (repeatable; either copy carries traffic). "broker" is
 # Strimzi's one Kafka pod.
@@ -35,7 +78,11 @@ chaos_crash() {
   id=$(_k get pod "$1" -o jsonpath='{.status.containerStatuses[0].containerID}')
   id=${id#containerd://}
   [ -n "$id" ] || { echo "chaos_crash: $1 has no running container" >&2; return 1; }
-  docker exec "$CHAOS_NODE" crictl stop --timeout 0 "$id" >/dev/null
+  if [ "$CHAOS_PLATFORM" = eks ]; then
+    chaos_node_run "$(chaos_node_of "$1")" "$CHAOS_CRICTL stop --timeout 0 $id" >/dev/null
+  else
+    docker exec "$CHAOS_NODE" crictl stop --timeout 0 "$id" >/dev/null
+  fi
 }
 
 # Waits up to 60 s for the pod's restart count to pass <before> with a last exit of 137 (SIGKILL).
@@ -78,6 +125,17 @@ spec:
     - to: [ { namespaceSelector: {} } ]
       ports: [ { port: 53, protocol: UDP }, { port: 53, protocol: TCP } ]
 EOF
+  if [ "$CHAOS_PLATFORM" = eks ]; then
+    # EKS enforces policies in eBPF, not iptables; if open connections survive the policy, reset them
+    # from inside the pod's network namespace. Their next packets are new connections, which it refuses.
+    [ "$CHAOS_CUT_KILL" = 1 ] || return 0
+    local id
+    id=$(_k get pod "$pod" -o jsonpath='{.status.containerStatuses[0].containerID}')
+    id=${id#containerd://}
+    chaos_node_run "$(chaos_node_of "$pod")" \
+      "pid=\$($CHAOS_CRICTL inspect -o go-template --template '{{.info.pid}}' $id) && nsenter -t \$pid -n ss -K '( dport = :9092 )'" >/dev/null
+    return
+  fi
   ip=$(chaos_pod_ip "$pod")
   docker exec "$CHAOS_NODE" conntrack -D -s "$ip" -p tcp --dport 9092 >/dev/null 2>&1 || true
 }

@@ -132,4 +132,59 @@ printf 'no report here\n' > "$tmp/report.log"
 out=$(bash -c "source '$root/scripts/chaos-lib.sh'; chaos_counts '$tmp/report.log'")
 [ "$out" = "excused -  silent -" ] && ok summary_counts_missing_report || bad summary_counts_missing_report "got: $out"
 
+# The platform comes from the kubectl context: k3d's contexts are k3d-<name>, anything else is EKS.
+out=$(KUBE_CONTEXT=k3d-x bash -c "source '$root/scripts/chaos-lib.sh'; echo \$CHAOS_PLATFORM")
+out2=$(KUBE_CONTEXT=sports-notifier-aws bash -c "source '$root/scripts/chaos-lib.sh'; echo \$CHAOS_PLATFORM")
+[ "$out $out2" = "k3d eks" ] && ok platform_from_context || bad platform_from_context "got: $out $out2"
+
+# A debug pod that never finishes fails the node command, names the pod, and is deleted anyway.
+fake_kubectl 'echo "$*" >> '"$tmp"'/kubectl-calls
+case "$*" in
+  *" debug node/"*) echo "Creating debugging pod node-debugger-n1-abcde with container debugger on node n1." ;;
+  *"get pod node-debugger-n1-abcde"*"phase"*) echo Running ;;
+esac'
+rm -f "$tmp/kubectl-calls"
+err=$(PATH="$tmp/bin:$PATH" KUBE_CONTEXT=eks CHAOS_NODE_RUN_SECONDS=1 bash -c "source '$root/scripts/chaos-lib.sh'; chaos_node_run n1 'true'" 2>&1 >/dev/null)
+rc=$?
+if [ "$rc" != 0 ] && [[ "$err" == *"node-debugger-n1-abcde did not finish"* ]] && grep -q "delete pod node-debugger-n1-abcde" "$tmp/kubectl-calls"; then
+  ok node_run_debug_pod_never_finishes
+else
+  bad node_run_debug_pod_never_finishes "exit $rc, err: $err, calls: $(cat "$tmp/kubectl-calls" 2>/dev/null)"
+fi
+
+# On EKS a crash is crictl in the machine's own root, through a debug pod on the pod's machine; no docker.
+fake_kubectl 'echo "$*" >> '"$tmp"'/kubectl-calls
+case "$*" in
+  *"get pod p "*"containerID"*) echo "containerd://abc123" ;;
+  *"get pod p "*"nodeName"*) echo n1 ;;
+  *" debug node/"*) echo "Creating debugging pod node-debugger-n1-xyz12 with container debugger on node n1." ;;
+  *"get pod node-debugger-n1-xyz12"*"phase"*) echo Succeeded ;;
+  *"get pod node-debugger-n1-xyz12"*"exitCode"*) echo 0 ;;
+esac'
+printf '#!/usr/bin/env bash\necho "$*" >> "%s/docker-calls"\nexit 1\n' "$tmp" > "$tmp/bin/docker"; chmod +x "$tmp/bin/docker"
+rm -f "$tmp/kubectl-calls" "$tmp/docker-calls"
+PATH="$tmp/bin:$PATH" KUBE_CONTEXT=eks bash -c "source '$root/scripts/chaos-lib.sh'; chaos_crash p" >/dev/null 2>&1
+rc=$?
+debug=$(grep " debug node/n1 " "$tmp/kubectl-calls" 2>/dev/null)
+if [ "$rc" = 0 ] && [[ "$debug" == *"chroot /host"* && "$debug" == *"stop --timeout 0 abc123"* ]] && [ ! -e "$tmp/docker-calls" ]; then
+  ok eks_crash_uses_crictl_in_chroot
+else
+  bad eks_crash_uses_crictl_in_chroot "exit $rc, debug call: $debug, docker: $(cat "$tmp/docker-calls" 2>/dev/null)"
+fi
+
+# Whatever happens, chaos.sh on EKS deletes leftover debug pods on the way out (they run privileged).
+fake_kubectl 'echo "$*" >> '"$tmp"'/kubectl-calls
+case "$*" in
+  *"get deploy"*"spec.replicas"*) echo 2 ;;
+  *"get pods -o name"*) echo pod/node-debugger-n1-left1; echo pod/gateway-abc ;;
+  *) echo "Unable to connect to the server" >&2; exit 1 ;;
+esac'
+rm -f "$tmp/kubectl-calls"
+PATH="$tmp/bin:$PATH" KUBE_CONTEXT=eks DEADLINE=60 CHAOS_STEADY_SECONDS=0 bash scripts/chaos.sh stage2-cut >/dev/null 2>&1
+if grep -q "delete pod/node-debugger-n1-left1" "$tmp/kubectl-calls" && ! grep -q "delete pod/gateway-abc" "$tmp/kubectl-calls"; then
+  ok cleanup_deletes_debug_pods
+else
+  bad cleanup_deletes_debug_pods "calls: $(grep delete "$tmp/kubectl-calls" 2>/dev/null)"
+fi
+
 exit $failed
