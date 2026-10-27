@@ -152,7 +152,7 @@ else
   bad node_run_debug_pod_never_finishes "exit $rc, err: $err, calls: $(cat "$tmp/kubectl-calls" 2>/dev/null)"
 fi
 
-# On EKS a crash is crictl in the machine's own root, through a debug pod on the pod's machine; no docker.
+# On EKS a crash is ctr in the machine's own root, through a debug pod on the pod's machine; no docker.
 fake_kubectl 'echo "$*" >> '"$tmp"'/kubectl-calls
 case "$*" in
   *"get pod p "*"containerID"*) echo "containerd://abc123" ;;
@@ -166,10 +166,10 @@ rm -f "$tmp/kubectl-calls" "$tmp/docker-calls"
 PATH="$tmp/bin:$PATH" KUBE_CONTEXT=eks bash -c "source '$root/scripts/chaos-lib.sh'; chaos_crash p" >/dev/null 2>&1
 rc=$?
 debug=$(grep " debug node/n1 " "$tmp/kubectl-calls" 2>/dev/null)
-if [ "$rc" = 0 ] && [[ "$debug" == *"chroot /host"* && "$debug" == *"stop --timeout 0 abc123"* ]] && [ ! -e "$tmp/docker-calls" ]; then
-  ok eks_crash_uses_crictl_in_chroot
+if [ "$rc" = 0 ] && [[ "$debug" == *"chroot /host"* && "$debug" == *"ctr --namespace k8s.io task kill --signal SIGKILL abc123"* ]] && [ ! -e "$tmp/docker-calls" ]; then
+  ok eks_crash_uses_ctr_in_chroot
 else
-  bad eks_crash_uses_crictl_in_chroot "exit $rc, debug call: $debug, docker: $(cat "$tmp/docker-calls" 2>/dev/null)"
+  bad eks_crash_uses_ctr_in_chroot "exit $rc, debug call: $debug, docker: $(cat "$tmp/docker-calls" 2>/dev/null)"
 fi
 
 # Whatever happens, chaos.sh on EKS deletes leftover debug pods on the way out (they run privileged).

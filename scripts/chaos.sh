@@ -96,9 +96,9 @@ crash() {
   fi
   before=$(chaos_restarts "$pod") || return 1
   say "crash $pod (restarts $before)"
-  chaos_crash "$pod" 2>>"$log" || { proof="crictl could not stop $pod"; return 1; }
+  chaos_crash "$pod" 2>>"$log" || { proof="the runtime could not stop $pod"; return 1; }
   # Every partition it led must get a leader on another broker within 30 s of the kill, and none may be
-  # left without. Timed from when crictl returned, so the debug pod's start-up doesn't count.
+  # left without. Timed from when the kill returned, so the debug pod's start-up doesn't count.
   [ -z "$id" ] || moved=$(chaos_await_leaders_moved "$id" 30) || moved=""
   if chaos_wait_restarted "$pod" "$before" 2>>"$log"; then
     proof="$pod restarted at +$fault_at s"

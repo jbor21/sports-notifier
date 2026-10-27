@@ -1,9 +1,10 @@
 # Fault primitives for the chaos suite (Phase 4.2 spec, section 2). Sourced by scripts/chaos.sh, or by
 # hand: `source scripts/chaos-lib.sh; chaos_first_pod stage2-worker`.
 #
-# The crash and the cut reach into the machine for crictl. On k3d the machine is a Docker container on
-# the Mac (docker exec); on EKS it is an EC2 instance, reached through a privileged debug pod on it
-# (Phase 6.1 spec, 3). The scenarios stay the same.
+# The crash and the cut reach into the machine's container runtime. On k3d the machine is a Docker
+# container on the Mac (docker exec, crictl); on EKS it is an EC2 instance, reached through a privileged
+# debug pod on it (Phase 6.1 spec, 3), and uses ctr: the EKS Amazon Linux 2023 image ships containerd's
+# ctr but not crictl (found in the first AWS session). The scenarios stay the same.
 
 KUBE_CONTEXT=${KUBE_CONTEXT:-k3d-sports-notifier}
 CLUSTER=${CLUSTER:-sports-notifier}
@@ -15,7 +16,8 @@ CHAOS_NODE_RUN_SECONDS=${CHAOS_NODE_RUN_SECONDS:-60}
 # EKS only: after the cut's policy, also kill the pod's open Kafka connections (spec 3.2; measured in
 # the first AWS session whether the policy alone cuts them).
 CHAOS_CUT_KILL=${CHAOS_CUT_KILL:-1}
-CHAOS_CRICTL="crictl --runtime-endpoint unix:///run/containerd/containerd.sock"
+# Kubernetes keeps its containers in containerd's k8s.io namespace; the warnings ctr prints go to stderr.
+CHAOS_CTR="ctr --namespace k8s.io"
 
 _k() { kubectl --context "$KUBE_CONTEXT" "$@"; }
 
@@ -143,7 +145,7 @@ chaos_last_exit() { _k get pod "$1" -o jsonpath='{.status.containerStatuses[0].l
 # A crash, not a polite stop. `kubectl delete pod` sends SIGTERM, so the shutdown hook runs; and
 # `kubectl exec <pod> -- kill -9 1` does nothing, because Java is PID 1 in its container and Linux
 # ignores SIGKILL sent to a namespace's PID 1 from inside it. From the node the container is an
-# ordinary process: crictl with no grace period sends SIGKILL at once. Kubernetes then restarts the
+# ordinary process: crictl with no grace period (ctr task kill on EKS) sends SIGKILL at once. Kubernetes then restarts the
 # container in the same pod, so the pod keeps its name.
 chaos_crash() {
   local id
@@ -151,7 +153,7 @@ chaos_crash() {
   id=${id#containerd://}
   [ -n "$id" ] || { echo "chaos_crash: $1 has no running container" >&2; return 1; }
   if [ "$CHAOS_PLATFORM" = eks ]; then
-    chaos_node_run "$(chaos_node_of "$1")" "$CHAOS_CRICTL stop --timeout 0 $id" >/dev/null
+    chaos_node_run "$(chaos_node_of "$1")" "$CHAOS_CTR task kill --signal SIGKILL $id" >/dev/null
   else
     docker exec "$CHAOS_NODE" crictl stop --timeout 0 "$id" >/dev/null
   fi
@@ -205,7 +207,7 @@ EOF
     id=$(_k get pod "$pod" -o jsonpath='{.status.containerStatuses[0].containerID}')
     id=${id#containerd://}
     chaos_node_run "$(chaos_node_of "$pod")" \
-      "pid=\$($CHAOS_CRICTL inspect -o go-template --template '{{.info.pid}}' $id) && nsenter -t \$pid -n ss -K '( dport = :9092 )'" >/dev/null
+      "pid=\$($CHAOS_CTR task ls 2>/dev/null | awk '\$1 == \"$id\" { print \$2 }') && [ -n \"\$pid\" ] && nsenter -t \$pid -n ss -K '( dport = :9092 )'" >/dev/null
     return
   fi
   ip=$(chaos_pod_ip "$pod")
