@@ -97,7 +97,7 @@ OpenTelemetry Java 1.66.0 (manual SDK) · grafana/otel-lgtm 0.35.0 · AWS: Terra
 aws 6.70.0, cloudflare 5.28.1; modules vpc 6.7.3, eks 21.29.0, eks-pod-identity 2.10.0) · EKS 1.35 ·
 Traefik chart 42.1.3 · amazon/aws-cli 2.37.10 (restore) · AWS CLI v2 with SSO on the Mac
 **Size:** ~12,600 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
-design) · 737 Java tests · 189 web unit tests · 2 PWA and 1 end-to-end browser tests
+design) · 757 Java tests · 192 web unit tests · 2 PWA and 1 end-to-end browser tests · 43 chaos-script cases
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -261,8 +261,11 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   same policy plus `ss -K` in the pod's network namespace (`CHAOS_CUT_KILL`); Kafka admin commands run on
   a Ready broker that is not at fault (`chaos_kafka`); steady needs every broker and no under-replicated
   partitions; `broker-crash` kills the broker leading the most partitions and needs new leaders within
-  30 s; `node-loss` (EKS only, last) terminates a machine without Redis, Postgres, or the checker
-  (`run-job.sh --near redis-0`) and needs a same-zone replacement with its broker back within 15 min.
+  30 s of the kill; `node-loss` (EKS only, last; the AWS login is checked when the suite starts)
+  terminates a machine without Redis, Postgres, or the checker (`run-job.sh --near redis-0`; a lookup
+  that comes back empty refuses to pick), gives the checker 600 s instead of 300 to reach its end (a
+  one-copy service on the dead machine comes back late), and needs a same-zone replacement with its
+  broker back within 15 min. Fault marks have a 5 s curl limit.
 - **New in Phase 5:** two Terraform stacks. `infra/base` is never destroyed: ECR, the dump bucket,
   the ACM certificate for `sports.<domain>`, the GitHub OIDC role, a $25 budget. `infra/cluster`
   is what `make aws-up` / `make aws-down` cycle: a VPC with three public subnets and no NAT, EKS
