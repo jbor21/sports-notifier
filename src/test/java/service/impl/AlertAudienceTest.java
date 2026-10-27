@@ -49,6 +49,34 @@ class AlertAudienceTest {
         }
     }
 
+    private static Play play(String gameId) {
+        return PlayBuilder.nfl(gameId).period(2).clock(5000).score(6, 0).build();
+    }
+
+    @Test
+    void replayReachesOnlySyntheticFollowers() {
+        follow("ck", "sub:team:nfl-chi", "TOUCHDOWN");
+        follow("real", "sub:team:nfl-chi", "TOUCHDOWN");
+        jedis.sadd(util.RedisKeys.SYNTHETIC_USERS, "ck");
+        assertEquals(Set.of("ck"), audienceOf(play("nfl-rpx-1"), TD));
+    }
+
+    @Test
+    void replayWithoutSyntheticSetReachesNobody() {
+        follow("ck", "sub:team:nfl-chi", "TOUCHDOWN");
+        follow("real", "sub:team:nfl-chi", "TOUCHDOWN");
+        assertEquals(Set.of(), audienceOf(play("nfl-rpx-1"), TD));
+    }
+
+    @Test
+    void liveAndSimulatedGamesIgnoreTheSet() {
+        follow("ck", "sub:team:nfl-chi", "TOUCHDOWN");
+        follow("real", "sub:team:nfl-chi", "TOUCHDOWN");
+        jedis.sadd(util.RedisKeys.SYNTHETIC_USERS, "ck");
+        assertEquals(Set.of("ck", "real"), audienceOf(play("nfl-1"), TD));
+        assertEquals(Set.of("ck", "real"), audienceOf(play("nfl-sim9-1"), TD));
+    }
+
     @Test
     void gameFollowWithAlertOffSilencesTeamFollow() {
         follow("u1", "sub:team:nfl-chi", "TOUCHDOWN");
