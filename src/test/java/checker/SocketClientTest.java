@@ -222,4 +222,19 @@ class SocketClientTest {
         assertFalse(g.silent());
         assertTrue(g.fromMillis() >= helloAt + 200, "an ordinary close starts the gap when it happens");
     }
+    @Test
+    void healthySocketSurvivesAClockGoingBackwards() throws Exception {
+        // Detection must not compare wall-clock times: a clock stepped back (NTP) made a pong look
+        // older than its ping. The gap times may be wrong then; the verdict "dead" must not be.
+        answerFromConnection = 1;
+        java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong(10_000_000L);
+        URI uri = serve((ctx, n) -> ctx.send("{\"type\":\"hello\"}"));
+        SocketLog log = new SocketLog("u1", 0);
+        client = new SocketClient(uri, "abc", log, () -> now.addAndGet(-1000), Duration.ofMillis(200));
+        client.start();
+        await(client::helloSeen, 5000);
+        Thread.sleep(1500);
+        assertEquals(1, connects.get());
+        assertTrue(log.gaps().isEmpty());
+    }
 }

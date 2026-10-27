@@ -40,9 +40,10 @@ public final class SocketClient implements WebSocket.Listener {
     private volatile WebSocket ws;
     private volatile boolean helloSeen;
     private volatile boolean closed;
+    /** When the last frame arrived; only for backdating a silent gap, never for deciding it is dead. */
     private volatile long lastReceivedAt;
-    /** When this connection's last ping went out; 0 until its first. */
-    private volatile long lastPingAt;
+    /** This connection's last ping has had nothing back yet. A flag, not timestamps: a clock step can't fake it. */
+    private volatile boolean awaitingAnswer;
     private int failures;
 
     public SocketClient(URI uri, String sid, SocketLog log, LongSupplier clock, Duration pingEvery) {
@@ -59,7 +60,9 @@ public final class SocketClient implements WebSocket.Listener {
     }
 
     public void start() {
-        timer.scheduleAtFixedRate(this::ping, pingEvery.toMillis(), pingEvery.toMillis(), TimeUnit.MILLISECONDS);
+        // Fixed delay, not fixed rate: a timer that fell behind (a GC pause) must not send its missed
+        // pings back to back, or the second would find the first unanswered and abort a healthy socket.
+        timer.scheduleWithFixedDelay(this::ping, pingEvery.toMillis(), pingEvery.toMillis(), TimeUnit.MILLISECONDS);
         connect();
     }
 
@@ -105,19 +108,19 @@ public final class SocketClient implements WebSocket.Listener {
     private void ping() {
         WebSocket w = ws;
         if (w == null) return;
-        if (lastPingAt != 0 && lastReceivedAt < lastPingAt) {
+        if (awaitingAnswer) {
             // Recorded before the abort, so the abort's own callbacks find nothing to do.
             down(w, lastReceivedAt, true);
             w.abort();
             return;
         }
-        lastPingAt = clock.getAsLong();
+        awaitingAnswer = true;   // before the send, so a fast pong can't arrive first and be overwritten
         w.sendText("{\"type\":\"ping\"}", true).exceptionally(e -> null);
     }
 
     @Override
     public synchronized void onOpen(WebSocket webSocket) {
-        lastPingAt = 0;
+        awaitingAnswer = false;
         lastReceivedAt = clock.getAsLong();
         ws = webSocket;
         failures = 0;
@@ -139,6 +142,7 @@ public final class SocketClient implements WebSocket.Listener {
     private void handle(String text) {
         long at = clock.getAsLong();
         lastReceivedAt = at;
+        awaitingAnswer = false;
         JsonObject m;
         try {
             m = JsonParser.parseString(text).getAsJsonObject();

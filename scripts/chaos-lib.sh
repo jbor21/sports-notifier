@@ -104,6 +104,22 @@ chaos_most_leaders() {
   awk '$3 >= 0 { c[$3]++ } END { best = -1; for (id in c) if (best < 0 || c[id] > c[best] || (c[id] == c[best] && id + 0 < best + 0)) best = id; if (best >= 0) print best }'
 }
 
+# chaos_await_leaders_moved <id> <seconds>: waits until no partition is led by broker <id> and none is
+# leaderless, and prints how many seconds that took; fails at the limit. The limit is in wall time, not
+# tries: each read is an exec plus a JVM start, several seconds.
+chaos_await_leaders_moved() {
+  local id=$1 limit=$2 t0=$SECONDS leaders
+  while [ $((SECONDS - t0)) -lt "$limit" ]; do
+    if leaders=$(chaos_leaders 2>/dev/null) && [ -n "$leaders" ] \
+       && ! awk -v id="$id" '$3 == id || $3 == -1 { f = 1 } END { exit !f }' <<< "$leaders"; then
+      echo $((SECONDS - t0)); return 0
+    fi
+    [ $((SECONDS - t0 + 2)) -lt "$limit" ] || break
+    sleep 2
+  done
+  return 1
+}
+
 chaos_under_replicated() {
   local out
   out=$(chaos_kafka bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --under-replicated-partitions) || return 1
@@ -307,9 +323,15 @@ chaos_instance_of() {
 # Postgres's, or the checker's; preferably not the observability pod's (its data lives in the pod).
 # Prints the node, then "note: …" on a second line when only the observability pod's machine is left.
 chaos_pick_victim() {
-  local nodes avoid lgtm n free=() spare=()
+  local nodes avoid lgtm n redis pg free=() spare=()
   nodes=$(_k get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | sort) || return 1
-  avoid=" $(chaos_node_of redis-0) $(chaos_node_of postgres-0) $1 "
+  # Fail closed: a lookup that comes back empty must never let Redis's or Postgres's machine through.
+  redis=$(chaos_node_of redis-0 2>/dev/null || true)
+  [ -n "$redis" ] || { echo "chaos_pick_victim: cannot find the machine of redis-0" >&2; return 1; }
+  pg=$(chaos_node_of postgres-0 2>/dev/null || true)
+  [ -n "$pg" ] || { echo "chaos_pick_victim: cannot find the machine of postgres-0" >&2; return 1; }
+  [ -n "$1" ] || { echo "chaos_pick_victim: no checker machine given" >&2; return 1; }
+  avoid=" $redis $pg $1 "
   lgtm=$(_k get pods -l app.kubernetes.io/name=lgtm -o jsonpath='{.items[0].spec.nodeName}' 2>/dev/null || true)
   for n in $nodes; do
     [[ "$avoid" == *" $n "* ]] && continue
@@ -320,6 +342,18 @@ chaos_pick_victim() {
   echo "chaos_pick_victim: no machine free of redis, postgres and the checker" >&2
   return 1
 }
+
+# The pods on a machine, one per line (for the log of what died with it).
+chaos_pods_on() {
+  _k get pods -o jsonpath='{range .items[*]}{.metadata.name} {.spec.nodeName}{"\n"}{end}' | awk -v n="$1" '$2 == n { print $1 }'
+}
+
+# run-job.sh flags and checker env for a scenario. node-loss keeps the checker on Redis's machine, so
+# one machine holds neither and can die, and gives it 600 s instead of 300 to reach its end: a
+# one-copy service (event-processing, history, …) on the dead machine comes back only after
+# Kubernetes gives up on the machine. DEADLINE (replay + 900 s) still covers replay + 600 s.
+chaos_job_flags() { [ "$1" != node-loss ] || echo "--near redis-0"; }
+chaos_job_env() { [ "$1" != node-loss ] || echo "RUN_TIMEOUT_SECONDS=${CHAOS_NODE_LOSS_RUN_TIMEOUT:-600}"; }
 
 # chaos_await_replacement <zone> <seconds> <nodes before…>: waits for a Ready node that was not there
 # before and prints "<name> <zone>". One in another zone fails: the dead machine's broker disk (zonal
@@ -356,7 +390,7 @@ chaos_grafana_start() {
   _k port-forward svc/lgtm "$CHAOS_GRAFANA_PORT:3000" >/dev/null 2>&1 &
   CHAOS_GRAFANA_PID=$!
   for _ in $(seq 1 20); do
-    if curl -sf -o /dev/null "http://localhost:$CHAOS_GRAFANA_PORT/api/health"; then CHAOS_GRAFANA=1; return 0; fi
+    if curl -sf --max-time 2 -o /dev/null "http://localhost:$CHAOS_GRAFANA_PORT/api/health"; then CHAOS_GRAFANA=1; return 0; fi
     sleep 0.5
   done
   echo "chaos: Grafana did not answer on :$CHAOS_GRAFANA_PORT; running without fault marks" >&2
@@ -372,7 +406,9 @@ chaos_grafana_stop() {
 chaos_mark() {
   [ "$CHAOS_GRAFANA" = 1 ] || return 0
   local at=${3:-$(chaos_now_ms)}
-  curl -sf -o /dev/null -X POST "http://localhost:$CHAOS_GRAFANA_PORT/api/annotations" \
+  # A time limit: the port-forward may point at a pod on a machine that just died, and a mark must
+  # never hold up a scenario.
+  curl -sf --max-time 5 -o /dev/null -X POST "http://localhost:$CHAOS_GRAFANA_PORT/api/annotations" \
     -H 'Content-Type: application/json' \
     -d "{\"time\": $at, \"tags\": [\"chaos\", \"$1\"], \"text\": \"$1: $2\"}" \
     || echo "chaos: could not mark '$1: $2' on the dashboard" >&2

@@ -30,6 +30,13 @@ else
   run=("$want")
 fi
 
+# node-loss terminates a machine through the AWS CLI about 70 minutes in: check the login now.
+if [[ " ${run[*]} " == *" node-loss "* ]]; then
+  command -v aws >/dev/null || { echo "chaos: node-loss needs the aws CLI" >&2; exit 2; }
+  aws --profile "${AWS_PROFILE:-sports}" sts get-caller-identity >/dev/null 2>&1 \
+    || { echo "chaos: node-loss needs an AWS login first: aws sso login --profile ${AWS_PROFILE:-sports}" >&2; exit 2; }
+fi
+
 # The scenarios assume a second copy takes over; with one copy a crash only tests a restart.
 for d in stage1-worker stage2-worker gateway; do
   n=$(_k get deploy "$d" -o jsonpath='{.spec.replicas}') || { echo "chaos: cannot read deployment/$d" >&2; exit 2; }
@@ -78,7 +85,7 @@ deployment_of() {
 # Each fault sets fault_ok and proof, and returns non-zero if a step of it could not run. It runs
 # inside `if`, where errexit is off, so every step that matters checks its own result.
 crash() {
-  local pod before id="" leaders moved="" t_crash
+  local pod before id="" moved=""
   if [ "$1" = broker-crash ] && [ "$(chaos_brokers | wc -l | tr -d ' ')" -gt 1 ]; then
     # Several brokers: take the one leading the most partitions, so the most leadership has to move.
     id=$(chaos_leaders 2>>"$log" | chaos_most_leaders) && [ -n "$id" ] || { proof="could not read partition leaders"; return 1; }
@@ -89,18 +96,10 @@ crash() {
   fi
   before=$(chaos_restarts "$pod") || return 1
   say "crash $pod (restarts $before)"
-  t_crash=$SECONDS
   chaos_crash "$pod" 2>>"$log" || { proof="crictl could not stop $pod"; return 1; }
-  if [ -n "$id" ]; then
-    # Every partition it led must get a leader on another broker within 30 s, and none may be left without.
-    for _ in $(seq 1 15); do
-      if leaders=$(chaos_leaders 2>>"$log") && [ -n "$leaders" ] \
-         && ! awk -v id="$id" '$3 == id || $3 == -1 { f = 1 } END { exit !f }' <<< "$leaders"; then
-        moved=$((SECONDS - t_crash)); break
-      fi
-      sleep 2
-    done
-  fi
+  # Every partition it led must get a leader on another broker within 30 s of the kill, and none may be
+  # left without. Timed from when crictl returned, so the debug pod's start-up doesn't count.
+  [ -z "$id" ] || moved=$(chaos_await_leaders_moved "$id" 30) || moved=""
   if chaos_wait_restarted "$pod" "$before" 2>>"$log"; then
     proof="$pod restarted at +$fault_at s"
   else
@@ -193,6 +192,7 @@ node_loss() {
   before=$(_k get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}')
   for b in $(chaos_brokers); do [ "$(chaos_node_of "$b")" = "$victim" ] && broker=$b; done
   [ -n "$broker" ] || { proof="no broker on $victim"; return 1; }
+  say "on $victim: $(chaos_pods_on "$victim" | tr '\n' ' ')"
   CHAOS_BROKER_AT_FAULT=$broker
   say "terminate $iid ($victim in $zone, with $broker; checker on $checker_node)"
   t_kill=$SECONDS
@@ -250,10 +250,11 @@ for name in "${run[@]}"; do
     continue
   fi
   say "steady; starting the checker (set $SET at ${SPEED}x, time limit $DEADLINE s)"
-  # node-loss keeps the checker on Redis's machine, so one machine holds neither and can die. (The
-  # ${…+…} form: the Mac's bash 3.2 calls an empty array unbound under set -u.)
-  near=(); [ "$name" != node-loss ] || near=(--near redis-0)
-  scripts/run-job.sh --deadline "$DEADLINE" ${near[@]+"${near[@]}"} checker CHECK_SET="$SET" CHECK_SPEED="$SPEED" >> "$log" 2>&1 &
+  # Per-scenario flags and env (chaos_job_flags). The ${…+…} form: the Mac's bash 3.2 calls an empty
+  # array unbound under set -u.
+  flags=($(chaos_job_flags "$name")); envs=($(chaos_job_env "$name"))
+  scripts/run-job.sh --deadline "$DEADLINE" ${flags[@]+"${flags[@]}"} checker CHECK_SET="$SET" CHECK_SPEED="$SPEED" \
+    ${envs[@]+"${envs[@]}"} >> "$log" 2>&1 &
   job_pid=$!
 
   started=""

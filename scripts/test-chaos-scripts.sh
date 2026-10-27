@@ -301,4 +301,53 @@ fake_kubectl 'case "$*" in *"get deploy"*"spec.replicas"*) echo 2 ;; esac'
 err=$(PATH="$tmp/bin:$PATH" KUBE_CONTEXT=k3d-x DEADLINE=60 bash scripts/chaos.sh node-loss 2>&1); rc=$?
 [[ "$rc" = 2 && "$err" == *"node-loss needs EKS"* ]] && ok node_loss_refused_on_k3d || bad node_loss_refused_on_k3d "exit $rc: $err"
 
+# --- Final-review fixes ---
+
+# R3: a machine is never picked when Redis's or Postgres's machine can't be read (fail closed).
+fake_kubectl "$nodes_fake"
+out=$(pick "" b none a); rc=$?
+[[ "$rc" != 0 && "$out" == *"cannot find the machine of redis-0"* ]] && ok victim_fails_closed_without_redis || bad victim_fails_closed_without_redis "exit $rc, got: $out"
+out=$(pick a "" none a); rc=$?
+[[ "$rc" != 0 && "$out" == *"cannot find the machine of postgres-0"* ]] && ok victim_fails_closed_without_postgres || bad victim_fails_closed_without_postgres "exit $rc, got: $out"
+
+# R1: node-loss gives the checker longer to reach its end (single-copy services on the dead machine
+# come back only after Kubernetes gives up on it), and keeps it on Redis's machine; others get neither.
+out=$(bash -c "source '$root/scripts/chaos-lib.sh'; echo \"\$(chaos_job_flags node-loss)|\$(chaos_job_env node-loss)|\$(chaos_job_flags stage1-crash)|\$(chaos_job_env stage1-crash)\"")
+[ "$out" = "--near redis-0|RUN_TIMEOUT_SECONDS=600||" ] && ok node_loss_checker_args || bad node_loss_checker_args "got: $out"
+
+# R1: the pods on a machine, for the log of what died with it.
+fake_kubectl 'printf "gateway-a n1\nhistory-b n2\nsports-notifier-dual-role-1 n1\n"'
+out=$(PATH="$tmp/bin:$PATH" bash -c "source '$root/scripts/chaos-lib.sh'; chaos_pods_on n1" | tr '\n' ' ')
+[ "$out" = "gateway-a sports-notifier-dual-role-1 " ] && ok pods_on_machine || bad pods_on_machine "got: $out"
+
+# R2: a fault mark can never hang a scenario (its port-forward may point at a pod on a dead machine).
+fake_kubectl 'exit 0'; fake_curl
+PATH="$tmp/bin:$PATH" bash -c "source '$root/scripts/chaos-lib.sh'; CHAOS_GRAFANA=1; chaos_mark node-loss 'machine down'" >/dev/null 2>&1
+grep -q -- "--max-time" "$tmp/curl-calls" && ok mark_has_time_limit || bad mark_has_time_limit "curl: $(cat "$tmp/curl-calls" 2>/dev/null)"
+
+# R4: the leadership check really ends at its limit, however slow each read is (an exec plus a JVM).
+fake_kubectl 'case "$*" in
+  *"get pods -l strimzi.io/pool-name=dual-role"*) echo sports-notifier-dual-role-1 ;;
+  *"Ready"*) echo True ;;
+  *"kafka-topics"*) sleep 2; printf "\tTopic: game-events\tPartition: 0\tLeader: 1\n" ;;
+esac'
+start=$SECONDS
+PATH="$tmp/bin:$PATH" bash -c "source '$root/scripts/chaos-lib.sh'; chaos_await_leaders_moved 1 3" >/dev/null 2>&1; rc=$?
+took=$((SECONDS - start))
+[ "$rc" != 0 ] && [ "$took" -le 6 ] && ok leaders_wait_respects_limit || bad leaders_wait_respects_limit "exit $rc after $took s"
+fake_kubectl 'case "$*" in
+  *"get pods -l strimzi.io/pool-name=dual-role"*) echo sports-notifier-dual-role-1 ;;
+  *"Ready"*) echo True ;;
+  *"kafka-topics"*) printf "\tTopic: game-events\tPartition: 0\tLeader: 2\n" ;;
+esac'
+out=$(PATH="$tmp/bin:$PATH" bash -c "source '$root/scripts/chaos-lib.sh'; chaos_await_leaders_moved 1 3" 2>&1); rc=$?
+[ "$rc" = 0 ] && [[ "$out" =~ ^[0-9]+$ ]] && ok leaders_moved_prints_seconds || bad leaders_moved_prints_seconds "exit $rc, got: $out"
+
+# R8: node-loss checks the AWS login before anything runs (it terminates a machine 70 minutes in).
+fake_kubectl 'case "$*" in *"get deploy"*"spec.replicas"*) echo 2 ;; esac'
+printf '#!/usr/bin/env bash\necho "The SSO session has expired" >&2\nexit 255\n' > "$tmp/bin/aws"; chmod +x "$tmp/bin/aws"
+err=$(PATH="$tmp/bin:$PATH" KUBE_CONTEXT=eks DEADLINE=60 CHAOS_STEADY_SECONDS=0 bash scripts/chaos.sh node-loss 2>&1); rc=$?
+[[ "$rc" = 2 && "$err" == *"aws sso login --profile sports"* ]] && ok node_loss_checks_aws_login || bad node_loss_checks_aws_login "exit $rc: $err"
+rm -f "$tmp/bin/aws"
+
 exit $failed
