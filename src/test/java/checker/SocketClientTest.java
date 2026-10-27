@@ -22,8 +22,12 @@ class SocketClientTest {
     private final List<String> fromClient = new CopyOnWriteArrayList<>();
     private final List<String> cookies = new CopyOnWriteArrayList<>();
     private final AtomicInteger connects = new AtomicInteger();
-    /** The stand-in gateway answers pings only while this is set; otherwise it goes silent. */
-    private volatile boolean answerPings;
+    /**
+     * The stand-in gateway answers pings on its n-th connection and later ones, and is silent on earlier
+     * ones. Fixed before the client starts: flipping a flag mid-test raced the client's first ping.
+     */
+    private volatile int answerFromConnection = Integer.MAX_VALUE;
+    private final java.util.Map<String, Integer> connectionOf = new java.util.concurrent.ConcurrentHashMap<>();
 
     @AfterEach
     void tearDown() {
@@ -41,11 +45,14 @@ class SocketClientTest {
         app = Javalin.create(cfg -> {}).ws("/ws", ws -> {
             ws.onConnect(ctx -> {
                 cookies.add(String.valueOf(ctx.cookie("sid")));
-                onConnect.accept(ctx, connects.incrementAndGet());
+                int n = connects.incrementAndGet();
+                connectionOf.put(ctx.sessionId(), n);
+                onConnect.accept(ctx, n);
             });
             ws.onMessage(ctx -> {
                 fromClient.add(ctx.message());
-                if (answerPings && ctx.message().contains("\"ping\"")) ctx.send("{\"type\":\"pong\"}");
+                int n = connectionOf.getOrDefault(ctx.sessionId(), 0);
+                if (n >= answerFromConnection && ctx.message().contains("\"ping\"")) ctx.send("{\"type\":\"pong\"}");
             });
         }).start(0);
         return URI.create("ws://localhost:" + app.port() + "/ws");
@@ -154,6 +161,7 @@ class SocketClientTest {
     }
     @Test
     void silentServerIsAbortedAndGapStartsAtLastFrame() throws Exception {
+        answerFromConnection = 2;
         URI uri = serve((ctx, n) -> ctx.send("{\"type\":\"hello\"}"));
         SocketLog log = new SocketLog("u1", 0);
         client = new SocketClient(uri, "abc", log, System::currentTimeMillis, Duration.ofMillis(200));
@@ -161,7 +169,6 @@ class SocketClientTest {
         await(client::helloSeen, 5000);
         long helloAt = System.currentTimeMillis();
         await(() -> connects.get() == 2, 5000);
-        answerPings = true;
         await(() -> log.gaps().size() == 1 && log.gaps().get(0).toMillis() != Long.MAX_VALUE, 3000);
         SocketLog.Gap g = log.gaps().get(0);
         assertTrue(g.silent());
@@ -170,12 +177,12 @@ class SocketClientTest {
 
     @Test
     void abortedSocketReconnectsOnce() throws Exception {
+        answerFromConnection = 2;
         URI uri = serve((ctx, n) -> ctx.send("{\"type\":\"hello\"}"));
         SocketLog log = new SocketLog("u1", 0);
         client = new SocketClient(uri, "abc", log, System::currentTimeMillis, Duration.ofMillis(200));
         client.start();
         await(() -> connects.get() == 2, 5000);
-        answerPings = true;
         Thread.sleep(1000);
         assertEquals(2, connects.get(), "a late callback of the aborted socket must not reconnect again");
         assertEquals(1, log.gaps().size());
@@ -184,7 +191,7 @@ class SocketClientTest {
 
     @Test
     void answeringServerIsNeverAborted() throws Exception {
-        answerPings = true;
+        answerFromConnection = 1;
         URI uri = serve((ctx, n) -> ctx.send("{\"type\":\"hello\"}"));
         SocketLog log = new SocketLog("u1", 0);
         client = new SocketClient(uri, "abc", log, System::currentTimeMillis, Duration.ofMillis(200));
@@ -197,7 +204,7 @@ class SocketClientTest {
 
     @Test
     void closedSocketGapIsNotSilent() throws Exception {
-        answerPings = true;
+        answerFromConnection = 1;
         URI uri = serve((ctx, n) -> {
             ctx.send("{\"type\":\"hello\"}");
             if (n == 1) new Thread(() -> {
