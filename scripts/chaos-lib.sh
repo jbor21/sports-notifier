@@ -292,6 +292,55 @@ chaos_stop_job() {
   [ -z "$job" ] || echo "chaos: stopped $job mid-run; run make check-clean to remove its users" >&2
 }
 
+# --- A machine dying (node-loss, EKS only; Phase 6.1 spec, 4.3) ---
+
+chaos_zone_of() { _k get node "$1" -o jsonpath='{.metadata.labels.topology\.kubernetes\.io/zone}'; }
+
+# The EC2 instance behind a node: spec.providerID is aws:///<zone>/<instance id>.
+chaos_instance_of() {
+  local id
+  id=$(_k get node "$1" -o jsonpath='{.spec.providerID}') || return 1
+  echo "${id##*/}"
+}
+
+# chaos_pick_victim <checker's node>: the machine to kill. Never Redis's (its loss repeats pushes, #52),
+# Postgres's, or the checker's; preferably not the observability pod's (its data lives in the pod).
+# Prints the node, then "note: …" on a second line when only the observability pod's machine is left.
+chaos_pick_victim() {
+  local nodes avoid lgtm n free=() spare=()
+  nodes=$(_k get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | sort) || return 1
+  avoid=" $(chaos_node_of redis-0) $(chaos_node_of postgres-0) $1 "
+  lgtm=$(_k get pods -l app.kubernetes.io/name=lgtm -o jsonpath='{.items[0].spec.nodeName}' 2>/dev/null || true)
+  for n in $nodes; do
+    [[ "$avoid" == *" $n "* ]] && continue
+    if [ "$n" = "$lgtm" ]; then spare+=("$n"); else free+=("$n"); fi
+  done
+  if [ ${#free[@]} -gt 0 ]; then echo "${free[0]}"; return 0; fi
+  if [ ${#spare[@]} -gt 0 ]; then echo "${spare[0]}"; echo "note: the dashboard data will be lost"; return 0; fi
+  echo "chaos_pick_victim: no machine free of redis, postgres and the checker" >&2
+  return 1
+}
+
+# chaos_await_replacement <zone> <seconds> <nodes before…>: waits for a Ready node that was not there
+# before and prints "<name> <zone>". One in another zone fails: the dead machine's broker disk (zonal
+# EBS) cannot follow it there.
+chaos_await_replacement() {
+  local zone=$1 limit=$2 before name z ready
+  shift 2
+  before=" $* "
+  local deadline=$((SECONDS + limit))
+  while :; do
+    while IFS=, read -r name z ready; do
+      [ -n "$name" ] && [[ "$before" != *" $name "* ]] && [ "$ready" = True ] || continue
+      if [ "$z" = "$zone" ]; then echo "$name $z"; return 0; fi
+      echo "fault did not land: replacement in $z, not $zone" >&2
+      return 1
+    done < <(_k get nodes -o jsonpath='{range .items[*]}{.metadata.name},{.metadata.labels.topology\.kubernetes\.io/zone},{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null)
+    if [ $SECONDS -ge $deadline ]; then echo "no replacement within $limit s" >&2; return 1; fi
+    sleep 5
+  done
+}
+
 # --- Fault marks on the Pipeline dashboard (Phase 4.3 spec, section 6) ---
 # Grafana annotations through a port-forward this script opens. A mark that cannot be posted is a log
 # line, never a failed scenario; with no observability pod there are no marks and no links.

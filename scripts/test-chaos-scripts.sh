@@ -238,4 +238,67 @@ out=$(printf 'Topic: game-events\tTopicId: x\tPartitionCount: 2\n\tTopic: game-e
   | bash -c "source '$root/scripts/chaos-lib.sh'; chaos_parse_leaders" | tr '\n' ';')
 [ "$out" = "game-events 0 1;notifications 5 -1;" ] && ok leaders_parsed || bad leaders_parsed "got: $out"
 
+# --- node-loss ---
+
+# Three machines a, b, c; REDIS, PG and LGTM say where those pods run.
+nodes_fake='case "$*" in
+  *"get nodes -o jsonpath"*"metadata.name"*"zone"*) printf "%s\n" $NODE_LINES ;;
+  *"get nodes -o jsonpath"*) printf "a\nb\nc\n" ;;
+  *"get pod redis-0 "*"nodeName"*) echo $REDIS ;;
+  *"get pod postgres-0 "*"nodeName"*) echo $PG ;;
+  *"get pods -l app.kubernetes.io/name=lgtm"*) echo $LGTM ;;
+  *"get node a "*"providerID"*) echo "aws:///us-east-2a/i-0abc" ;;
+esac'
+fake_kubectl "$nodes_fake"
+pick() { PATH="$tmp/bin:$PATH" REDIS=$1 PG=$2 LGTM=$3 bash -c "source '$root/scripts/chaos-lib.sh'; chaos_pick_victim $4" 2>&1; }
+out=$(pick a b none a)
+[ "$(head -1 <<< "$out")" = c ] && ok victim_excludes_redis_postgres_checker || bad victim_excludes_redis_postgres_checker "got: $out"
+out=$(pick a a b a)
+[ "$out" = c ] && ok victim_prefers_no_lgtm || bad victim_prefers_no_lgtm "got: $out"
+out=$(pick a a c a)
+[ "$(head -1 <<< "$out")" = b ] && ok victim_prefers_no_lgtm_other || bad victim_prefers_no_lgtm_other "got: $out"
+out=$(pick a a b b)
+if [ "$(head -1 <<< "$out")" = c ]; then ok victim_avoids_checker; else bad victim_avoids_checker "got: $out"; fi
+out=$(pick a b none c); rc=$?
+[[ "$rc" != 0 && "$out" == *"no machine free of redis, postgres and the checker"* ]] && ok victim_none_left || bad victim_none_left "exit $rc, got: $out"
+out=$(pick a a c b)
+[[ "$out" == $'c\nnote: the dashboard data will be lost' ]] && ok victim_lgtm_only_choice_noted || bad victim_lgtm_only_choice_noted "got: $out"
+
+out=$(PATH="$tmp/bin:$PATH" bash -c "source '$root/scripts/chaos-lib.sh'; chaos_instance_of a")
+[ "$out" = i-0abc ] && ok instance_from_provider_id || bad instance_from_provider_id "got: $out"
+
+# The replacement must come up in the dead machine's zone: its broker's disk cannot follow it elsewhere.
+fake_kubectl "$nodes_fake"
+err=$(PATH="$tmp/bin:$PATH" NODE_LINES="b,us-east-2b,True c,us-east-2c,True d,us-east-2b,True" \
+  bash -c "source '$root/scripts/chaos-lib.sh'; chaos_await_replacement us-east-2a 1 a b c" 2>&1)
+[[ "$err" == *"fault did not land: replacement in us-east-2b, not us-east-2a"* ]] && ok replacement_other_zone_fails || bad replacement_other_zone_fails "got: $err"
+out=$(PATH="$tmp/bin:$PATH" NODE_LINES="b,us-east-2b,True c,us-east-2c,True d,us-east-2a,False e,us-east-2a,True" \
+  bash -c "source '$root/scripts/chaos-lib.sh'; chaos_await_replacement us-east-2a 1 a b c" 2>&1)
+[ "$out" = "e us-east-2a" ] && ok replacement_same_zone_found || bad replacement_same_zone_found "got: $out"
+err=$(PATH="$tmp/bin:$PATH" NODE_LINES="b,us-east-2b,True c,us-east-2c,True" \
+  bash -c "source '$root/scripts/chaos-lib.sh'; chaos_await_replacement us-east-2a 1 a b c" 2>&1)
+[[ "$err" == *"no replacement within 1 s"* ]] && ok replacement_timeout || bad replacement_timeout "got: $err"
+
+# --near puts the Job's pod on that pod's machine.
+fake_kubectl 'echo "$*" >> '"$tmp"'/kubectl-calls
+case "$1 $2 $3" in
+  "--context ctx create") [[ "$*" == *"-f -"* ]] && cat >/dev/null; echo "job.batch/x created" ;;
+  "--context ctx patch") cat ;;
+  "--context ctx set") cat ;;
+  "--context ctx get")
+    case "$*" in *"get pod redis-0"*) echo n7 ;; *"get job"*) echo "Complete:CompletionsReached " ;; *) echo 0 ;; esac ;;
+esac'
+rm -f "$tmp/kubectl-calls"
+PATH="$tmp/bin:$PATH" KUBE_CONTEXT=ctx bash scripts/run-job.sh --near redis-0 checker A=1 >/dev/null 2>&1
+if grep "patch --local" "$tmp/kubectl-calls" | grep -q '"kubernetes.io/hostname":"n7"'; then
+  ok run_job_near_sets_node_selector
+else
+  bad run_job_near_sets_node_selector "calls: $(cat "$tmp/kubectl-calls" 2>/dev/null)"
+fi
+
+# node-loss needs a real cloud machine.
+fake_kubectl 'case "$*" in *"get deploy"*"spec.replicas"*) echo 2 ;; esac'
+err=$(PATH="$tmp/bin:$PATH" KUBE_CONTEXT=k3d-x DEADLINE=60 bash scripts/chaos.sh node-loss 2>&1); rc=$?
+[[ "$rc" = 2 && "$err" == *"node-loss needs EKS"* ]] && ok node_loss_refused_on_k3d || bad node_loss_refused_on_k3d "exit $rc: $err"
+
 exit $failed

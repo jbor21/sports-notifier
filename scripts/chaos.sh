@@ -16,11 +16,16 @@ SPEED=${SPEED:-60}
 DEADLINE=${DEADLINE:?DEADLINE is set by make chaos}
 BASE_URL=${BASE_URL:-http://localhost:8080}
 SCENARIOS=(stage1-crash stage2-crash history-crash gateway-crash gateway-rollout broker-crash stage1-cut stage2-cut)
+# A machine dying needs real cloud machines; it runs last, and waits for the cluster to recover itself.
+[ "$CHAOS_PLATFORM" != eks ] || SCENARIOS+=(node-loss)
 
 want=${1:-all}
 if [ "$want" = all ]; then
   run=("${SCENARIOS[@]}")
 else
+  if [ "$want" = node-loss ] && [ "$CHAOS_PLATFORM" != eks ]; then
+    echo "node-loss needs EKS: it terminates an EC2 machine (KUBE_CONTEXT=sports-notifier-aws)" >&2; exit 2
+  fi
   [[ " ${SCENARIOS[*]} " == *" $want "* ]] || { echo "unknown scenario: $want (one of: ${SCENARIOS[*]}, all)" >&2; exit 2; }
   run=("$want")
 fi
@@ -170,6 +175,67 @@ cut() {
   fi
 }
 
+# A machine dies (spec 4.3): terminate one EC2 instance, then prove its replacement comes up in the same
+# zone and the broker it held is back with nothing under-replicated, within CHAOS_NODE_LOSS_SECONDS (900).
+node_loss() {
+  local limit=${CHAOS_NODE_LOSS_SECONDS:-900} job checker_node out victim zone iid region before broker="" b
+  local t_kill state="" notready="" repl ready_at="" broker_at="" full_at="" urp
+  command -v aws >/dev/null || { proof="the aws CLI is not installed"; return 1; }
+  job=$(grep -oE '^job/checker-[0-9a-z-]+' "$log" | head -1)
+  checker_node=$(_k get pods -l "job-name=${job#job/}" -o jsonpath='{.items[0].spec.nodeName}' 2>>"$log")
+  [ -n "$checker_node" ] || { proof="could not find the checker's machine"; return 1; }
+  out=$(chaos_pick_victim "$checker_node" 2>>"$log") || { proof="no machine to kill (see the log)"; return 1; }
+  victim=$(head -1 <<< "$out")
+  [ "$(wc -l <<< "$out")" -lt 2 ] || say "$(sed -n 2p <<< "$out")"
+  zone=$(chaos_zone_of "$victim") && iid=$(chaos_instance_of "$victim") && [ -n "$zone" ] && [ -n "$iid" ] \
+    || { proof="could not read $victim's zone or instance"; return 1; }
+  region=${zone%?}
+  before=$(_k get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}')
+  for b in $(chaos_brokers); do [ "$(chaos_node_of "$b")" = "$victim" ] && broker=$b; done
+  [ -n "$broker" ] || { proof="no broker on $victim"; return 1; }
+  CHAOS_BROKER_AT_FAULT=$broker
+  say "terminate $iid ($victim in $zone, with $broker; checker on $checker_node)"
+  t_kill=$SECONDS
+  aws --profile "${AWS_PROFILE:-sports}" --region "$region" ec2 terminate-instances --instance-ids "$iid" >>"$log" 2>&1 \
+    || { proof="aws could not terminate $iid"; return 1; }
+
+  for _ in $(seq 1 30); do
+    state=$(aws --profile "${AWS_PROFILE:-sports}" --region "$region" ec2 describe-instances --instance-ids "$iid" \
+      --query 'Reservations[0].Instances[0].State.Name' --output text 2>>"$log" || true)
+    [[ "$state" == shutting-down || "$state" == terminated ]] && break
+    sleep 2
+  done
+  [[ "$state" == shutting-down || "$state" == terminated ]] || { fault_ok=0; proof="fault did not land: $iid still ${state:-unknown} after 60 s"; return; }
+  for _ in $(seq 1 60); do
+    [ "$(_k get node "$victim" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = True ] \
+      || { notready=$((SECONDS - t_kill)); break; }
+    sleep 2
+  done
+  [ -n "$notready" ] || { fault_ok=0; proof="fault did not land: $victim still Ready after 120 s"; return; }
+  chaos_mark "$1" "machine down"
+
+  repl=$(chaos_await_replacement "$zone" $((limit - (SECONDS - t_kill))) $before 2>>"$log") \
+    || { fault_ok=0; proof="$(tail -1 "$log")"; return; }
+  ready_at=$((SECONDS - t_kill))
+  say "replacement ${repl% *} Ready at +$ready_at s"
+  while [ $((SECONDS - t_kill)) -lt "$limit" ]; do
+    if [ -z "$broker_at" ] && chaos_ready "$broker" && [ "$(chaos_node_of "$broker")" = "${repl% *}" ]; then
+      broker_at=$((SECONDS - t_kill)); CHAOS_BROKER_AT_FAULT=""
+    fi
+    if [ -n "$broker_at" ] && urp=$(chaos_under_replicated 2>>"$log") && [ "$urp" = 0 ]; then
+      full_at=$((SECONDS - t_kill)); break
+    fi
+    sleep 5
+  done
+  chaos_mark "$1" healed
+  if [ -z "$full_at" ]; then
+    fault_ok=0
+    proof="not recovered within $limit s: replacement Ready +$ready_at s, broker ${broker_at:+back +$broker_at s}${broker_at:-not back}"
+    return
+  fi
+  proof="$iid in $zone: NotReady +$notready s, replacement Ready +$ready_at s, broker back +$broker_at s, fully replicated +$full_at s"
+}
+
 passed=0
 for name in "${run[@]}"; do
   log="$out/$name.log"
@@ -183,7 +249,10 @@ for name in "${run[@]}"; do
     continue
   fi
   say "steady; starting the checker (set $SET at ${SPEED}x, time limit $DEADLINE s)"
-  scripts/run-job.sh --deadline "$DEADLINE" checker CHECK_SET="$SET" CHECK_SPEED="$SPEED" >> "$log" 2>&1 &
+  # node-loss keeps the checker on Redis's machine, so one machine holds neither and can die. (The
+  # ${…+…} form: the Mac's bash 3.2 calls an empty array unbound under set -u.)
+  near=(); [ "$name" != node-loss ] || near=(--near redis-0)
+  scripts/run-job.sh --deadline "$DEADLINE" ${near[@]+"${near[@]}"} checker CHECK_SET="$SET" CHECK_SPEED="$SPEED" >> "$log" 2>&1 &
   job_pid=$!
 
   started=""
@@ -213,6 +282,7 @@ for name in "${run[@]}"; do
          *-crash) crash "$name" ;;
          gateway-rollout) rollout "$name" ;;
          *-cut) cut "$name" ;;
+         node-loss) node_loss "$name" ;;
        esac; then
     fault_ok=0; proof="fault step failed: ${proof:-see the log}"
   fi
