@@ -54,8 +54,64 @@ chaos_debug_cleanup() {
   done
 }
 
+# --- Brokers (one on k3d, three on EKS). Pod <release>-dual-role-<n> is Kafka node id <n>. ---
+
+# Set by the broker crash to the broker it killed, so admin commands go elsewhere; empty otherwise.
+CHAOS_BROKER_AT_FAULT=${CHAOS_BROKER_AT_FAULT:-}
+
+chaos_brokers() {
+  _k get pods -l strimzi.io/pool-name=dual-role -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | sort
+}
+
+chaos_ready() { [ "$(_k get pod "$1" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = True ]; }
+
+# The first Ready broker that is not the one at fault. Fails if there is none.
+chaos_admin_broker() {
+  local b
+  for b in $(chaos_brokers); do
+    [ "$b" != "$CHAOS_BROKER_AT_FAULT" ] && chaos_ready "$b" && { echo "$b"; return 0; }
+  done
+  echo "chaos_admin_broker: no Ready broker to run Kafka commands on" >&2
+  return 1
+}
+
+# chaos_kafka bin/kafka-….sh …: a Kafka admin command on the admin broker.
+chaos_kafka() {
+  local b
+  b=$(chaos_admin_broker) || return 1
+  _k exec "$b" -c kafka -- "$@"
+}
+
+# kafka-topics' describe lines on stdin → "<topic> <partition> <leader id>" for the two pipeline topics.
+chaos_parse_leaders() {
+  awk '{ t = p = l = ""
+         for (i = 1; i < NF; i++) {
+           if ($i == "Topic:") t = $(i + 1)
+           if ($i == "Partition:") p = $(i + 1)
+           if ($i == "Leader:") l = $(i + 1)
+         }
+         if (p != "" && (t == "game-events" || t == "notifications")) print t, p, (l == "none" ? -1 : l) }'
+}
+
+chaos_leaders() {
+  local out
+  out=$(chaos_kafka bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe) || return 1
+  chaos_parse_leaders <<< "$out"
+}
+
+# chaos_leaders lines on stdin → the node id leading the most partitions (ties: the lowest id).
+chaos_most_leaders() {
+  awk '$3 >= 0 { c[$3]++ } END { best = -1; for (id in c) if (best < 0 || c[id] > c[best] || (c[id] == c[best] && id + 0 < best + 0)) best = id; if (best >= 0) print best }'
+}
+
+chaos_under_replicated() {
+  local out
+  out=$(chaos_kafka bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --under-replicated-partitions) || return 1
+  grep -c 'Partition:' <<< "$out" || true
+}
+
 # The first pod of a Deployment, in name order (repeatable; either copy carries traffic). "broker" is
-# Strimzi's one Kafka pod.
+# Strimzi's first Kafka pod.
 chaos_first_pod() {
   if [ "$1" = broker ]; then echo "$RELEASE-dual-role-0"; return; fi
   _k get pods -l "app.kubernetes.io/name=$1" --field-selector=status.phase=Running \
@@ -157,7 +213,7 @@ chaos_heal() {
 # group could not be read: an unreadable group must never pass for "the cut pod left it".
 chaos_members() {
   local out
-  out=$(_k exec "$RELEASE-dual-role-0" -c kafka -- bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+  out=$(chaos_kafka bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
     --describe --group "$1" --members 2>/dev/null) || return 1
   printf '%s\n' "$out" | awk '$3 ~ /^\// { sub("/", "", $3); print $3 }'
 }
@@ -167,10 +223,10 @@ chaos_rollout() {
   _k rollout status "deployment/$1" --timeout=180s >/dev/null
 }
 
-# Waits up to CHAOS_STEADY_SECONDS (180) until every Deployment of the app is fully ready, the broker is ready, and each
-# consumer group has one member per pod of its Deployment. Prints "steady", or why not and fails.
+# Waits up to CHAOS_STEADY_SECONDS (180) until every Deployment of the app is fully ready, every broker is ready
+# (with several, nothing under-replicated either), and each consumer group has one member per pod of its Deployment. Prints "steady", or why not and fails.
 chaos_steady() {
-  local limit=${CHAOS_STEADY_SECONDS:-180} why="" name want ready
+  local limit=${CHAOS_STEADY_SECONDS:-180} why="" name want ready brokers b urp
   local deadline=$((SECONDS + limit))
   while :; do
     why=""
@@ -178,8 +234,13 @@ chaos_steady() {
       [ "${ready:-0}" = "$want" ] || why="$why deployment/$name ${ready:-0}/$want;"
     done < <(_k get deploy -l app.kubernetes.io/part-of=sports-notifier \
                -o jsonpath='{range .items[*]}{.metadata.name} {.spec.replicas} {.status.readyReplicas}{"\n"}{end}')
-    [ "$(_k get pod "$RELEASE-dual-role-0" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" = True ] \
-      || why="$why broker not ready;"
+    brokers=$(chaos_brokers)
+    [ -n "$brokers" ] || why="$why no broker found;"
+    for b in $brokers; do chaos_ready "$b" || why="$why broker $b not ready;"; done
+    if [ -z "$why" ] && [ "$(wc -l <<< "$brokers" | tr -d ' ')" -gt 1 ]; then
+      if ! urp=$(chaos_under_replicated); then why="$why could not read under-replicated partitions;"
+      elif [ "$urp" != 0 ]; then why="$why $urp under-replicated partitions;"; fi
+    fi
     if [ -z "$why" ]; then
       for pair in stage1:stage1-worker stage2:stage2-worker history:history; do
         want=$(_k get deploy "${pair#*:}" -o jsonpath='{.spec.replicas}')

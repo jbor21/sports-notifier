@@ -73,15 +73,37 @@ deployment_of() {
 # Each fault sets fault_ok and proof, and returns non-zero if a step of it could not run. It runs
 # inside `if`, where errexit is off, so every step that matters checks its own result.
 crash() {
-  local pod before
-  pod=$(chaos_first_pod "$(deployment_of "$1")") && [ -n "$pod" ] || { proof="no running pod to crash"; return 1; }
+  local pod before id="" leaders moved="" t_crash
+  if [ "$1" = broker-crash ] && [ "$(chaos_brokers | wc -l | tr -d ' ')" -gt 1 ]; then
+    # Several brokers: take the one leading the most partitions, so the most leadership has to move.
+    id=$(chaos_leaders 2>>"$log" | chaos_most_leaders) && [ -n "$id" ] || { proof="could not read partition leaders"; return 1; }
+    pod="$RELEASE-dual-role-$id"
+    CHAOS_BROKER_AT_FAULT=$pod
+  else
+    pod=$(chaos_first_pod "$(deployment_of "$1")") && [ -n "$pod" ] || { proof="no running pod to crash"; return 1; }
+  fi
   before=$(chaos_restarts "$pod") || return 1
   say "crash $pod (restarts $before)"
+  t_crash=$SECONDS
   chaos_crash "$pod" 2>>"$log" || { proof="crictl could not stop $pod"; return 1; }
+  if [ -n "$id" ]; then
+    # Every partition it led must get a leader on another broker within 30 s, and none may be left without.
+    for _ in $(seq 1 15); do
+      if leaders=$(chaos_leaders 2>>"$log") && [ -n "$leaders" ] \
+         && ! awk -v id="$id" '$3 == id || $3 == -1 { f = 1 } END { exit !f }' <<< "$leaders"; then
+        moved=$((SECONDS - t_crash)); break
+      fi
+      sleep 2
+    done
+  fi
   if chaos_wait_restarted "$pod" "$before" 2>>"$log"; then
     proof="$pod restarted at +$fault_at s"
   else
-    fault_ok=0; proof="fault did not land: $pod did not restart with exit 137"
+    fault_ok=0; proof="fault did not land: $pod did not restart with exit 137"; return
+  fi
+  if [ -n "$id" ]; then
+    if [ -n "$moved" ]; then proof="$proof, leaders moved in $moved s"
+    else fault_ok=0; proof="fault did not land: partitions still led by $id after 30 s"; fi
   fi
 }
 
@@ -154,6 +176,7 @@ for name in "${run[@]}"; do
   : > "$log"
   t0=$SECONDS
   fault_ok=1 http_ok=1 proof="" fault_at=0
+  CHAOS_BROKER_AT_FAULT=""
 
   if ! chaos_steady >> "$log" 2>&1; then
     printf '%-16s FAIL  cluster not steady (see %s)\n' "$name" "$log" | tee -a "$summary"

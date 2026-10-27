@@ -187,4 +187,55 @@ else
   bad cleanup_deletes_debug_pods "calls: $(grep delete "$tmp/kubectl-calls" 2>/dev/null)"
 fi
 
+# A fake API with three brokers. BROKERS_READY lists which of 0 1 2 are Ready; URP is how many
+# partitions --under-replicated-partitions prints. Every call is recorded.
+brokers_fake='echo "$*" >> '"$tmp"'/kubectl-calls
+case "$*" in
+  *"get pods -l strimzi.io/pool-name=dual-role"*) printf "sports-notifier-dual-role-0\nsports-notifier-dual-role-1\nsports-notifier-dual-role-2\n" ;;
+  *"get pod sports-notifier-dual-role-"*"Ready"*) a="$*"; n=${a##*dual-role-}; n=${n%% *}; [[ " $BROKERS_READY " == *" $n "* ]] && echo True || echo False ;;
+  *"get deploy -l"*) printf "stage1-worker 2 2\nstage2-worker 2 2\nhistory 1 1\n" ;;
+  *"under-replicated-partitions"*) for i in $(seq 1 ${URP:-0}); do printf "\tTopic: notifications\tPartition: $i\tLeader: 1\n"; done ;;
+  *"exec"*"kafka-consumer-groups"*) echo "GROUP CONSUMER-ID HOST CLIENT-ID #PARTITIONS"; echo "stage1 c1 /10.0.0.1 c 6" ;;
+esac'
+
+# Admin commands go to a Ready broker that is not the one at fault.
+fake_kubectl "$brokers_fake"; rm -f "$tmp/kubectl-calls"
+PATH="$tmp/bin:$PATH" BROKERS_READY="0 1 2" CHAOS_BROKER_AT_FAULT=sports-notifier-dual-role-0 \
+  bash -c "source '$root/scripts/chaos-lib.sh'; chaos_members stage1" >/dev/null 2>&1
+if grep "kafka-consumer-groups" "$tmp/kubectl-calls" | grep -q "exec sports-notifier-dual-role-1 "; then
+  ok admin_skips_broker_at_fault
+else
+  bad admin_skips_broker_at_fault "calls: $(grep exec "$tmp/kubectl-calls" 2>/dev/null)"
+fi
+
+# With no Ready broker left, admin commands (and so group reads) fail rather than guess.
+fake_kubectl "$brokers_fake"
+if PATH="$tmp/bin:$PATH" BROKERS_READY="" bash -c "source '$root/scripts/chaos-lib.sh'; chaos_members stage1" >/dev/null 2>&1; then
+  bad admin_fails_with_no_ready_broker "chaos_members succeeded with no Ready broker"
+else
+  ok admin_fails_with_no_ready_broker
+fi
+
+# Steady needs every broker Ready and nothing under-replicated.
+fake_kubectl "$brokers_fake"
+err=$(PATH="$tmp/bin:$PATH" BROKERS_READY="0 1" CHAOS_STEADY_SECONDS=0 bash -c "source '$root/scripts/chaos-lib.sh'; chaos_steady" 2>&1)
+err2=$(PATH="$tmp/bin:$PATH" BROKERS_READY="0 1 2" URP=4 CHAOS_STEADY_SECONDS=0 bash -c "source '$root/scripts/chaos-lib.sh'; chaos_steady" 2>&1)
+if [[ "$err" == *"broker sports-notifier-dual-role-2 not ready"* && "$err2" == *"4 under-replicated"* ]]; then
+  ok steady_waits_for_all_brokers_and_isr
+else
+  bad steady_waits_for_all_brokers_and_isr "got: $err | $err2"
+fi
+
+# The broker crash takes the broker that leads the most partitions (ties: the lowest id); leaderless
+# partitions count for nobody.
+out=$(printf 'game-events 0 1\ngame-events 1 2\nnotifications 0 2\nnotifications 1 -1\nnotifications 2 0\n' \
+  | bash -c "source '$root/scripts/chaos-lib.sh'; chaos_most_leaders")
+out2=$(printf 'game-events 0 1\ngame-events 1 0\n' | bash -c "source '$root/scripts/chaos-lib.sh'; chaos_most_leaders")
+[ "$out $out2" = "2 0" ] && ok broker_crash_picks_most_leaders || bad broker_crash_picks_most_leaders "got: $out $out2"
+
+# Leaders come from kafka-topics' describe lines, for the two pipeline topics only; "none" is -1.
+out=$(printf 'Topic: game-events\tTopicId: x\tPartitionCount: 2\n\tTopic: game-events\tPartition: 0\tLeader: 1\tReplicas: 1,2,0\n\tTopic: game-events-dlq\tPartition: 0\tLeader: 2\tReplicas: 2\n\tTopic: notifications\tPartition: 5\tLeader: none\tReplicas: 0,1,2\n' \
+  | bash -c "source '$root/scripts/chaos-lib.sh'; chaos_parse_leaders" | tr '\n' ';')
+[ "$out" = "game-events 0 1;notifications 5 -1;" ] && ok leaders_parsed || bad leaders_parsed "got: $out"
+
 exit $failed
