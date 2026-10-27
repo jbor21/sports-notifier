@@ -230,7 +230,8 @@ node_loss() {
   chaos_mark "$1" healed
   if [ -z "$full_at" ]; then
     fault_ok=0
-    proof="not recovered within $limit s: replacement Ready +$ready_at s, broker ${broker_at:+back +$broker_at s}${broker_at:-not back}"
+    proof="not recovered within $limit s: replacement Ready +$ready_at s, "
+    if [ -n "$broker_at" ]; then proof="${proof}broker back +$broker_at s, still under-replicated"; else proof="${proof}broker not back"; fi
     return
   fi
   proof="$iid in $zone: NotReady +$notready s, replacement Ready +$ready_at s, broker back +$broker_at s, fully replicated +$full_at s"
