@@ -50,7 +50,7 @@ class ApiV1NotificationsTest {
         NotificationRoutes.register(notification, new NotificationHistory(PostgresTestSupport.dataSource()), new UnreadCounter(pool));
         gateway = Javalin.create().start(0);
         ApiV1Routes.register(gateway, pool, new LoginThrottle(pool), "http://localhost:1",
-                "http://localhost:" + notification.port());
+                "http://localhost:" + notification.port(), "");
         base = "http://localhost:" + gateway.port() + "/api/v1";
         bob = UUID.randomUUID().toString();
         sid = UUID.randomUUID().toString();

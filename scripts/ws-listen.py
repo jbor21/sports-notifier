@@ -10,7 +10,7 @@ asks: the server closes a socket that has sent nothing for 60 s. Exits 0 once N 
 1) contain <text>, 1 on timeout or close; a close prints its code. Python standard library only, so
 the smoke test needs nothing installed.
 """
-import base64, os, socket, struct, sys, time
+import base64, os, socket, ssl, struct, sys, time
 from urllib.parse import urlparse
 
 args = sys.argv[1:]
@@ -34,10 +34,14 @@ for line in open(jar):
         cookies.append(f"{parts[5]}={parts[6]}")
 
 u = urlparse(url)
-sock = socket.create_connection((u.hostname, u.port or 80), timeout=10)
+secure = u.scheme == "wss"   # AWS: TLS to the load balancer; port 80 there only redirects
+sock = socket.create_connection((u.hostname, u.port or (443 if secure else 80)), timeout=10)
+if secure:
+    sock = ssl.create_default_context().wrap_socket(sock, server_hostname=u.hostname)
+host = f"{u.hostname}:{u.port}" if u.port else u.hostname
 key = base64.b64encode(os.urandom(16)).decode()
 cookie_header = f"Cookie: {'; '.join(cookies)}\r\n" if cookies else ""
-sock.sendall((f"GET {u.path or '/'} HTTP/1.1\r\nHost: {u.hostname}:{u.port or 80}\r\n"
+sock.sendall((f"GET {u.path or '/'} HTTP/1.1\r\nHost: {host}\r\n"
               f"Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n"
               f"Sec-WebSocket-Version: 13\r\n{cookie_header}\r\n").encode())
 buf = b""

@@ -1,0 +1,21 @@
+{{- if .Values.postgres.restore.enabled }}
+{{- /*
+The restore on first boot (Phase 5 spec, section 5.2). The ServiceAccount is what Pod Identity ties
+the read-only S3 role to (infra/cluster/restore.tf); the ConfigMap holds the three scripts.
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgres
+  labels:
+    {{- include "sports-notifier.labels" "postgres" | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-restore
+  labels:
+    {{- include "sports-notifier.labels" "postgres" | nindent 4 }}
+data:
+  {{- (.Files.Glob "files/postgres-restore/*").AsConfig | nindent 2 }}
+{{- end }}

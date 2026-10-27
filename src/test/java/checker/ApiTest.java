@@ -16,6 +16,7 @@ class ApiTest {
 
     private Javalin app;
     private final AtomicInteger calls = new AtomicInteger();
+    private final java.util.List<String> keys = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @AfterEach
     void tearDown() {
@@ -24,7 +25,12 @@ class ApiTest {
 
     /** A gateway whose signup fails with {@code status} the first {@code failures} times. */
     private Api api(int failures, int status) {
+        return api(failures, status, "k");
+    }
+
+    private Api api(int failures, int status, String checkerKey) {
         app = Javalin.create().post("/api/v1/auth/signup", ctx -> {
+            keys.add(String.valueOf(ctx.header("X-Checker-Key")));
             if (calls.incrementAndGet() <= failures) {
                 ctx.status(status);
                 return;
@@ -35,7 +41,7 @@ class ApiTest {
             assertEquals("s3cr3t", ctx.cookie("sid"));
             ctx.status(201).result("{\"id\":\"f-1\"}");
         }).start(0);
-        return new Api(URI.create("http://localhost:" + app.port()), 3, Duration.ofMillis(10));
+        return new Api(URI.create("http://localhost:" + app.port()), checkerKey, 3, Duration.ofMillis(10));
     }
 
     @Test
@@ -49,6 +55,18 @@ class ApiTest {
     }
 
     @Test
+    void signupSendsCheckerKeyHeader() {
+        api(0, 200, "k").signup("ck_abc123_0", "checker-pass");
+        assertEquals(java.util.List.of("k"), keys);
+    }
+
+    @Test
+    void noHeaderWhenKeyEmpty() {
+        api(0, 200, "").signup("ck_abc123_0", "checker-pass");
+        assertEquals(java.util.List.of("null"), keys);
+    }
+
+    @Test
     void threeFailuresThrow() {
         Api api = api(3, 502);
         SetupException e = assertThrows(SetupException.class, () -> api.signup("ck_abc123_0", "checker-pass"));
@@ -58,7 +76,7 @@ class ApiTest {
 
     @Test
     void ioErrorRetriedThenThrows() {
-        Api api = new Api(URI.create("http://localhost:1"), 3, Duration.ofMillis(10));
+        Api api = new Api(URI.create("http://localhost:1"), "", 3, Duration.ofMillis(10));
         assertThrows(SetupException.class, () -> api.signup("ck_abc123_0", "checker-pass"));
     }
 

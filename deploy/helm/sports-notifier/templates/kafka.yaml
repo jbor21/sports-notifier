@@ -17,6 +17,18 @@ spec:
     type: persistent-claim
     size: {{ $k.storage }}
     deleteClaim: false
+  {{- if $k.zoneSpread }}
+  # AWS: one broker per availability zone, never two in one, so losing a zone loses one broker.
+  template:
+    pod:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              strimzi.io/pool-name: dual-role
+  {{- end }}
   jvmOptions:
     -Xms: {{ $k.heap }}
     -Xmx: {{ $k.heap }}
@@ -28,6 +40,12 @@ metadata:
 spec:
   kafka:
     version: {{ $k.version }}
+    {{- if $k.zoneSpread }}
+    # Each broker learns its zone, and Kafka puts a partition's copies in different zones. Spreading
+    # the pods alone isn't enough: without this, two of a partition's three copies can share a zone.
+    rack:
+      topologyKey: topology.kubernetes.io/zone
+    {{- end }}
     listeners:
       # The only client port. No TLS or auth inside the cluster yet (Phase 5); instead Strimzi writes
       # a NetworkPolicy from networkPolicyPeers so only these workloads (and Strimzi's own pods,

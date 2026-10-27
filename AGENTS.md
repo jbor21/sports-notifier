@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-10-21 (#36 live check passed and closed; Phase 5 next).
+asks. Last updated 2026-10-26 (Phase 5 built and checked live on EKS, PR #58; Phase 6 next).
 
 ---
 
@@ -43,8 +43,9 @@ unread badge (`unread_count`); `/games` lists yesterday through 7 days ahead.
 ## Architecture
 
 Separate JVM processes, one Docker image (`SERVICE` picks the main), deployed
-by one Helm chart on k3d, with two copies each of the gateway, Stage 1, and Stage 2.
-**Kafka** (Strimzi, one broker locally) is the event log; **Postgres** (one pod)
+by one Helm chart on k3d (laptop) and on EKS (AWS, up only on demand: `make aws-up` / `make aws-down`),
+with two copies each of the gateway, Stage 1, and Stage 2.
+**Kafka** (Strimzi, one broker locally, three on AWS, one per zone) is the event log; **Postgres** (one pod)
 holds accounts, follows, and notification history; **Redis** holds the live score,
 the outbox, sessions, the `sub:*` sets (rebuilt from Postgres), the schedule cache
 (`sched:`), the unread badge cache, and pub/sub to gateways.
@@ -92,9 +93,11 @@ Browser ◄── /api/v1/ws ◄── Gateway (8080) ◄── SUBSCRIBE gw:<it
 kafka-clients 4.3.1 · Strimzi 1.2.0 (Kafka 4.3.1, KRaft) · PostgreSQL 17 · HikariCP ·
 Flyway · Testcontainers 2.0.5 · web: Vite 8 · React 19 · TypeScript 5 · React Router ·
 SWR · vite-plugin-pwa (Workbox) · Vitest · Playwright · pnpm 12 · Node 24 ·
-OpenTelemetry Java 1.66.0 (manual SDK) · grafana/otel-lgtm 0.35.0
+OpenTelemetry Java 1.66.0 (manual SDK) · grafana/otel-lgtm 0.35.0 · AWS: Terraform ≥ 1.10 (providers
+aws 6.70.0, cloudflare 5.28.1; modules vpc 6.7.3, eks 21.29.0, eks-pod-identity 2.10.0) · EKS 1.35 ·
+Traefik chart 42.1.3 · amazon/aws-cli 2.37.10 (restore) · AWS CLI v2 with SSO on the Mac
 **Size:** ~12,600 lines Java · ~4,000 lines TypeScript in `web/` (plus ~2,600 CSS from the v0
-design) · 727 Java tests · 189 web unit tests · 2 PWA and 1 end-to-end browser tests
+design) · 737 Java tests · 189 web unit tests · 2 PWA and 1 end-to-end browser tests
 
 All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline strings.
 
@@ -141,8 +144,6 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
 
 1. **An early "final" from ESPN** becomes the bar for the rest of the game; the
    clock heals cover only the same period. Never observed.
-2. **Network policies need an engine on EKS** — k3s enforces them; EKS ignores
-   them unless a policy engine is enabled (Phase 5).
 
 ---
 
@@ -176,6 +177,8 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   dashboard on `localhost:3000`; `make trace-check` proves one trace spans every service.
   `make chaos [SCENARIO=…]` runs
   the chaos suite (eight checked replays, each with one fault; reports in `target/chaos/`).
+  `make aws-up TAG=pr<N>`, `make aws-down`, `make aws-status`, `make aws-backup`: the same app on
+  AWS (Phase 5; `aws sso login --profile sports` first; run aws-up/aws-down under `caffeinate -i`).
   `make down` deletes the cluster but not accounts: Postgres keeps its data in
   `~/.sportsnotifier/postgres` on the Mac, mounted into k3d by `make cluster`
   (laptop password fixed in `values-local.yaml`). `scripts/persistence-check.sh`
@@ -234,9 +237,39 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   the UI against a real NHL game with real ESPN data, and the remaining by-hand steps
   (switch-off, sleep, live look) on simulated games. It found the hidden-tab socket
   cycling, fixed by PR #57 (the ping clock in a Web Worker).
-- **Next step: Phase 5 (AWS).** Before the checker runs on AWS: reserve the `ck_` prefix (#51); decide #47 (replayed
-  pushes reach real accounts) before Phase 6. Other deferred minors are issues #19–#27,
+- **Phase 5 (AWS) is built and checked live on EKS** (PR #58, 2026-10-26): spec
+  `docs/superpowers/specs/2026-10-22-phase-5-aws-design.md`, plan
+  `docs/superpowers/plans/2026-10-23-phase-5-aws.md`; closes #51.
+- **Next step: Phase 6 (evidence):** the chaos suite on EKS, KEDA on lag, a load test. Its first
+  EKS session also watches a live game through the poller on AWS (moved from Phase 5). Decide
+  #47 (replayed pushes reach real accounts) first. Other deferred minors are issues #19–#27,
   #35, #37–#43, #45, #50, #56.
+- **New in Phase 5:** two Terraform stacks. `infra/base` is never destroyed: ECR, the dump bucket,
+  the ACM certificate for `sports.<domain>`, the GitHub OIDC role, a $25 budget. `infra/cluster`
+  is what `make aws-up` / `make aws-down` cycle: a VPC with three public subnets and no NAT, EKS
+  1.35 with 3 × t3.large (one per zone), a Network Load Balancer that ends TLS and passes the
+  client address to Traefik (NodePorts 30080/30443) by proxy protocol, and the Cloudflare DNS
+  record (DNS only). No load-balancer controller, so `destroy` removes the NLB. `make aws-up`
+  (`scripts/aws-up.sh`): checks the SSO session and that the image tag is in ECR *before*
+  `terraform apply` (the tag is pinned to its ECR digest, so a re-run after a new push rolls out),
+  then the gp3 storage class, Strimzi, Traefik (`deploy/aws/`), an ESPN check
+  Job from inside the cluster (refused → the poller is turned off with a WARNING), and the chart
+  with `values-aws.yaml`; safe to re-run (`No changes`). `make aws-down`: `pg_dump` in the pod,
+  checks (parses, has users), upload to `dumps/incoming/`, size check, then a copy over
+  `latest.dump`, all before anything is destroyed (`SKIP_DUMP=1` is refused while
+  `data-postgres-0` exists); delete the Kafka topics
+  while their operator lives, uninstall, delete the claims, `terraform destroy`, then the leftover
+  sweep (`make aws-status`, `scripts/aws-leftovers.sh`: exit 0 only on "nothing billing"). Postgres
+  restores on first boot: init container `fetch-dump` (Pod Identity, S3 read) and
+  `10-restore.sh`; the marker `restore-done` at the volume root means "done, never refetch"; no
+  marker wipes PGDATA and retries; only a 404 starts empty (an empty dump file fails). The vpc-cni policy engine is on, so EKS
+  enforces the network policies. `ck_` names need the checker's key (#51; Secret `checker-key`).
+  CI pushes `pr<N>`, `pr<N>-<sha7>` and `<sha7>` on main to ECR through OIDC (no stored keys).
+  kubectl context `sports-notifier-aws`; scripts pass it explicitly. `make smoke` and `make check`
+  run against AWS with `BASE_URL=https://sports.<domain> KUBE_CONTEXT=sports-notifier-aws`.
+  Setup is in `docs/aws-setup.md`; console tours in `docs/study/aws-console-tour.md`. Live
+  results (2026-10-24/26): smoke, round trip, corrupt-dump, and the checker (`ci`, 60×, 5,128
+  pushes) pass on EKS; about 25 min up, 15 min down, about $0.45 an hour while up.
 - **New in Phase 4.3:** one `grafana/otel-lgtm` pod (`observability.enabled`, on by default;
   data in the pod, lost on restart) and Strimzi's Kafka exporter (`kafka_consumergroup_lag`,
   scraped by the collector through the `kafka-exporter` Service). The `telemetry/` package wraps

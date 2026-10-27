@@ -1,0 +1,17 @@
+# The default disk type on EKS: gp3 EBS volumes. WaitForFirstConsumer makes the disk only once its pod
+# is scheduled, in that pod's zone (an EBS volume lives in one zone; a broker in us-east-2a needs its
+# disk there). Every volume is tagged project=sports-notifier, so the leftover sweep finds one that
+# outlived its cluster.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  tagSpecification_1: "project=sports-notifier"
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+allowVolumeExpansion: true

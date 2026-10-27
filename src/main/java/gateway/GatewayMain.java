@@ -66,7 +66,8 @@ public final class GatewayMain {
 
         app.get("/health", ctx -> ctx.json(Collections.singletonMap("status", "ok")));
 
-        ApiV1Routes.register(app, pool, loginThrottle, USER_PREF_URL, NOTIFICATION_URL);
+        ApiV1Routes.register(app, pool, loginThrottle, USER_PREF_URL, NOTIFICATION_URL,
+                System.getenv().getOrDefault("CHECKER_KEY", ""));
         GameRoutes.register(app, pool, GAME_STATE_URL, USER_PREF_URL, Instant::now);
         ReferenceRoutes.register(app, Leagues.load(), Teams.load(), AlertCatalog.load());
         WebFiles.register(app, Path.of(System.getenv().getOrDefault("WEB_DIR", "/app/web")));

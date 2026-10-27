@@ -1,0 +1,23 @@
+{{- /*
+The key that lets the checker sign up its ck_ users (#51): make check-clean deletes every user with a
+ck_ name, so no one else may create one. Same lifecycle as the Postgres password: generated once, kept
+across upgrades (lookup), and kept by helm uninstall so a reinstall doesn't strand a running checker.
+*/}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace "checker-key" }}
+{{- $key := "" }}
+{{- if $existing }}
+{{- $key = index $existing.data "key" | b64dec }}
+{{- else }}
+{{- $key = randAlphaNum 32 }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: checker-key
+  labels:
+    {{- include "sports-notifier.labels" "checker" | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  key: {{ $key | quote }}

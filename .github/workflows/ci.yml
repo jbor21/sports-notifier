@@ -105,11 +105,44 @@ jobs:
           path: web/test-results/
           if-no-files-found: ignore
 
+  # Phase 5: the Terraform and the AWS scripts, checked without touching AWS: formatting, a validate of each
+  # stack (no backend, no credentials), and the scripts' failure paths with fake CLIs.
+  infra:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_wrapper: false
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: terraform fmt and validate
+        run: |
+          terraform fmt -check -recursive infra
+          for stack in infra/base infra/cluster; do
+            [ -d "$stack" ] || continue
+            terraform -chdir="$stack" init -backend=false -input=false
+            terraform -chdir="$stack" validate
+          done
+      - run: bash scripts/test-chaos-scripts.sh
+      - name: AWS script tests
+        run: '[ ! -f scripts/test-aws-scripts.sh ] || bash scripts/test-aws-scripts.sh'
+      - name: Chart render tests
+        run: '[ ! -f scripts/test-chart.sh ] || bash scripts/test-chart.sh'
+      - name: Postgres restore scripts (fake S3, real postgres:17)
+        run: bash scripts/test-restore.sh
+
   # Deploy to a throwaway k3d cluster with the same make targets used on the laptop.
   deploy-check:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # id-token: the push to ECR below signs in to AWS with GitHub's OIDC token, not stored keys.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
       # The runner has about 14 GB of free disk; with the observability image (Phase 4.3) the k3d node fell
@@ -147,3 +180,38 @@ jobs:
           name: playwright-traces
           path: web/test-results/
           if-no-files-found: ignore
+      # Phase 5: the image this run just proved (smoke, check, trace-check, e2e) goes to ECR, so EKS can
+      # pull it. Skipped until infra/base exists and the repository variables are set (docs/aws-setup.md).
+      - name: Sign in to AWS
+        if: success() && vars.AWS_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+      - name: Sign in to ECR
+        if: success() && vars.AWS_ROLE_ARN != ''
+        uses: aws-actions/amazon-ecr-login@v2.1.7
+      - name: Push the image to ECR
+        if: success() && vars.AWS_ROLE_ARN != ''
+        env:
+          ECR_URL: ${{ vars.ECR_URL }}
+          PR: ${{ github.event.pull_request.number }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # A value pasted into GitHub's variable form can carry a trailing newline (seen on PR #58).
+          ECR_URL=$(printf '%s' "$ECR_URL" | tr -d '[:space:]')
+          # make up tagged the image with the checked-out commit (a PR run checks out GitHub's merge commit).
+          local_image="sports-notifier:$(git rev-parse --short HEAD)"
+          docker image inspect "$local_image" >/dev/null
+          if [ -n "$PR" ]; then
+            tags="pr$PR-${PR_HEAD:0:7} pr$PR"   # the head commit is not fetched in a PR checkout
+          else
+            # Exactly 7 characters, as aws-up asks for: git lengthens --short on a big repo, and the
+            # laptop's full clone and CI's shallow one could then disagree.
+            tags="$(git rev-parse --short=7 HEAD)"
+          fi
+          for t in $tags; do
+            docker tag "$local_image" "$ECR_URL:$t"
+            docker push "$ECR_URL:$t"
+            echo "pushed $ECR_URL:$t" >> "$GITHUB_STEP_SUMMARY"
+          done

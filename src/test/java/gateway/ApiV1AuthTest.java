@@ -32,6 +32,7 @@ class ApiV1AuthTest {
     private Javalin gateway;
     private String base;
     private final AtomicInteger loginCalls = new AtomicInteger();
+    private final AtomicInteger signupCalls = new AtomicInteger();
 
     @BeforeEach
     void setUp() {
@@ -40,7 +41,10 @@ class ApiV1AuthTest {
         jedis.select(1);
         jedis.flushDB();
         userPref = Javalin.create().start(0);
-        userPref.post("/users", ctx -> ctx.status(201).contentType("application/json").result(USER));
+        userPref.post("/users", ctx -> {
+            signupCalls.incrementAndGet();
+            ctx.status(201).contentType("application/json").result(USER);
+        });
         userPref.post("/users/login", ctx -> {
             loginCalls.incrementAndGet();
             if (ctx.body().contains("good-password")) ctx.contentType("application/json").result(USER);
@@ -52,7 +56,7 @@ class ApiV1AuthTest {
                 .result("{\"error\":{\"code\":\"validation_failed\",\"message\":\"m\",\"fields\":{\"timezone\":\"invalid\"}}}"));
         gateway = Javalin.create().start(0);
         ApiV1Routes.register(gateway, pool, new LoginThrottle(pool),
-                "http://localhost:" + userPref.port(), "http://localhost:1");
+                "http://localhost:" + userPref.port(), "http://localhost:1", "s3cret");
         base = "http://localhost:" + gateway.port() + "/api/v1";
     }
 
@@ -71,6 +75,26 @@ class ApiV1AuthTest {
         String sid = sid(r);
         assertEquals("11111111-1111-1111-1111-111111111111", jedis.get(RedisKeys.SESSION_PREFIX + sid));
         assertEquals("jacob", JsonParser.parseString(r.body()).getAsJsonObject().get("username").getAsString());
+    }
+
+    @Test
+    void signupOfCheckerNameWithoutKeyIs422AndNeverReachesUserPref() throws Exception {
+        HttpResponse<String> r = post("/auth/signup", "{\"username\":\"ck_abcdef_1\",\"password\":\"good-password\"}", null);
+        assertEquals(422, r.statusCode());
+        JsonObject error = JsonParser.parseString(r.body()).getAsJsonObject().getAsJsonObject("error");
+        assertEquals("validation_failed", error.get("code").getAsString());
+        assertEquals("invalid", error.getAsJsonObject("fields").get("username").getAsString());
+        assertEquals(0, signupCalls.get());
+        assertTrue(r.headers().allValues("Set-Cookie").isEmpty());
+    }
+
+    @Test
+    void signupOfCheckerNameWithKeyIs201() throws Exception {
+        HttpResponse<String> r = send(HttpRequest.newBuilder(URI.create(base + "/auth/signup"))
+                .header("X-Checker-Key", "s3cret")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"username\":\"ck_abcdef_1\",\"password\":\"good-password\"}")), null);
+        assertEquals(201, r.statusCode());
+        assertEquals(1, signupCalls.get());
     }
 
     @Test

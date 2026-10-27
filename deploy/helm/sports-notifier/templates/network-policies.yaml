@@ -19,7 +19,8 @@ spec:
   podSelector: {}
   policyTypes: [Ingress]
 ---
-# The only door from outside: Traefik (k3d's ingress controller, in kube-system) to the gateway.
+# The only door from outside: Traefik to the gateway. k3d bundles Traefik in kube-system; on AWS,
+# aws-up installs it in its own namespace (ingress.controllerNamespace).
 # The checker Job (make check) also comes in here, from inside: it signs its users up and holds
 # their sockets through the gateway, as a browser would.
 apiVersion: networking.k8s.io/v1
@@ -35,7 +36,7 @@ spec:
   ingress:
     - from:
         - namespaceSelector:
-            matchLabels: { kubernetes.io/metadata.name: kube-system }
+            matchLabels: { kubernetes.io/metadata.name: {{ .Values.ingress.controllerNamespace }} }
           podSelector:
             matchLabels: { app.kubernetes.io/name: traefik }
         - podSelector:

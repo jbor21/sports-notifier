@@ -15,7 +15,8 @@ export KUBE_CONTEXT
 # A new tag per build so Kubernetes always rolls pods onto new code. Uncommitted changes get a unique suffix.
 TAG        := $(shell git rev-parse --short HEAD)$(shell test -n "$$(git status --porcelain)" && echo "-dirty-$$(date +%s)")
 
-.PHONY: test cluster up simulate replay check check-clean check-selftest chaos smoke e2e logs down replay-detectors grafana trace-check
+.PHONY: test cluster up simulate replay check check-clean check-selftest chaos smoke e2e logs down replay-detectors grafana trace-check \
+        aws-bootstrap aws-up aws-status aws-down aws-backup
 
 # Create the cluster, or start it if it exists but is stopped (e.g. after OrbStack restarts). Then wait
 # until Kubernetes says it is ready: `k3d cluster create --wait` can return while the API server still
@@ -163,3 +164,29 @@ test:
 replay-detectors:
 	mvn -q -DskipTests package
 	java -cp target/sports-notifier.jar tools.ReplayDetectors
+
+# AWS (Phase 5; docs/aws-setup.md first). Every target uses the SSO profile "sports" and the kubectl
+# context sports-notifier-aws, never the k3d one.
+# Once per account: the S3 bucket Terraform keeps its state in.
+aws-bootstrap:
+	@scripts/aws-bootstrap.sh
+
+# The cluster and the app, from nothing or as an update (Terraform asks before changing anything).
+# TAG defaults to main's latest image in ECR; e.g. make aws-up TAG=pr58.
+TRAEFIK_VERSION := 42.1.3
+aws-up:
+	@TAG=$(if $(filter command line,$(origin TAG)),$(TAG),) STRIMZI_CHART=$(STRIMZI_CHART) \
+		STRIMZI_VERSION=$(STRIMZI_VERSION) TRAEFIK_VERSION=$(TRAEFIK_VERSION) scripts/aws-up.sh
+
+# What is still billing by the hour; exit 0 only when nothing is.
+aws-status:
+	@scripts/aws-leftovers.sh
+
+# Save Postgres to S3 (checked), then remove everything that bills by the hour; nothing is destroyed
+# unless the dump passed. SKIP_DUMP=1 only for a cluster that never got Postgres.
+aws-down:
+	@scripts/aws-down.sh
+
+# The dump alone, without a teardown.
+aws-backup:
+	@scripts/aws-backup.sh

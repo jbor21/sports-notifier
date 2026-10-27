@@ -21,15 +21,18 @@ public final class Api {
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
     private final URI gateway;
+    private final String checkerKey;
     private final int tries;
     private final Duration between;
 
-    public Api(URI gateway) {
-        this(gateway, 3, Duration.ofSeconds(1));
+    /** {@code checkerKey}: sent as {@code X-Checker-Key}, which signup requires for a {@code ck_} name (#51). */
+    public Api(URI gateway, String checkerKey) {
+        this(gateway, checkerKey, 3, Duration.ofSeconds(1));
     }
 
-    public Api(URI gateway, int tries, Duration between) {
+    public Api(URI gateway, String checkerKey, int tries, Duration between) {
         this.gateway = gateway;
+        this.checkerKey = checkerKey;
         this.tries = tries;
         this.between = between;
     }
@@ -75,6 +78,7 @@ public final class Api {
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (body != null) b.header("Content-Type", "application/json");
         if (s != null) b.header("Cookie", "sid=" + s.sid());
+        if (checkerKey != null && !checkerKey.isEmpty()) b.header("X-Checker-Key", checkerKey);
         HttpRequest req = b.build();
         String last = null;
         Throwable cause = null;

@@ -37,6 +37,9 @@ spec:
             {{- if $svc.postgres }}
             {{- include "sports-notifier.postgresEnv" $ | nindent 12 }}
             {{- end }}
+            {{- if $svc.checkerKey }}
+            {{- include "sports-notifier.checkerKeyEnv" $ | nindent 12 }}
+            {{- end }}
             - name: {{ $svc.portEnv }}
               value: {{ $svc.port | quote }}
             {{- range $k, $v := $svc.env }}
