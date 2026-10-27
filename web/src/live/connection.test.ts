@@ -87,8 +87,71 @@ describe('LiveConnection', () => {
     s.sockets.last().open()
     vi.advanceTimersByTime(25000)
     expect(pings(s.sockets.last().sent)).toBe(1)
+    s.sockets.last().receive({ type: 'pong' })
     vi.advanceTimersByTime(25000)
     expect(pings(s.sockets.last().sent)).toBe(2)
+  })
+
+  it('closes and reconnects when a ping goes unanswered by the next tick', () => {
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    const ticks = fakeTicker()
+    const sockets = fakeSockets()
+    const onReconnected = vi.fn()
+    conn = new LiveConnection(
+      'ws://test/api/v1/ws',
+      { onReconnected },
+      { createSocket: sockets.create, random: half, ticker: ticks.ticker },
+    )
+    conn.start()
+    const first = sockets.last()
+    first.open()
+    ticks.tick()
+    expect(pings(first.sent)).toBe(1)
+    ticks.tick()
+    expect(first.closedWith).toBeDefined()
+    expect(pings(first.sent)).toBe(1)
+    expect(conn.state).toBe('waiting')
+    vi.advanceTimersByTime(1500)
+    expect(sockets.all.length).toBe(2)
+    sockets.last().open()
+    expect(onReconnected).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a socket that answers', () => {
+    const ticks = fakeTicker()
+    const sockets = fakeSockets()
+    conn = new LiveConnection(
+      'ws://test/api/v1/ws',
+      {},
+      { createSocket: sockets.create, ticker: ticks.ticker },
+    )
+    conn.start()
+    sockets.last().open()
+    ticks.tick()
+    sockets.last().receive({ type: 'pong' })
+    ticks.tick()
+    expect(sockets.last().closedWith).toBeUndefined()
+    expect(pings(sockets.last().sent)).toBe(2)
+    expect(conn.state).toBe('open')
+  })
+
+  it("a ping on return to visible does not count as the tick's ping", () => {
+    const ticks = fakeTicker()
+    const sockets = fakeSockets()
+    conn = new LiveConnection(
+      'ws://test/api/v1/ws',
+      {},
+      { createSocket: sockets.create, ticker: ticks.ticker },
+    )
+    conn.start()
+    sockets.last().open()
+    ticks.tick()
+    sockets.last().receive({ type: 'pong' })
+    setVisibility('hidden')
+    setVisibility('visible')
+    ticks.tick()
+    expect(sockets.last().closedWith).toBeUndefined()
+    expect(conn.state).toBe('open')
   })
 
   it('pings on the ticker it was given, not on the page timers Chrome slows in a hidden tab', () => {
@@ -214,7 +277,12 @@ describe('LiveConnection', () => {
     s.sockets.last().serverClose(1006)
     vi.advanceTimersByTime(2500)
     s.sockets.last().open()
-    vi.advanceTimersByTime(60000)
+    // An open socket that answers its pings (a silent one is closed at the second ping).
+    for (let i = 0; i < 2; i++) {
+      vi.advanceTimersByTime(25000)
+      s.sockets.last().receive({ type: 'pong' })
+    }
+    vi.advanceTimersByTime(10000)
     s.sockets.last().serverClose(1006)
     const count = s.sockets.all.length
     vi.advanceTimersByTime(1500)
