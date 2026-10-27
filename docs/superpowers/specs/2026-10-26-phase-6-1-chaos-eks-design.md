@@ -1,6 +1,6 @@
 # Phase 6.1: Chaos on EKS — design
 
-Status: draft for review, 2026-10-26. Parent document: `DESIGN.md` (build order step 6, decisions 12–14). The chaos suite itself is the Phase 4.2 spec (`2026-10-11-phase-4-2-chaos-design.md`); this spec only says what changes to run it on EKS. If this spec and either of those disagree, `DESIGN.md` wins, then 4.2, and this spec gets fixed.
+Status: approved, 2026-10-26. Parent document: `DESIGN.md` (build order step 6, decisions 12–14). The chaos suite itself is the Phase 4.2 spec (`2026-10-11-phase-4-2-chaos-design.md`); this spec only says what changes to run it on EKS. If this spec and either of those disagree, `DESIGN.md` wins, then 4.2, and this spec gets fixed.
 
 ## Goal
 
@@ -22,7 +22,7 @@ Not in 6.1:
 - Crash on EKS through a privileged node debug pod running `crictl stop --timeout 0`; exit 137 stays the proof (section 3.1).
 - Cut on EKS through the same `chaos-cut` NetworkPolicy. Measure first whether the VPC CNI's policy engine cuts connections already open; if not, kill them from the node (section 3.2).
 - A machine dying: terminate one EC2 instance. Never Redis's machine; the replacement must land in the same zone (section 4.3).
-- Sockets that go silent count as down from their last received frame (section 2).
+- Sockets that go silent count as down from their last received frame; the checker pings every 5 s, and the report counts pushes excused this way (section 2).
 
 ### Done when
 
@@ -63,11 +63,15 @@ Not in 6.1:
 
 **Problem.** A machine that dies sends nothing: no close frame, no TCP reset. A socket through it looks open. Neither the checker's `SocketClient` nor the UI's `connection.ts` has a deadline for an answer to its ping, so the socket stays "up" until TCP itself gives up, which on Linux takes minutes. For the checker, pushes that went to the dead gateway in that time count as "missing while the socket was up": a false FAIL. For a real user, the app shows live while nothing arrives. (Phase 4.2's gateway crash never showed this: a killed process on a living machine still gets a TCP reset sent for it.)
 
-**Fix, checker.** `SocketClient` remembers when it last received any frame. At each ping (every 25 s), if nothing has arrived since the previous ping, the socket is dead: it aborts it and reconnects as after any close. The gap in `SocketLog` then starts at the last received frame, not at the abort. `Verifier` is unchanged: a push missing inside the gap is excused only if history has it, as before. A socket that ends any other way (close frame, reset, error) keeps its gap starting at the moment it ended, so the 4.2 scenarios are judged exactly as before.
+**Fix, checker.** `SocketClient` pings every 5 s instead of 25 s (`tools.Checker` passes the interval; the UI stays at 25 s). It remembers when it last received any frame. At each ping, if nothing has arrived since the previous ping, the socket is dead: it aborts it and reconnects as after any close. The gap in `SocketLog` then starts at the last received frame, not at the abort, and is marked silent (`Gap.silent`). With 5 s pings a silent gap is about 10 s long. `Verifier`'s rule is unchanged: a push missing inside a gap is excused only if history has it. A socket that ends any other way (close frame, reset, error) keeps its gap starting at the moment it ended and is not silent, so the 4.2 scenarios are judged exactly as before.
+
+**Counted separately.** `Verifier.Result` gains `allowedInSilentGaps`: the excused pushes whose excusing gap is a silent one (counted in `allowedInGaps` too). The report's sockets line becomes `missing N (allowed in disconnects: A, silent: S)`, and `chaos.sh` adds `silent S` to each scenario's summary line. Expected: 0 in every scenario except `node-loss`, so a non-zero count elsewhere is a reason to read that scenario's log.
+
+**Cost of 5 s pings.** About 750 sockets (500 users, some with two tabs) send about 150 pings a second across two gateways, each answered with a few bytes. The gateway's 60 s idle close is unaffected.
 
 **Fix, UI.** `connection.ts` gets the same rule on its ping tick (the Web Worker clock from #57): no message since the previous ping, so close and reconnect with backoff, then refetch as after any reconnect. `docs/api/websocket.md` gets one line: a client should treat an unanswered ping as a dead connection by the next ping.
 
-**Why this rule.** A healthy socket always answers a ping with a pong, so "nothing in 25 s after a ping" means the path is gone. The longest a user can sit on a dead socket drops from minutes to under 50 s. Backdating the checker's gap only for this case keeps every other judgement as strict as it was.
+**Why this rule.** A healthy socket always answers a ping with a pong, so "nothing in 25 s after a ping" means the path is gone. The longest a user can sit on a dead socket drops from minutes to under 50 s, and the checker's to about 10 s. Backdating the checker's gap only for this case keeps every other judgement as strict as it was.
 
 ## 3. Faults on EKS
 
@@ -141,7 +145,7 @@ The user runs `make aws-up`, `make chaos`, and `make aws-down`; Claude reads and
 ## 6. Testing
 
 - **#47:** `AlertAudience` tests: a replayed game reaches a synthetic follower and not a real one following the same team; a missing `synthetic:users` reaches nobody; a `-sim` game is unaffected. user-pref: a keyed signup adds to the set, delete removes, the rebuild refills it. `/games` leaves out a replayed game and keeps a simulated one.
-- **Silent sockets:** a `SocketClient` test against a server that stops answering pings (but keeps the TCP connection) sees the socket aborted by the second ping and a gap starting at the last frame; one against a server that closes normally keeps the old gap start. A `connection.ts` unit test with a fake ticker: no message between two ticks closes and reconnects.
+- **Silent sockets:** a `SocketClient` test against a server that stops answering pings (but keeps the TCP connection) sees the socket aborted by the second ping and a silent gap starting at the last frame; one against a server that closes normally keeps the old gap start and is not silent. A `Verifier` test: a push excused by a silent gap counts in both `allowedInGaps` and `allowedInSilentGaps`, one excused by an ordinary gap only in the first; a `Report` test for the new line, and a `test-chaos-scripts.sh` case that the summary shows `silent`. A `connection.ts` unit test with a fake ticker: no message between two ticks closes and reconnects.
 - **Chaos scripts:** `scripts/test-chaos-scripts.sh` gains fake-kubectl cases for the EKS paths: a debug pod that never starts, a broker at fault excluded from admin commands, and `node-loss` choosing the machine (Redis, Postgres, checker excluded; a replacement in another zone fails "fault did not land").
 - **On the laptop:** the Chaos workflow (label `chaos`) passes all eight scenarios; `node-loss` is skipped.
 
