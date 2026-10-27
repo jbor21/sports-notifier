@@ -70,6 +70,15 @@ class GameStateServiceImplTest {
     }
 
     @Test
+    void listLeavesOutReplayedGames() {
+        game("nfl-1", "NFL", "CHI", "LV", DAY_START + HOUR, "IN_PROGRESS");
+        game("nfl-rpx-2", "NFL", "KC", "BUF", DAY_START + 2 * HOUR, "IN_PROGRESS");
+        game("nfl-sim9-3", "NFL", "KC", "BUF", DAY_START + 3 * HOUR, "IN_PROGRESS");
+        assertEquals(List.of("nfl-1", "nfl-sim9-3"),
+            ids(svc.listDay(new GameQuery(DAY_START, DAY_START + 24 * HOUR, null, null, null))));
+    }
+
+    @Test
     void skipsIdsWithNeitherHash() {
         jedis.zadd("games:start", DAY_START + HOUR, "nfl-gone");
         sched("nfl-1", "NFL", "KC", "BUF", DAY_START + 2 * HOUR);
