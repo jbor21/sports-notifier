@@ -6,7 +6,7 @@
 set -uo pipefail
 
 DEFAULT_HOST="site.web.api.espn.com"
-DEFAULT_AGENT="sports-notifier/1.0 (+https://github.com/boboborenstein-collab/sports-notifier)"
+DEFAULT_AGENT="sports-notifier/1.0 (+https://github.com/jbor21/sports-notifier)"
 HOSTS=("site.api.espn.com" "site.web.api.espn.com")
 AGENTS=(
   "$DEFAULT_AGENT"

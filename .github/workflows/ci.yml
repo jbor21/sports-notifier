@@ -143,6 +143,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    # The AWS role and registry are secrets, not variables, so the account id stays out of the public
+    # logs. A step's `if` can't read secrets, so the job turns "is it set" into a plain flag.
+    env:
+      PUSH_TO_ECR: ${{ secrets.AWS_ROLE_ARN != '' }}
     steps:
       - uses: actions/checkout@v7
       # The runner has about 14 GB of free disk; with the observability image (Phase 4.3) the k3d node fell
@@ -181,24 +185,30 @@ jobs:
           path: web/test-results/
           if-no-files-found: ignore
       # Phase 5: the image this run just proved (smoke, check, trace-check, e2e) goes to ECR, so EKS can
-      # pull it. Skipped until infra/base exists and the repository variables are set (docs/aws-setup.md).
+      # pull it. Skipped until infra/base exists and the repository secrets are set (docs/aws-setup.md),
+      # and on pull requests from forks, which get no secrets and no OIDC token.
       - name: Sign in to AWS
-        if: success() && vars.AWS_ROLE_ARN != ''
+        if: success() && env.PUSH_TO_ECR == 'true'
         uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
+      # GitHub masks a secret only as the exact string. The ECR login prints the registry host it gets
+      # back from AWS (<account id>.dkr.ecr…), so mask the account id itself before it can appear.
+      - name: Mask the AWS account id
+        if: success() && env.PUSH_TO_ECR == 'true'
+        run: echo "::add-mask::$(aws sts get-caller-identity --query Account --output text)"
       - name: Sign in to ECR
-        if: success() && vars.AWS_ROLE_ARN != ''
+        if: success() && env.PUSH_TO_ECR == 'true'
         uses: aws-actions/amazon-ecr-login@v2.1.7
       - name: Push the image to ECR
-        if: success() && vars.AWS_ROLE_ARN != ''
+        if: success() && env.PUSH_TO_ECR == 'true'
         env:
-          ECR_URL: ${{ vars.ECR_URL }}
+          ECR_URL: ${{ secrets.ECR_URL }}
           PR: ${{ github.event.pull_request.number }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          # A value pasted into GitHub's variable form can carry a trailing newline (seen on PR #58).
+          # A value pasted into GitHub's secret form can carry a trailing newline (seen on PR #58).
           ECR_URL=$(printf '%s' "$ECR_URL" | tr -d '[:space:]')
           # make up tagged the image with the checked-out commit (a PR run checks out GitHub's merge commit).
           local_image="sports-notifier:$(git rev-parse --short HEAD)"
@@ -213,5 +223,5 @@ jobs:
           for t in $tags; do
             docker tag "$local_image" "$ECR_URL:$t"
             docker push "$ECR_URL:$t"
-            echo "pushed $ECR_URL:$t" >> "$GITHUB_STEP_SUMMARY"
+            echo "pushed sports-notifier:$t to ECR" >> "$GITHUB_STEP_SUMMARY"
           done

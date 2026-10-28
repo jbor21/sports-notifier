@@ -64,7 +64,7 @@ services:
 # filtering changes over time; the daily espn-check workflow says when these stop working.
 espn:
   host: site.web.api.espn.com
-  userAgent: "sports-notifier/1.0 (+https://github.com/boboborenstein-collab/sports-notifier)"
+  userAgent: "sports-notifier/1.0 (+https://github.com/jbor21/sports-notifier)"
 
 # Always exactly one pod: two Redis pods would be two unrelated databases.
 redis:
