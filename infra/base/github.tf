@@ -2,7 +2,7 @@
 # for each workflow run; AWS trusts GitHub's signer (the OIDC provider) and swaps the token for this
 # role's credentials for one hour, but only for this repository's main branch and its pull requests.
 locals {
-  github_subject = "repo:boboborenstein-collab@279109273/sports-notifier@1394199106"
+  github_subject = "repo:jbor21@279109273/sports-notifier@1394199106"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -25,8 +25,9 @@ data "aws_iam_policy_document" "github_trust" {
     # "sub" names the repository and what triggered the run. Not a wildcard: a workflow on any other
     # branch, or in any other repository, gets nothing. The repository uses GitHub's immutable
     # subject format (owner@id/repo@id): a different account that took over these names would carry
-    # different ids, and still get nothing. Read it with:
-    #   gh api repos/boboborenstein-collab/sports-notifier/actions/oidc/customization/sub
+    # different ids, and still get nothing. The owner's login is still part of it, so renaming the
+    # account changes the subject (boboborenstein-collab became jbor21 in late October 2026). Read it with:
+    #   gh api repos/jbor21/sports-notifier/actions/oidc/customization/sub
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"

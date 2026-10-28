@@ -20,7 +20,7 @@ public final class EspnClient {
 
     public static final String DEFAULT_HOST = "site.web.api.espn.com";
     public static final String DEFAULT_USER_AGENT =
-        "sports-notifier/1.0 (+https://github.com/boboborenstein-collab/sports-notifier)";
+        "sports-notifier/1.0 (+https://github.com/jbor21/sports-notifier)";
 
     private static final Map<String, String> SPORT_PATHS = Map.of(
         "NBA", "basketball/nba",

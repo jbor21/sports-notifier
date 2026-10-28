@@ -89,7 +89,7 @@ is built.
 
 - [ ] Console, region **us-east-2** → the `>_` icon in the top bar (**CloudShell**). Paste:
   ```bash
-  UA='sports-notifier/1.0 (+https://github.com/boboborenstein-collab/sports-notifier)'
+  UA='sports-notifier/1.0 (+https://github.com/jbor21/sports-notifier)'
   for host in site.web.api.espn.com site.api.espn.com; do
     for p in basketball/nba football/nfl baseball/mlb hockey/nhl; do
       printf '%-22s %-18s %s\n' "$host" "$p" \

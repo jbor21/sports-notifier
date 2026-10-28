@@ -146,7 +146,7 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
 
 ## Current state of the repo
 
-- **Git:** private repo at `github.com/boboborenstein-collab/sports-notifier`, branch
+- **Git:** repo at `github.com/jbor21/sports-notifier`, branch
   `main`. The first commit is the course code exactly as submitted; keep it
   that way. (The course version originally lived in the course's private GitHub
   organization.)
