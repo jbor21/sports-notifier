@@ -121,7 +121,18 @@ site.api.espn.com      hockey/nhl         200
 `site.api` refused a cloud fetch (DESIGN.md decision 10). The in-cluster check in `make aws-up`
 repeats this every time.
 
-## 8. After `infra/base` exists (Task 3)
+## 8. Before the first `terraform apply` in `infra/base`
+
+- [ ] Write the budget alert's address to `infra/base/private.auto.tfvars`. Terraform loads it on its
+  own; it is git-ignored, so the address never reaches the public repo:
+  `printf 'budget_email = "you@example.com"\n' > infra/base/private.auto.tfvars`
+
+## 9. After `infra/base` exists (Task 3)
+
+- [ ] Give CI the role and the registry, as **secrets** (a variable would print the account id in
+  every public CI log):
+  `gh secret set AWS_ROLE_ARN --body "$(terraform -chdir=infra/base output -raw github_role_arn)"`
+  `gh secret set ECR_URL --body "$(terraform -chdir=infra/base output -raw ecr_url)"`
 
 - [ ] **Billing and Cost Management** → **Cost allocation tags** → find `project` → **Activate**.
   The tag appears only after a resource carries it, up to 24 hours later. Once active, Cost Explorer

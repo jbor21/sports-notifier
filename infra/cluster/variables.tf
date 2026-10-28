@@ -13,10 +13,6 @@ variable "subdomain" {
   type        = string
 }
 
-variable "budget_email" {
-  type = string
-}
-
 variable "budget_usd" {
   type = number
 }

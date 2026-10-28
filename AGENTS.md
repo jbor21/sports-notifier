@@ -4,7 +4,7 @@ Read `DESIGN.md` first. It is the decision record for the redesign: what the
 semester project was, what we are changing it into, and every tradeoff already
 made. This file is the short brief for working in the repo. If the two
 disagree, `DESIGN.md` wins. Do not reopen a locked decision unless the user
-asks. Last updated 2026-10-26 (Phase 5 built and checked live on EKS, PR #58; Phase 6 next).
+asks. If `CLAUDE.local.md` exists (git-ignored), read it too: it holds the user's own context. Last updated 2026-10-26 (Phase 5 built and checked live on EKS, PR #58; Phase 6 next).
 
 ---
 
@@ -105,10 +105,7 @@ All Redis key prefixes live in `util/RedisKeys.java` — use them, don't inline 
 
 ## Course history (context only)
 
-Final grade **18.5 / 20**. Full feedback is in the uploaded
-`Advanced_Distributed_Systems_Semester_Project_Feedback.md`.
-
-The professor deducted 1.5 points for exactly two things:
+The professor's review flagged exactly two problems:
 
 1. **A TOCTOU race** in dedup/staleness — under a 50-event concurrent burst,
    game score came out 43 instead of 50. Suggested fix: a Lua script making
@@ -116,12 +113,12 @@ The professor deducted 1.5 points for exactly two things:
 2. **Minor code structure** — `GatewayMain` was a ~200-line monolith, Redis key
    strings were inline, model classes lacked field-level Javadoc.
 
-### Every graded deduction has already been fixed in the current code
+### Both have already been fixed in the current code
 
-This is important, because the feedback document describes an **older snapshot**
+This is important, because the feedback describes an **older snapshot**
 than what's on disk. Verified against the source:
 
-| Deduction | Status in current code |
+| Problem | Status in current code |
 |---|---|
 | TOCTOU race | **Fixed** — `EventProcessingServiceImpl` runs one Lua script: id check, `seq` check, then claim + state write, atomically. Exactly the fix suggested. `EventProcessingBurstTest` (50 concurrent events → 50) runs on every push. |
 | `GatewayMain` monolith | **Fixed** — now ~125 lines of wiring; routes live in `ApiV1Routes`, `GameRoutes`, `ReferenceRoutes`, and `LiveSocket`. |
@@ -151,8 +148,8 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
 
 - **Git:** private repo at `github.com/boboborenstein-collab/sports-notifier`, branch
   `main`. The first commit is the course code exactly as submitted; keep it
-  that way. (The course version originally lived at
-  `Yeshiva-University-CS/Borenstein_Jacob_800755097`.)
+  that way. (The course version originally lived in the course's private GitHub
+  organization.)
 - **Layout:** everything at the repo root: `pom.xml`, `src/`, `Dockerfile`,
   `Makefile`, `scripts/`, `deploy/helm/sports-notifier/`, `.github/workflows/`, `web/`
   (the Sideline UI). One shaded JAR; `app.Launcher` reads `SERVICE` and runs that
@@ -267,7 +264,7 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   CI pushes `pr<N>`, `pr<N>-<sha7>` and `<sha7>` on main to ECR through OIDC (no stored keys).
   kubectl context `sports-notifier-aws`; scripts pass it explicitly. `make smoke` and `make check`
   run against AWS with `BASE_URL=https://sports.<domain> KUBE_CONTEXT=sports-notifier-aws`.
-  Setup is in `docs/aws-setup.md`; console tours in `docs/study/aws-console-tour.md`. Live
+  Setup is in `docs/aws-setup.md`. Live
   results (2026-10-24/26): smoke, round trip, corrupt-dump, and the checker (`ci`, 60×, 5,128
   pushes) pass on EKS; about 25 min up, 15 min down, about $0.45 an hour while up.
 - **New in Phase 4.3:** one `grafana/otel-lgtm` pod (`observability.enabled`, on by default;
@@ -389,8 +386,6 @@ Phases 2 and 3.1–3.3 fixed most of the review's list (see `DESIGN.md`,
   (ESPN adapter `EspnScoreFeed`, HTTP in `EspnClient`); `GAME_SYNC` saves
   state without alerting; `make up HELM_ARGS="--set espnPoller.enabled=true"`
   turns the poller on; `scripts/espn-check.sh` checks ESPN reachability.
-- **Study quizzes:** `docs/study/phase-<N>-quiz.md`, one per phase. Write it
-  at the end of each phase; quiz the user only when they ask.
 
 ---
 
@@ -476,11 +471,6 @@ delivery.
 - Core distributed code (Lua script, Kafka producers/consumers, dedup, gateway
   routing, the checker) is built inline in small steps the user reads.
   Boilerplate (Dockerfile, Helm, Terraform, CI) can go to subagents.
-- The user is new to Kubernetes, Helm, Terraform, Strimzi, KEDA, and
-  OpenTelemetry. Explain what a piece does in this project before using it as
-  shorthand.
-- The goal is a distributed-systems project the user can defend in an
-  interview. After each phase, offer to quiz them on it.
 - Phase 1 is packaging only; bugs found during packaging go to the "Deferred
   to Phase 2" list in
   `docs/superpowers/specs/2026-09-29-phase-1-foundation-design.md`, not fixed
