@@ -17,7 +17,7 @@ Eight Java services and a poller on Kubernetes, Kafka between the stages, Redis 
 ## How it works
 
 ```mermaid
-flowchart LR
+flowchart TD
     ESPN["ESPN scoreboard<br/>(or simulator / replay)"] --> Poller
     Poller -->|POST /events| EP["Event Processing<br/>atomic Lua accept"]
     EP <--> Redis[("Redis<br/>live score, outbox,<br/>follower index, sessions")]
