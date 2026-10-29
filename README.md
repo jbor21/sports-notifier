@@ -49,7 +49,7 @@ No service elects a leader: a dead worker's partitions move to a survivor throug
 
 ## Evidence
 
-A Stage 1 worker SIGKILLed mid-game: Kafka waits out the session timeout, the surviving worker takes over its partitions, lag drains, and push latency recovers. The checker passed that run with 6,573 pushes. More in [docs/evidence/phase-4-3](docs/evidence/phase-4-3/README.md).
+On the laptop (k3d), a Stage 1 worker SIGKILLed mid-game: Kafka waits out the session timeout, the surviving worker takes over its partitions, lag drains, and push latency recovers. The checker passed that run with 6,573 pushes. More in [docs/evidence/phase-4-3](docs/evidence/phase-4-3/README.md).
 
 ![Grafana Pipeline dashboard during the stage1-crash chaos scenario: latency, lag, and throughput around the fault](docs/evidence/phase-4-3/stage1-crash-dashboard.png)
 
