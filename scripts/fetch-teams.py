@@ -13,7 +13,7 @@ import urllib.request
 
 HOST = "site.web.api.espn.com"
 # Same honest user agent as values.yaml (espn.userAgent).
-USER_AGENT = "sports-notifier/1.0 (+https://github.com/boboborenstein-collab/sports-notifier)"
+USER_AGENT = "sports-notifier/1.0 (+https://github.com/jbor21/sports-notifier)"
 LEAGUES = {
     "NFL": "football/nfl",
     "NBA": "basketball/nba",

@@ -14,7 +14,8 @@ variable "subdomain" {
 }
 
 variable "budget_email" {
-  type = string
+  description = "Where budget alerts go. Set in infra/base/private.auto.tfvars (git-ignored), not the shared file"
+  type        = string
 }
 
 variable "budget_usd" {

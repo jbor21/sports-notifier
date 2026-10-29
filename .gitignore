@@ -32,3 +32,11 @@ pids/
 
 # Python bytecode (scripts/)
 __pycache__/
+
+# Personal Terraform values (the budget alert email), never committed
+private.auto.tfvars
+
+# Personal, kept on the Mac only: agent notes, study quizzes, the semester's course material
+CLAUDE.local.md
+docs/study/
+docs/course/

@@ -5,7 +5,7 @@ The app reads ESPN's public scoreboard JSON. It is unofficial: ESPN changes what
 ## Defaults the app uses
 
 - Host: `site.web.api.espn.com` (setting `ESPN_HOST`, Helm `espn.host`)
-- User-Agent: `sports-notifier/1.0 (+https://github.com/boboborenstein-collab/sports-notifier)` (setting `ESPN_USER_AGENT`, Helm `espn.userAgent`)
+- User-Agent: `sports-notifier/1.0 (+https://github.com/jbor21/sports-notifier)` (setting `ESPN_USER_AGENT`, Helm `espn.userAgent`)
 
 Why: on 2026-10-01, from a cloud address, `site.api.espn.com` answered 403 while `site.web.api.espn.com` answered 200 to the same request, and developers reported ESPN refusing browser-imitating User-Agents while honest client agents got through.
 
