@@ -3,6 +3,7 @@ package service.impl;
 import alerts.Alert;
 import alerts.Play;
 import catalog.FollowKind;
+import feed.GameIds;
 import feed.TeamIds;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.Pipeline;
@@ -27,7 +28,9 @@ import java.util.UUID;
  * (both teams' switches combined); a league follow counts only for users who follow neither.
  *
  * Built inside Redis with set operations, in one pipeline: a handful of commands per alert, not one
- * round trip per subscriber. Every key name is unique per call: a stalled worker can overlap the
+ * round trip per subscriber. A replayed game's teams are real, so its audience is cut down to the
+ * checker's users ({@code synthetic:users}, #47); with that set missing, a replay reaches nobody.
+ * Every key name is unique per call: a stalled worker can overlap the
  * lane's new owner on the same play, and a shared name would let one's cleanup delete the other's set.
  */
 public final class AlertAudience {
@@ -50,6 +53,7 @@ public final class AlertAudience {
             if (id != null) teams.add(FollowSets.prefix(FollowKind.TEAM) + id);
         }
         String gameAny = any(game);
+        boolean replay = GameIds.isReplay(play.gameId());
         List<String> teamAnys = teams.stream().map(AlertAudience::any).toList();
 
         List<String> keys = new ArrayList<>();
@@ -72,6 +76,7 @@ public final class AlertAudience {
             notLeague.addAll(teamAnys);
             p.sdiffstore(l, notLeague.toArray(new String[0]));
             p.sunionstore(key, g, t, l);
+            if (replay) p.sinterstore(key, key, RedisKeys.SYNTHETIC_USERS);
             for (String k : List.of(key, g, t, l)) p.expire(k, TEMP_KEY_TTL_SECONDS);
 
             keys.add(key);

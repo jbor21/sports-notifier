@@ -108,6 +108,7 @@ public final class Cleanup {
         if (!ids.isEmpty()) {
             try (Jedis jedis = pool.getResource()) {
                 jedis.del(ids.stream().map(id -> RedisKeys.UNREAD_PREFIX + id).toArray(String[]::new));
+                jedis.srem(RedisKeys.SYNTHETIC_USERS, ids.toArray(new String[0]));
             }
         }
         return ids.size();

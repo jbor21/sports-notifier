@@ -16,13 +16,25 @@ SPEED=${SPEED:-60}
 DEADLINE=${DEADLINE:?DEADLINE is set by make chaos}
 BASE_URL=${BASE_URL:-http://localhost:8080}
 SCENARIOS=(stage1-crash stage2-crash history-crash gateway-crash gateway-rollout broker-crash stage1-cut stage2-cut)
+# A machine dying needs real cloud machines; it runs last, and waits for the cluster to recover itself.
+[ "$CHAOS_PLATFORM" != eks ] || SCENARIOS+=(node-loss)
 
 want=${1:-all}
 if [ "$want" = all ]; then
   run=("${SCENARIOS[@]}")
 else
+  if [ "$want" = node-loss ] && [ "$CHAOS_PLATFORM" != eks ]; then
+    echo "node-loss needs EKS: it terminates an EC2 machine (KUBE_CONTEXT=sports-notifier-aws)" >&2; exit 2
+  fi
   [[ " ${SCENARIOS[*]} " == *" $want "* ]] || { echo "unknown scenario: $want (one of: ${SCENARIOS[*]}, all)" >&2; exit 2; }
   run=("$want")
+fi
+
+# node-loss terminates a machine through the AWS CLI about 70 minutes in: check the login now.
+if [[ " ${run[*]} " == *" node-loss "* ]]; then
+  command -v aws >/dev/null || { echo "chaos: node-loss needs the aws CLI" >&2; exit 2; }
+  aws --profile "${AWS_PROFILE:-sports}" sts get-caller-identity >/dev/null 2>&1 \
+    || { echo "chaos: node-loss needs an AWS login first: aws sso login --profile ${AWS_PROFILE:-sports}" >&2; exit 2; }
 fi
 
 # The scenarios assume a second copy takes over; with one copy a crash only tests a restart.
@@ -51,6 +63,7 @@ cleanup() {
   if [ -n "$job_pid" ] && kill -0 "$job_pid" 2>/dev/null; then
     chaos_stop_job "$job_pid" "$log"
   fi
+  [ "$CHAOS_PLATFORM" != eks ] || chaos_debug_cleanup
   chaos_grafana_stop
 }
 trap cleanup EXIT
@@ -72,15 +85,29 @@ deployment_of() {
 # Each fault sets fault_ok and proof, and returns non-zero if a step of it could not run. It runs
 # inside `if`, where errexit is off, so every step that matters checks its own result.
 crash() {
-  local pod before
-  pod=$(chaos_first_pod "$(deployment_of "$1")") && [ -n "$pod" ] || { proof="no running pod to crash"; return 1; }
+  local pod before id="" moved=""
+  if [ "$1" = broker-crash ] && [ "$(chaos_brokers | wc -l | tr -d ' ')" -gt 1 ]; then
+    # Several brokers: take the one leading the most partitions, so the most leadership has to move.
+    id=$(chaos_leaders 2>>"$log" | chaos_most_leaders) && [ -n "$id" ] || { proof="could not read partition leaders"; return 1; }
+    pod="$RELEASE-dual-role-$id"
+    CHAOS_BROKER_AT_FAULT=$pod
+  else
+    pod=$(chaos_first_pod "$(deployment_of "$1")") && [ -n "$pod" ] || { proof="no running pod to crash"; return 1; }
+  fi
   before=$(chaos_restarts "$pod") || return 1
   say "crash $pod (restarts $before)"
-  chaos_crash "$pod" 2>>"$log" || { proof="crictl could not stop $pod"; return 1; }
+  chaos_crash "$pod" 2>>"$log" || { proof="the runtime could not stop $pod"; return 1; }
+  # Every partition it led must get a leader on another broker within 30 s of the kill, and none may be
+  # left without. Timed from when the kill returned, so the debug pod's start-up doesn't count.
+  [ -z "$id" ] || moved=$(chaos_await_leaders_moved "$id" 30) || moved=""
   if chaos_wait_restarted "$pod" "$before" 2>>"$log"; then
     proof="$pod restarted at +$fault_at s"
   else
-    fault_ok=0; proof="fault did not land: $pod did not restart with exit 137"
+    fault_ok=0; proof="fault did not land: $pod did not restart with exit 137"; return
+  fi
+  if [ -n "$id" ]; then
+    if [ -n "$moved" ]; then proof="$proof, leaders moved in $moved s"
+    else fault_ok=0; proof="fault did not land: partitions still led by $id after 30 s"; fi
   fi
 }
 
@@ -147,19 +174,87 @@ cut() {
   fi
 }
 
+# A machine dies (spec 4.3): terminate one EC2 instance, then prove its replacement comes up in the same
+# zone and the broker it held is back with nothing under-replicated, within CHAOS_NODE_LOSS_SECONDS (900).
+node_loss() {
+  local limit=${CHAOS_NODE_LOSS_SECONDS:-900} job checker_node out victim zone iid region before broker="" b
+  local t_kill state="" notready="" repl ready_at="" broker_at="" full_at="" urp
+  command -v aws >/dev/null || { proof="the aws CLI is not installed"; return 1; }
+  job=$(grep -oE '^job/checker-[0-9a-z-]+' "$log" | head -1)
+  checker_node=$(_k get pods -l "job-name=${job#job/}" -o jsonpath='{.items[0].spec.nodeName}' 2>>"$log")
+  [ -n "$checker_node" ] || { proof="could not find the checker's machine"; return 1; }
+  out=$(chaos_pick_victim "$checker_node" 2>>"$log") || { proof="no machine to kill (see the log)"; return 1; }
+  victim=$(head -1 <<< "$out")
+  [ "$(wc -l <<< "$out")" -lt 2 ] || say "$(sed -n 2p <<< "$out")"
+  zone=$(chaos_zone_of "$victim") && iid=$(chaos_instance_of "$victim") && [ -n "$zone" ] && [ -n "$iid" ] \
+    || { proof="could not read $victim's zone or instance"; return 1; }
+  region=${zone%?}
+  before=$(_k get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}')
+  for b in $(chaos_brokers); do [ "$(chaos_node_of "$b")" = "$victim" ] && broker=$b; done
+  [ -n "$broker" ] || { proof="no broker on $victim"; return 1; }
+  say "on $victim: $(chaos_pods_on "$victim" | tr '\n' ' ')"
+  CHAOS_BROKER_AT_FAULT=$broker
+  say "terminate $iid ($victim in $zone, with $broker; checker on $checker_node)"
+  t_kill=$SECONDS
+  aws --profile "${AWS_PROFILE:-sports}" --region "$region" ec2 terminate-instances --instance-ids "$iid" >>"$log" 2>&1 \
+    || { proof="aws could not terminate $iid"; return 1; }
+
+  for _ in $(seq 1 30); do
+    state=$(aws --profile "${AWS_PROFILE:-sports}" --region "$region" ec2 describe-instances --instance-ids "$iid" \
+      --query 'Reservations[0].Instances[0].State.Name' --output text 2>>"$log" || true)
+    [[ "$state" == shutting-down || "$state" == terminated ]] && break
+    sleep 2
+  done
+  [[ "$state" == shutting-down || "$state" == terminated ]] || { fault_ok=0; proof="fault did not land: $iid still ${state:-unknown} after 60 s"; return; }
+  for _ in $(seq 1 60); do
+    [ "$(_k get node "$victim" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = True ] \
+      || { notready=$((SECONDS - t_kill)); break; }
+    sleep 2
+  done
+  [ -n "$notready" ] || { fault_ok=0; proof="fault did not land: $victim still Ready after 120 s"; return; }
+  chaos_mark "$1" "machine down"
+
+  repl=$(chaos_await_replacement "$zone" $((limit - (SECONDS - t_kill))) $before 2>>"$log") \
+    || { fault_ok=0; proof="$(tail -1 "$log")"; return; }
+  ready_at=$((SECONDS - t_kill))
+  say "replacement ${repl% *} Ready at +$ready_at s"
+  while [ $((SECONDS - t_kill)) -lt "$limit" ]; do
+    if [ -z "$broker_at" ] && chaos_ready "$broker" && [ "$(chaos_node_of "$broker")" = "${repl% *}" ]; then
+      broker_at=$((SECONDS - t_kill)); CHAOS_BROKER_AT_FAULT=""
+    fi
+    if [ -n "$broker_at" ] && urp=$(chaos_under_replicated 2>>"$log") && [ "$urp" = 0 ]; then
+      full_at=$((SECONDS - t_kill)); break
+    fi
+    sleep 5
+  done
+  chaos_mark "$1" healed
+  if [ -z "$full_at" ]; then
+    fault_ok=0
+    proof="not recovered within $limit s: replacement Ready +$ready_at s, "
+    if [ -n "$broker_at" ]; then proof="${proof}broker back +$broker_at s, still under-replicated"; else proof="${proof}broker not back"; fi
+    return
+  fi
+  proof="$iid in $zone: NotReady +$notready s, replacement Ready +$ready_at s, broker back +$broker_at s, fully replicated +$full_at s"
+}
+
 passed=0
 for name in "${run[@]}"; do
   log="$out/$name.log"
   : > "$log"
   t0=$SECONDS
   fault_ok=1 http_ok=1 proof="" fault_at=0
+  CHAOS_BROKER_AT_FAULT=""
 
   if ! chaos_steady >> "$log" 2>&1; then
     printf '%-16s FAIL  cluster not steady (see %s)\n' "$name" "$log" | tee -a "$summary"
     continue
   fi
   say "steady; starting the checker (set $SET at ${SPEED}x, time limit $DEADLINE s)"
-  scripts/run-job.sh --deadline "$DEADLINE" checker CHECK_SET="$SET" CHECK_SPEED="$SPEED" >> "$log" 2>&1 &
+  # Per-scenario flags and env (chaos_job_flags). The ${…+…} form: the Mac's bash 3.2 calls an empty
+  # array unbound under set -u.
+  flags=($(chaos_job_flags "$name")); envs=($(chaos_job_env "$name"))
+  scripts/run-job.sh --deadline "$DEADLINE" ${flags[@]+"${flags[@]}"} checker CHECK_SET="$SET" CHECK_SPEED="$SPEED" \
+    ${envs[@]+"${envs[@]}"} >> "$log" 2>&1 &
   job_pid=$!
 
   started=""
@@ -189,6 +284,7 @@ for name in "${run[@]}"; do
          *-crash) crash "$name" ;;
          gateway-rollout) rollout "$name" ;;
          *-cut) cut "$name" ;;
+         node-loss) node_loss "$name" ;;
        esac; then
     fault_ok=0; proof="fault step failed: ${proof:-see the log}"
   fi
@@ -199,7 +295,6 @@ for name in "${run[@]}"; do
   end_ms=$(chaos_now_ms)
   chaos_mark "$name" "run ended" "$end_ms"
   pushes=$(grep -oE 'expected pushes [0-9,]+' "$log" | awk '{print $3}' || true)
-  excused=$(grep -oE 'allowed in disconnects: [0-9]+' "$log" | awk '{print $4}' || true)
   worst=$(grep -oE 'max ([0-9]+ ms|-)' "$log" | tail -1 | awk '{ if ($2 == "-") print "-"; else printf "%.1f s", $2 / 1000 }' || true)
   if [ "$rc" = 0 ] && [ "$fault_ok" = 1 ] && [ "$http_ok" = 1 ]; then
     verdict=PASS; passed=$((passed + 1))
@@ -208,8 +303,8 @@ for name in "${run[@]}"; do
     [ "$rc" = 0 ] || proof="checker exit $rc; $proof"
     { make -s logs; } > "$out/$name.cluster.log" 2>&1 || true
   fi
-  printf '%-16s %s  pushes %s  socket misses excused %s  worst delay %s  %s\n' \
-    "$name" "$verdict" "${pushes:--}" "${excused:--}" "${worst:--}" "$proof" | tee -a "$summary"
+  printf '%-16s %s  pushes %s  socket misses %s  worst delay %s  %s\n' \
+    "$name" "$verdict" "${pushes:--}" "$(chaos_counts "$log")" "${worst:--}" "$proof" | tee -a "$summary"
   # The scenario's window on the dashboard, for a screenshot (make grafana serves localhost:3000).
   [ "$CHAOS_GRAFANA" != 1 ] || echo "  dashboard: http://localhost:3000/d/pipeline?from=$((run_ms - 30000))&to=$((end_ms + 30000))" | tee -a "$summary"
 done

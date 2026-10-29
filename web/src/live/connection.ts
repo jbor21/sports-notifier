@@ -52,6 +52,8 @@ export class LiveConnection {
   private readonly random: () => number
   private readonly ticker: Ticker
   private _state: ConnectionState = 'stopped'
+  /** The ticker's last ping on this socket has had no message back yet. Pings on return to visible don't count. */
+  private awaitingAnswer = false
   private _connects = 0
 
   constructor(
@@ -132,7 +134,8 @@ export class LiveConnection {
     this._connects++
     this.setState('open')
     this.sendGames(true)
-    this.stopPings = this.ticker(PING_MS, () => this.send({ type: 'ping' }))
+    this.awaitingAnswer = false
+    this.stopPings = this.ticker(PING_MS, () => this.tick())
     // Only a connection that stays up resets the backoff; one that drops right away keeps growing it.
     this.resetTimer = setTimeout(() => (this.attempt = 0), RESET_AFTER_MS)
     if (this._connects > 1) {
@@ -158,7 +161,25 @@ export class LiveConnection {
     this.retryTimer = setTimeout(() => this.connect(), delay)
   }
 
+  /**
+   * A healthy server answers every ping. Nothing since the last one means the line died without a
+   * close (a machine that died sends none), so give it up now instead of after minutes of TCP retries.
+   */
+  private tick(): void {
+    const socket = this.socket
+    if (!socket) return
+    if (this.awaitingAnswer) {
+      socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null
+      socket.close()
+      this.closed(1006)
+      return
+    }
+    this.awaitingAnswer = true
+    this.send({ type: 'ping' })
+  }
+
   private received(data: string): void {
+    this.awaitingAnswer = false
     let msg: Record<string, unknown>
     try {
       msg = JSON.parse(data)

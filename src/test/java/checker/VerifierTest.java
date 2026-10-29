@@ -143,6 +143,43 @@ class VerifierTest {
     }
 
     @Test
+    void silentGapCountsTwice() {
+        ExpectedPush a = exp("u1", G1, G1 + ":A");
+        SocketLog s = socket("u1", 0);
+        s.disconnected(T + 500, true);
+        s.connected(T + 1500);
+        Verifier.Result r = verify(List.of(a), List.of(hist(a, T)), List.of(s), delivered(a, T + 1000), 0);
+        assertEquals(List.of(), kinds(r));
+        assertEquals(1, r.allowedInGaps());
+        assertEquals(1, r.allowedInSilentGaps());
+    }
+
+    @Test
+    void ordinaryGapCountsOnce() {
+        ExpectedPush a = exp("u1", G1, G1 + ":A");
+        SocketLog s = socket("u1", 0);
+        s.disconnected(T + 500, false);
+        s.connected(T + 1500);
+        Verifier.Result r = verify(List.of(a), List.of(hist(a, T)), List.of(s), delivered(a, T + 1000), 0);
+        assertEquals(1, r.allowedInGaps());
+        assertEquals(0, r.allowedInSilentGaps());
+    }
+
+    @Test
+    void overlappingOrdinaryGapIsNotSilent() {
+        // Excused by the ordinary gap anyway, so the silent rule wasn't what let it pass.
+        ExpectedPush a = exp("u1", G1, G1 + ":A");
+        SocketLog s = socket("u1", 0);
+        s.disconnected(T + 500, false);
+        s.connected(T + 700);
+        s.disconnected(T + 900, true);
+        s.connected(T + 1500);
+        Verifier.Result r = verify(List.of(a), List.of(hist(a, T)), List.of(s), delivered(a, T + 1000), 0);
+        assertEquals(1, r.allowedInGaps());
+        assertEquals(0, r.allowedInSilentGaps());
+    }
+
+    @Test
     void gapThreeSecondsAfterDeliveryNotAllowed() {
         ExpectedPush a = exp("u1", G1, G1 + ":A");
         SocketLog s = socket("u1", 0);

@@ -1,6 +1,7 @@
 package service.impl;
 
 import com.google.gson.JsonObject;
+import feed.GameIds;
 import games.GameQuery;
 import games.GameSummaries;
 import redis.clients.jedis.Jedis;
@@ -29,7 +30,9 @@ public class GameStateServiceImpl implements GameStateService {
     public List<JsonObject> listDay(GameQuery q) {
         try (Jedis jedis = pool.getResource()) {
             // Redis orders equal scores by member, so this is start time, then id.
-            List<String> ids = jedis.zrangeByScore(RedisKeys.GAMES_START, String.valueOf(q.fromMillis()), "(" + q.toMillis());
+            // Replayed games are test runs on real teams (#47); real users never see them in the list.
+            List<String> ids = jedis.zrangeByScore(RedisKeys.GAMES_START, String.valueOf(q.fromMillis()), "(" + q.toMillis())
+                    .stream().filter(id -> !GameIds.isReplay(id)).toList();
             Pipeline p = jedis.pipelined();
             List<Response<Map<String, String>>> games = new ArrayList<>(), scheds = new ArrayList<>();
             for (String id : ids) {

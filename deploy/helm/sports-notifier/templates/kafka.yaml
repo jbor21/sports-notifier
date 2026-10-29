@@ -68,6 +68,14 @@ spec:
                     {{- end }}
                     {{- end }}
                     - checker
+          # The brokers themselves: a Kafka admin command run inside one broker (the chaos suite's
+          # group and replica reads) is sent on to the others on this port. Found on EKS, where the
+          # policy is enforced and there are three brokers.
+          - podSelector:
+              matchLabels:
+                strimzi.io/cluster: {{ .Release.Name }}
+                strimzi.io/kind: Kafka
+                strimzi.io/name: {{ .Release.Name }}-kafka
     config:
       # A misspelled topic name fails instead of quietly creating a new topic.
       auto.create.topics.enable: false

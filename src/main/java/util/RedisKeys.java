@@ -81,6 +81,13 @@ public final class RedisKeys {
      */
     public static final String SUB_BUILT = "sub:built";
 
+    /**
+     * Set of the checker's user ids ({@code ck_} names). A replayed game reaches only these users (#47):
+     * its teams are real, so a real follower would otherwise get made-up alerts. Kept by user-pref's
+     * signup and the follow-set rebuild; missing means a replay reaches nobody.
+     */
+    public static final String SYNTHETIC_USERS = "synthetic:users";
+
     /** Where a rebuild writes each set before renaming it into place: {@code sub:tmp:<buildId>:<key>} */
     public static final String SUB_TMP_PREFIX = "sub:tmp:";
 

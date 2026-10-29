@@ -10,8 +10,12 @@ public final class SocketLog {
 
     public record Arrival(String messageId, String gameId, JsonObject body, long atMillis) {}
 
-    /** Not connected from {@code fromMillis} to {@code toMillis}; {@code Long.MAX_VALUE} while still down. */
-    public record Gap(long fromMillis, long toMillis) {}
+    /**
+     * Not connected from {@code fromMillis} to {@code toMillis}; {@code Long.MAX_VALUE} while still down.
+     * {@code silent}: the socket never said it ended; an unanswered ping found it dead, and the gap
+     * starts at the last frame received (Phase 6.1 spec, 2).
+     */
+    public record Gap(long fromMillis, long toMillis, boolean silent) {}
 
     private final String userId;
     private final int tab;
@@ -37,8 +41,13 @@ public final class SocketLog {
 
     /** Opens a gap unless one is already open. */
     public synchronized void disconnected(long atMillis) {
+        disconnected(atMillis, false);
+    }
+
+    /** Opens a gap unless one is already open; {@code silent} as in {@link Gap}. */
+    public synchronized void disconnected(long atMillis, boolean silent) {
         if (gaps.isEmpty() || gaps.get(gaps.size() - 1).toMillis() != Long.MAX_VALUE) {
-            gaps.add(new Gap(atMillis, Long.MAX_VALUE));
+            gaps.add(new Gap(atMillis, Long.MAX_VALUE, silent));
         }
     }
 
@@ -46,7 +55,7 @@ public final class SocketLog {
     public synchronized void connected(long atMillis) {
         if (!gaps.isEmpty() && gaps.get(gaps.size() - 1).toMillis() == Long.MAX_VALUE) {
             Gap open = gaps.remove(gaps.size() - 1);
-            gaps.add(new Gap(open.fromMillis(), atMillis));
+            gaps.add(new Gap(open.fromMillis(), atMillis, open.silent()));
         }
     }
 

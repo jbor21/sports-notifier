@@ -16,8 +16,10 @@ import java.util.function.LongSupplier;
 
 /**
  * One synthetic tab on {@code /api/v1/ws} (Phase 4.1 spec, 4), behaving as {@code docs/api/websocket.md}
- * asks of a client: pings every 25 s (the server closes a silent socket after 60 s) and reconnects after
- * any close with backoff and full jitter. Every {@code notification} goes into the {@link SocketLog}
+ * asks of a client: pings on a schedule (the server closes a silent socket after 60 s) and reconnects after
+ * any close with backoff and full jitter. A ping with nothing received by the next one means the line
+ * died without saying so (a machine that died sends no close and no reset): the socket is aborted, and
+ * its gap starts at the last frame received (Phase 6.1 spec, 2). Every {@code notification} goes into the {@link SocketLog}
  * with its arrival time; every time the socket is down is a gap there, from the close until the next
  * {@code hello}. Other message types are ignored,
  * and so is when {@code hello} arrives (issue #24).
@@ -38,6 +40,10 @@ public final class SocketClient implements WebSocket.Listener {
     private volatile WebSocket ws;
     private volatile boolean helloSeen;
     private volatile boolean closed;
+    /** When the last frame arrived; only for backdating a silent gap, never for deciding it is dead. */
+    private volatile long lastReceivedAt;
+    /** This connection's last ping has had nothing back yet. A flag, not timestamps: a clock step can't fake it. */
+    private volatile boolean awaitingAnswer;
     private int failures;
 
     public SocketClient(URI uri, String sid, SocketLog log, LongSupplier clock, Duration pingEvery) {
@@ -54,7 +60,9 @@ public final class SocketClient implements WebSocket.Listener {
     }
 
     public void start() {
-        timer.scheduleAtFixedRate(this::ping, pingEvery.toMillis(), pingEvery.toMillis(), TimeUnit.MILLISECONDS);
+        // Fixed delay, not fixed rate: a timer that fell behind (a GC pause) must not send its missed
+        // pings back to back, or the second would find the first unanswered and abort a healthy socket.
+        timer.scheduleWithFixedDelay(this::ping, pingEvery.toMillis(), pingEvery.toMillis(), TimeUnit.MILLISECONDS);
         connect();
     }
 
@@ -74,14 +82,19 @@ public final class SocketClient implements WebSocket.Listener {
         if (closed) return;
         HTTP.newWebSocketBuilder().header("Cookie", "sid=" + sid).buildAsync(uri, this)
             .whenComplete((w, err) -> {
-                if (err != null) down();
+                if (err != null) down(null, clock.getAsLong(), false);
             });
     }
 
-    private synchronized void down() {
-        if (closed) return;
+    /**
+     * Records the gap and schedules the reconnect, once per connection: {@code which} must still be the
+     * current socket ({@code null} for a connect that never opened). An aborted socket's own late
+     * {@code onError} or {@code onClose} then finds {@code ws} already cleared and is ignored.
+     */
+    private synchronized void down(WebSocket which, long atMillis, boolean silent) {
+        if (closed || which != ws) return;
         ws = null;
-        log.disconnected(clock.getAsLong());
+        log.disconnected(atMillis, silent);
         long cap = Math.min(BACKOFF_MAX_MILLIS, BACKOFF_BASE_MILLIS << Math.min(failures, 5));
         failures++;
         long delay = ThreadLocalRandom.current().nextLong(cap + 1);
@@ -94,11 +107,21 @@ public final class SocketClient implements WebSocket.Listener {
 
     private void ping() {
         WebSocket w = ws;
-        if (w != null) w.sendText("{\"type\":\"ping\"}", true).exceptionally(e -> null);
+        if (w == null) return;
+        if (awaitingAnswer) {
+            // Recorded before the abort, so the abort's own callbacks find nothing to do.
+            down(w, lastReceivedAt, true);
+            w.abort();
+            return;
+        }
+        awaitingAnswer = true;   // before the send, so a fast pong can't arrive first and be overwritten
+        w.sendText("{\"type\":\"ping\"}", true).exceptionally(e -> null);
     }
 
     @Override
     public synchronized void onOpen(WebSocket webSocket) {
+        awaitingAnswer = false;
+        lastReceivedAt = clock.getAsLong();
         ws = webSocket;
         failures = 0;
         webSocket.request(1);
@@ -118,6 +141,8 @@ public final class SocketClient implements WebSocket.Listener {
 
     private void handle(String text) {
         long at = clock.getAsLong();
+        lastReceivedAt = at;
+        awaitingAnswer = false;
         JsonObject m;
         try {
             m = JsonParser.parseString(text).getAsJsonObject();
@@ -139,12 +164,12 @@ public final class SocketClient implements WebSocket.Listener {
 
     @Override
     public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
-        down();
+        down(webSocket, clock.getAsLong(), false);
         return null;
     }
 
     @Override
     public void onError(WebSocket webSocket, Throwable error) {
-        down();
+        down(webSocket, clock.getAsLong(), false);
     }
 }

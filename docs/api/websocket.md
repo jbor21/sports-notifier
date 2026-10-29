@@ -122,6 +122,8 @@ Send every 25 seconds while connected.
 
 This keeps proxies and load balancers from closing a quiet connection. The server closes a connection that has sent nothing for 60 seconds, with code 1000 (reconnect with backoff).
 
+The server answers every `ping` with a `pong`. If nothing at all has arrived from the server by the time of the next `ping`, treat the connection as dead and reconnect with backoff, then refetch. A server on a machine that died sends no close, so without this a client can sit on a dead connection for minutes.
+
 ## Reconnecting
 
 Connections drop: Wi-Fi changes, a laptop sleeps, or a gateway restarts or scales in (`DESIGN.md` decision 12).

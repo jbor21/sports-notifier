@@ -28,8 +28,8 @@ public final class Report {
         out.append(String.format("plays %,d   expected pushes %,d%n", h.plays(), h.expectedPushes()));
         out.append(String.format("history   missing %d   unexpected %d   wrong body %d%n",
                 n(byKind, "history_missing"), n(byKind, "history_unexpected"), n(byKind, "history_wrong_body")));
-        out.append(String.format("sockets   missing %d (allowed in disconnects: %d)   duplicate %d   out of order %d   unexpected %d%n",
-                n(byKind, "socket_missing"), r.allowedInGaps(), n(byKind, "socket_duplicate"),
+        out.append(String.format("sockets   missing %d (allowed in disconnects: %d, silent: %d)   duplicate %d   out of order %d   unexpected %d%n",
+                n(byKind, "socket_missing"), r.allowedInGaps(), r.allowedInSilentGaps(), n(byKind, "socket_duplicate"),
                 n(byKind, "socket_out_of_order"), n(byKind, "socket_unexpected")));
         int changed = n(byKind, "follow_changed");
         out.append(changed == 0 ? "follows   frozen ✓\n" : "follows   changed " + changed + "\n");

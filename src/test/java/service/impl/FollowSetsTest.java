@@ -156,11 +156,11 @@ class FollowSetsTest {
     @Test
     void isBuiltNeedsCurrentVersion() {
         assertFalse(FollowSets.isBuilt(jedis));
-        jedis.hset(util.RedisKeys.SUB_BUILT, "version", "1");
+        jedis.hset(util.RedisKeys.SUB_BUILT, "version", "2");   // before synthetic:users (#47)
         assertFalse(FollowSets.isBuilt(jedis));
         FollowSets.markBuilt(jedis, "R");
         assertTrue(FollowSets.isBuilt(jedis));
-        assertEquals("2", jedis.hget(util.RedisKeys.SUB_BUILT, "version"));
+        assertEquals("3", jedis.hget(util.RedisKeys.SUB_BUILT, "version"));
     }
 
     @Test

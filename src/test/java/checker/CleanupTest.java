@@ -96,6 +96,15 @@ class CleanupTest {
     }
 
     @Test
+    void removesDeletedUsersFromSyntheticSet() throws Exception {
+        String gone = user("ck_abc123_0");
+        String kept = user("ck_zzz999_0");
+        jedis.sadd(RedisKeys.SYNTHETIC_USERS, gone, kept);
+        Cleanup.deleteRun(PostgresTestSupport.dataSource(), pool, "abc123");
+        assertEquals(java.util.Set.of(kept), jedis.smembers(RedisKeys.SYNTHETIC_USERS));
+    }
+
+    @Test
     void cleanAllRemovesEveryCheckerUserAndDeletesMarker() throws Exception {
         user("ck_abc123_0");
         user("ck_zzz999_17");

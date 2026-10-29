@@ -71,6 +71,12 @@ import java.util.concurrent.Future;
  */
 public final class Checker {
 
+    /**
+     * The checker's tabs ping every 5 s, not the UI's 25 s: an unanswered ping is how a tab notices a
+     * gateway that died silently, so a gap on a dead machine lasts about 10 s (Phase 6.1 spec, 2).
+     */
+    static final Duration SOCKET_PING_EVERY = Duration.ofSeconds(5);
+
     private static final Map<String, String> GROUPS = Map.of(
             Topics.STAGE1_GROUP, Topics.GAME_EVENTS,
             Topics.STAGE2_GROUP, Topics.NOTIFICATIONS,
@@ -278,7 +284,7 @@ public final class Checker {
         for (int i = 0; i < plans.size(); i++) {
             for (int tab = 0; tab < (plans.get(i).twoTabs() ? 2 : 1); tab++) {
                 SocketLog log = new SocketLog(userIds.get(i), tab);
-                SocketClient c = new SocketClient(ws, sessions.get(i).sid(), log, System::currentTimeMillis, Duration.ofSeconds(25));
+                SocketClient c = new SocketClient(ws, sessions.get(i).sid(), log, System::currentTimeMillis, SOCKET_PING_EVERY);
                 logs.add(log);
                 clients.add(c);
                 c.start();

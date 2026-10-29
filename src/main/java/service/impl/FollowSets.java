@@ -18,10 +18,10 @@ public class FollowSets {
 
     /**
      * The shape of the sets: which names exist and what they hold. Bump it whenever that changes
-     * (3.3 added {@code ANY} and the innings sets), so a Redis kept across an upgrade is rebuilt
-     * instead of trusted (issue #16).
+     * (3.3 added {@code ANY} and the innings sets; 6.1 added {@code synthetic:users}), so a Redis kept
+     * across an upgrade is rebuilt instead of trusted (issue #16).
      */
-    public static final int SHAPE_VERSION = 2;
+    public static final int SHAPE_VERSION = 3;
 
     private final JedisPool pool;
 

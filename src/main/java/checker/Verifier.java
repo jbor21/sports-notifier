@@ -19,9 +19,11 @@ public final class Verifier {
     /**
      * @param outsideRun     socket messages about other games (live ESPN, other runs)
      * @param allowedInGaps  pushes missing from a socket while it was down, and present in history
+     * @param allowedInSilentGaps of those, the ones only a silent gap excused (Phase 6.1 spec, 2)
      * @param latenciesMillis socket arrival − the play's {@code detectedAt}, one per first arrival
      */
-    public record Result(List<Finding> findings, int outsideRun, int allowedInGaps, List<Long> latenciesMillis) {}
+    public record Result(List<Finding> findings, int outsideRun, int allowedInGaps, int allowedInSilentGaps,
+                         List<Long> latenciesMillis) {}
 
     /** How far from a push's delivery a socket's disconnect may be and still excuse the push. */
     static final long EXCUSE_WINDOW_MILLIS = 2000;
@@ -70,7 +72,7 @@ public final class Verifier {
             }
         }
 
-        int allowed = 0;
+        int allowed = 0, allowedSilent = 0;
         List<Long> latencies = new ArrayList<>();
         for (SocketLog s : sockets) {
             String user = s.userId();
@@ -99,9 +101,11 @@ public final class Verifier {
                 if (first.containsKey(e.messageId())) continue;
                 HistoryRow h = have.get(key(user, e.messageId()));
                 Long at = deliveredAt.get(key(user, e.messageId()));
-                if (h != null && at != null && wasDown(s, at - clockOffsetMillis - EXCUSE_WINDOW_MILLIS,
-                        at - clockOffsetMillis + EXCUSE_WINDOW_MILLIS)) {
+                List<SocketLog.Gap> down = at == null ? List.of() : gapsWithin(s,
+                        at - clockOffsetMillis - EXCUSE_WINDOW_MILLIS, at - clockOffsetMillis + EXCUSE_WINDOW_MILLIS);
+                if (h != null && !down.isEmpty()) {
                     allowed++;
+                    if (down.stream().allMatch(SocketLog.Gap::silent)) allowedSilent++;
                 } else {
                     String why = h == null ? ", not in history either"
                             : at == null ? ", no delivery time in its claim"
@@ -110,7 +114,7 @@ public final class Verifier {
                 }
             }
         }
-        return new Result(findings, outside, allowed, latencies);
+        return new Result(findings, outside, allowed, allowedSilent, latencies);
     }
 
     /** Within each game, the pushes that arrived must keep the expected order. */
@@ -139,11 +143,13 @@ public final class Verifier {
         return -1;
     }
 
-    private static boolean wasDown(SocketLog s, long from, long to) {
+    /** The socket's gaps that overlap {@code from..to}. */
+    private static List<SocketLog.Gap> gapsWithin(SocketLog s, long from, long to) {
+        List<SocketLog.Gap> out = new ArrayList<>();
         for (SocketLog.Gap g : s.gaps()) {
-            if (g.fromMillis() <= to && g.toMillis() >= from) return true;
+            if (g.fromMillis() <= to && g.toMillis() >= from) out.add(g);
         }
-        return false;
+        return out;
     }
 
     /**

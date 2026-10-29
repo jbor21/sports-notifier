@@ -14,4 +14,19 @@ public final class GameIds {
     public static String of(String league, String eventId) {
         return league.toLowerCase(Locale.ROOT) + "-" + eventId;
     }
+
+    /** A replayed game's id, new every run: {@code nfl-rp<runId>-401872971}. */
+    public static String replay(String league, String runId, String eventId) {
+        return of(league, "rp" + runId + "-" + eventId);
+    }
+
+    /**
+     * True for a replayed game. Its teams are real, so only synthetic users may hear about it (#47),
+     * and real users don't see it in {@code /games}. Simulated games ({@code -sim}) are not replays.
+     */
+    public static boolean isReplay(String gameId) {
+        if (gameId == null) return false;
+        int dash = gameId.indexOf('-');
+        return dash >= 0 && gameId.startsWith("rp", dash + 1);
+    }
 }

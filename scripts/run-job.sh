@@ -3,20 +3,24 @@
 # and exits with the Job's result: the pod's own exit code (the checker: 0 PASS, 1 FAIL, 2 SETUP
 # FAILED), or 1 if the Job ran out of time or never got a pod.
 #
-# Usage: scripts/run-job.sh [--deadline SECONDS] <cronjob> [KEY=VALUE ...]
+# Usage: scripts/run-job.sh [--deadline SECONDS] [--near POD] <cronjob> [KEY=VALUE ...]
 #   --deadline  the Job's time limit (activeDeadlineSeconds); Kubernetes stops it after that long
+#   --near      run the Job's pod on the same machine as POD (node-loss keeps the checker off the victim)
 #   KEY=VALUE   overrides the Job's env
 set -euo pipefail
 
 KUBE_CONTEXT=${KUBE_CONTEXT:-k3d-sports-notifier}
 k() { kubectl --context "$KUBE_CONTEXT" "$@"; }
-usage() { echo "usage: run-job.sh [--deadline SECONDS] <cronjob> [KEY=VALUE ...]" >&2; exit 2; }
+usage() { echo "usage: run-job.sh [--deadline SECONDS] [--near POD] <cronjob> [KEY=VALUE ...]" >&2; exit 2; }
 
-deadline=""
-if [ "${1:-}" = --deadline ]; then
-  [[ "${2:-}" =~ ^[0-9]+$ ]] || usage
-  deadline=$2; shift 2
-fi
+deadline="" near=""
+while [[ "${1:-}" == --* ]]; do
+  case $1 in
+    --deadline) [[ "${2:-}" =~ ^[0-9]+$ ]] || usage; deadline=$2; shift 2 ;;
+    --near) [ -n "${2:-}" ] || usage; near=$2; shift 2 ;;
+    *) usage ;;
+  esac
+done
 [ $# -ge 1 ] || usage
 cronjob=$1; shift
 for arg in "$@"; do
@@ -24,10 +28,16 @@ for arg in "$@"; do
 done
 
 name="$cronjob-$(date +%s)-$RANDOM"
-if [[ $# -gt 0 ]]; then
-  k create job "$name" --from="cronjob/$cronjob" --dry-run=client -o yaml \
-    | k set env --local -f - "$@" -o yaml \
-    | k create -f - >/dev/null
+if [[ $# -gt 0 || -n "$near" ]]; then
+  yaml=$(k create job "$name" --from="cronjob/$cronjob" --dry-run=client -o yaml)
+  [[ $# -eq 0 ]] || yaml=$(k set env --local -f - "$@" -o yaml <<< "$yaml")
+  if [ -n "$near" ]; then
+    node=$(k get pod "$near" -o jsonpath='{.spec.nodeName}')
+    [ -n "$node" ] || { echo "run-job.sh: cannot find the machine of $near" >&2; exit 1; }
+    yaml=$(k patch --local -f - --type merge -o yaml \
+      -p "{\"spec\":{\"template\":{\"spec\":{\"nodeSelector\":{\"kubernetes.io/hostname\":\"$node\"}}}}}" <<< "$yaml")
+  fi
+  k create -f - >/dev/null <<< "$yaml"
 else
   k create job "$name" --from="cronjob/$cronjob" >/dev/null
 fi

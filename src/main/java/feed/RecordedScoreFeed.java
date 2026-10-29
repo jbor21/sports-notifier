@@ -66,7 +66,7 @@ public final class RecordedScoreFeed implements ScoreFeed {
 
     /** {@code nfl-rp<runId>-401872971}. */
     public static String gameId(String league, String runId, String espnId) {
-        return league.toLowerCase() + "-rp" + runId + "-" + espnId;
+        return GameIds.replay(league, runId, espnId);
     }
 
     /** A replay set packed into the JAR: {@code replay/<set>.jsonl.gz}. */
